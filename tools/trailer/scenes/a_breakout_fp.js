@@ -110,7 +110,7 @@
         const r = S.r, p = r.p;
         if (!A.o && t >= 0.75) { A.o = true; r.openDoor(r.d1, 0.45); }
         if (p.z > 29.0 && !A.aim) { S.fp.walkTo(0.1, 22, true); S.fp.look(0, 0, dt, 0.4, 3); }
-        else { A.aim = true; S.fp.stop(); S.engage(dt, { tau: 0.2, vmax: 3.2, head: true, delay: 0.25, range: 40, tol: 0.045 }); }
+        else { A.aim = true; S.fp.stop(); r.aimWant = true; S.engage(dt, { tau: 0.2, vmax: 3.2, head: false, delay: 0.25, range: 40, tol: 0.03 }); }
       },
       cam(S) { AK.ensureFP(S); } },
     // 2. перестрелка в зале: между колоннами, шаг влево-вправо, охрана лезёт в дверь
@@ -120,9 +120,9 @@
         AK.en(S, 'grunt', -1.2, 6.0, { yaw: 0, pers: 'pro' }); AK.en(S, 'grunt', 1.5, 4.0, { yaw: 0, pers: 'pro' }); AK.en(S, 'grunt', 0.0, 1.0, { yaw: 0, pers: 'panic' });
       },
       tick(S, t, dt, A) {
-        const r = S.r, x = Math.sin(t * 2.2) * 1.6;
-        S.fp.walkTo(x, 16.5, false);
-        S.engage(dt, { tau: 0.2, vmax: 3.6, head: t > 1.0, delay: 0.15, range: 40, tol: 0.05 });
+        const r = S.r, x = Math.sin(t * 1.6) * 0.9;
+        S.fp.walkTo(x, 16.5, false); r.aimWant = true;
+        S.engage(dt, { tau: 0.2, vmax: 3.6, head: false, delay: 0.15, range: 40, tol: 0.03 });
       },
       cam(S) { AK.ensureFP(S); } },
     // 3. пинок: рашер вплотную

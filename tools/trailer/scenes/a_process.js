@@ -116,24 +116,24 @@
     // 2. колонны, силуэт между ними: низкий проезд навстречу; он замирает, когда камера смотрит на него, и сдвигается между кадрами
     { id: 'pillar_stalk', beats: 6, pre: 0.3,
       start(S) {
-        const r = S.r; AK.purge(S); dropCreep(S); r.setAmbient(0.4); r.p.x = -9; r.p.z = 9; r.p.moving = 0; r.placeNpc(r.s, 2.5, -3.0); r.faceNow(r.s, -3, 6); r.s.creeping = false; this.cam(S, 0, 0);
+        const r = S.r; AK.purge(S); dropCreep(S); r.setAmbient(0.4); r.p.x = -9; r.p.z = 9; r.p.moving = 0; r.placeNpc(r.s, 3.2, -4.6); r.faceNow(r.s, -3, 4); r.s.creeping = false; this.cam(S, 0, 0);
       },
-      tick(S, t, dt, A) { const r = S.r; r.p.x = -9; r.p.z = 9; r.p.moving = 0; const g = r.s.g.position; const d = Math.hypot(-3 - g.x, 6 - g.z); if (d > 0.3) { g.x += (-3 - g.x) / d * 0.75 * dt; g.z += (6 - g.z) / d * 0.75 * dt; r.s.creeping = true; } },
+      tick(S, t, dt, A) { const r = S.r; r.p.x = -9; r.p.z = 9; r.p.moving = 0; const g = r.s.g.position; const d = Math.hypot(-1.5 - g.x, 2.0 - g.z); if (d > 0.3) { g.x += (-1.5 - g.x) / d * 1.0 * dt; g.z += (2.0 - g.z) / d * 1.0 * dt; r.s.creeping = true; } },
       cam(S, k, t) {
         const u = AK.u(S, k, 0.55);
-        AK.cam(S, t, [-8.5 + 4.2 * u, 0.9 + 0.1 * u, 8.5 - 1.5 * u], [2.0 - 0.8 * u, 1.35, -2.0 + 0.8 * u], 60 - 6 * u, { amp: 0.01 });
+        AK.cam(S, t, [-8.0 + 2.8 * u, 0.9 + 0.1 * u, 8.0 - 2.0 * u], [1.0 - 1.0 * u, 1.25, -2.8 + 1.2 * u], 48 - 8 * u, { amp: 0.01 });
       } },
     // 3. терминал: герой подходит к светящемуся экрану и на миг встаёт перед ним — чёрный силуэт на белом; камера сбоку, чуть выше пола
     { id: 'terminal_reveal', beats: 6, pre: 0.3,
       start(S) {
         const r = S.r; AK.purge(S); dropCreep(S); r.setAmbient(0.4); r.p.x = -9; r.p.z = 9; r.p.moving = 0;
-        S.A.h = AK.hero(S, 5.8, -4.4, Math.PI * 1.25, null);
+        S.A.h = AK.hero(S, 6.6, -4.7, Math.PI * 1.25, null);
         r.placeNpc(r.s, 2.4, -6.8); r.faceNow(r.s, 8, -9); r.s.creeping = false; this.cam(S, 0, 0);
       },
       tick(S, t, dt, A) { S.r.p.x = -9; S.r.p.z = 9; S.r.p.moving = 0; AK.go(A.h, 8.5, -8.3, 1.9); },
       cam(S, k, t) {
         const u = AK.u(S, k, 0.5);
-        AK.cam(S, t, [4.7 + 1.5 * u, 0.9 + 0.3 * u, -4.4 - 1.5 * u], [9.2, 1.35, -9.3], 58 - 8 * u, { amp: 0.008, roll: 0.015 * (1 - u) });
+        AK.cam(S, t, [4.2 + 1.8 * u, 0.9 + 0.3 * u, -4.2 - 1.6 * u], [9.2, 1.35, -9.3], 58 - 8 * u, { amp: 0.008, roll: 0.015 * (1 - u) });
       } }
   ], 0.4);
 
