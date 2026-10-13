@@ -1134,3 +1134,57 @@ html body input::selection, html body textarea::selection { background: rgba(110
 .m-cross .mgx::after { content: ""; position: absolute; left: calc(50% - 2px); top: calc(50% - 2px); width: 4px; height: 4px; border-radius: 50%; background: #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.65); }
 .m-cross.hit .mgx { border-color: #ff5a44; }
 .m-cross.hit .mgx::after { left: calc(50% - 4px); top: calc(50% - 4px); width: 8px; height: 8px; border-radius: 0; transform: rotate(45deg); background: #ff5a44; }
+
+/* ---- настройки: вкладки, расширенная графика, переназначение клавиш, геймпад, оверлей телефона (js/settingsui.js) ---- */
+#settings.settings-dlg { width: min(940px, calc(100% - 24px)); max-height: calc(100vh - 28px); max-height: calc(100dvh - 28px); overflow: auto; }
+.set-tabs { display: flex; flex-wrap: wrap; gap: 4px; margin: 14px 0 6px; border-bottom: 1px solid var(--line); }
+.set-tabs button { background: transparent; color: var(--muted); border: 1px solid transparent; border-bottom: 0; padding: 9px 14px; font: inherit; font-size: 11px; letter-spacing: .16em; cursor: pointer; }
+.set-tabs button[aria-selected="true"] { color: var(--ink); border-color: var(--line); background: var(--panel-hi); box-shadow: inset 0 2px 0 var(--red); }
+.set-pane { padding-top: 6px; }
+.set-pane[hidden] { display: none; }
+.set-pane h3 { margin: 22px 0 4px; font-size: 11px; letter-spacing: .26em; color: var(--red); font-weight: 400; }
+.set-row { display: grid; grid-template-columns: minmax(150px, 1fr) minmax(170px, 1.2fr); align-items: center; gap: 4px 16px; border-top: 1px solid var(--line-soft); padding: 11px 0; font-size: 12px; letter-spacing: .12em; }
+.set-row select { background: #000; color: var(--ink); border: 1px solid var(--line); padding: 5px 8px; font: inherit; min-width: 0; }
+.set-row input[type=checkbox] { accent-color: var(--red); width: 17px; height: 17px; justify-self: start; }
+.set-row .set-hint { grid-column: 1 / -1; margin: 0; letter-spacing: .04em; }
+.set-range { display: flex; align-items: center; gap: 10px; }
+.set-range input { flex: 1; min-width: 0; margin: 0; accent-color: var(--red); }
+.set-range output { min-width: 4.4em; text-align: right; letter-spacing: 0; font-size: 12px; }
+.set-actions { display: flex; flex-wrap: wrap; gap: 10px; margin: 18px 0 6px; }
+.kb-table { display: grid; gap: 0; margin-top: 10px; }
+.kb-row { display: grid; grid-template-columns: minmax(150px, 1.3fr) auto 30px; align-items: center; gap: 10px; border-top: 1px solid var(--line-soft); padding: 7px 0; font-size: 12px; letter-spacing: .1em; }
+.kb-keys { display: flex; gap: 6px; }
+.kb-key { min-width: 86px; padding: 7px 10px; background: #000; color: var(--ink); border: 1px solid var(--line); font: inherit; font-size: 11px; letter-spacing: .1em; cursor: pointer; text-align: center; }
+.kb-key.wide { min-width: 190px; }
+.kb-key.empty { color: var(--muted); }
+.kb-key.changed { border-color: var(--red-dim); }
+.kb-key.wait { border-color: var(--red); color: var(--red); animation: kbBlink .8s steps(2) infinite; }
+@keyframes kbBlink { 50% { opacity: .45; } }
+.kb-reset { padding: 4px 0; font-size: 15px; }
+.kb-reset.off { opacity: .25; pointer-events: none; }
+.pad-live { display: grid; grid-template-columns: repeat(16, minmax(0, 1fr)); gap: 3px; margin: 8px 0 12px; }
+.pad-live i { font-style: normal; text-align: center; font-size: 9px; padding: 6px 0; border: 1px solid var(--line); color: var(--muted); }
+.pad-live i.on { background: var(--red); color: #000; border-color: var(--red); }
+.set-block { margin-top: 14px; }
+.tc-preview { position: relative; height: 150px; margin: 12px 0 8px; border: 1px dashed var(--line); background: repeating-linear-gradient(135deg, #050505, #050505 10px, #0a0a0a 10px, #0a0a0a 20px); overflow: hidden; --tc-scale: 1; --tc-op: .85; }
+.tc-stick { position: absolute; left: 12%; bottom: 22px; width: 84px; height: 84px; border: 1px solid rgba(255,255,255,.4); border-radius: 50%; opacity: .55; }
+.tc-preview.stick-fixed .tc-stick { opacity: var(--tc-op); }
+.tc-stick::after { content: ""; position: absolute; left: 26px; top: 26px; width: 30px; height: 30px; border-radius: 50%; background: rgba(255,255,255,.55); }
+.tc-pad { position: absolute; right: 8%; bottom: 14px; width: 190px; height: 120px; }
+.tc-pad i { position: absolute; display: grid; place-items: center; width: 56px; height: 56px; border-radius: 50%; border: 2px solid rgba(255,255,255,.45); background: rgba(0,0,0,.2); color: rgba(255,255,255,.9); font-style: normal; font-size: 10px; scale: var(--tc-scale); opacity: var(--tc-op); }
+.tc-pad .a { right: 0; bottom: 0; width: 68px; height: 68px; } .tc-pad .b { right: 84px; bottom: 6px; } .tc-pad .c { right: 6px; bottom: 74px; } .tc-pad .d { right: 76px; bottom: 66px; width: 46px; height: 46px; }
+.tc-preview.lefty .tc-stick { left: auto; right: 12%; } .tc-preview.lefty .tc-pad { right: auto; left: 8%; }
+.tc-preview.lefty .tc-pad i { right: auto; }
+.tc-preview.lefty .tc-pad .a { left: 0; } .tc-preview.lefty .tc-pad .b { left: 84px; } .tc-preview.lefty .tc-pad .c { left: 6px; } .tc-preview.lefty .tc-pad .d { left: 76px; }
+@media (max-width: 620px) { .set-row { grid-template-columns: 1fr; } .kb-row { grid-template-columns: 1fr auto 28px; } .kb-key { min-width: 70px; } .kb-key.wide { min-width: 140px; } .pad-live { grid-template-columns: repeat(8, minmax(0, 1fr)); } }
+
+/* ---- сенсорный оверлей по настройкам: размер/прозрачность кнопок, леворукий режим, фиксированный стик, счётчик FPS ---- */
+.mission.touch { --tc-scale: 1; --tc-op: .85; }
+.mission.touch .m-btn { scale: var(--tc-scale); opacity: var(--tc-op); }
+.mission.touch .m-e:not(.ready) { opacity: calc(var(--tc-op) * .6); }
+.mission.touch .m-stick { opacity: var(--tc-op); }
+.mission.touch.stick-fixed .m-stick { border-width: 2px; }
+.mission.touch.lefty .m-touchui { transform: scaleX(-1); }
+.mission.touch.lefty .m-btn { transform: scaleX(-1); }
+.mission.touch.no-hints .m-hint { display: none; }
+.m-fps { position: absolute; left: max(8px, env(safe-area-inset-left)); top: max(8px, env(safe-area-inset-top)); z-index: 9; font: 11px/1 var(--display); letter-spacing: .08em; color: #9f9; text-shadow: 0 1px 2px #000; pointer-events: none; }

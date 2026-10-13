@@ -371,7 +371,7 @@
     this.rigModel(id);
     if (o.equip) this.equip(w, true);
     this.layer.classList.add('armed');
-    if (!this.touch && !this.cb.hint) { this.cb.hint = true; this.qs('.m-hint').textContent = 'WASD MOVE  |  MOUSE LOOK  |  LMB FIRE  |  RMB AIM  |  R RELOAD  |  Q/1-9 SLOT  |  E USE  |  SHIFT RUN  |  C CROUCH  |  Z X LEAN  |  F FISTS  |  V KICK'; }
+    if (!this.touch && !this.cb.hint) { this.cb.hint = true; const KL = (id) => (window.NexaSettings ? NexaSettings.keyLabel(id) : '').replace(/^[LR]-/, ''); this.qs('.m-hint').textContent = ['forward', 'left', 'back', 'right'].map(KL).join('') + ' MOVE  |  MOUSE LOOK  |  LMB FIRE  |  RMB AIM  |  ' + KL('reload') + ' RELOAD  |  ' + KL('swap') + '/1-9 SLOT  |  ' + KL('use') + ' USE  |  ' + KL('run') + ' RUN  |  ' + KL('crouch') + ' CROUCH  |  ' + KL('leanL') + ' ' + KL('leanR') + ' LEAN  |  ' + KL('fists') + ' FISTS  |  ' + KL('kick') + ' KICK'; }
     this.refreshHud();
     return w;
   };
@@ -1206,7 +1206,7 @@
     }
   };
   Run.prototype.rumble = function (strong, weak, ms) {
-    const buzz = !this.padObj && this.touch && navigator.vibrate; // Android: вибрация телефона вместо вибромоторов геймпада
+    const buzz = !this.padObj && this.touch && navigator.vibrate && (!window.NexaSettings || NexaSettings.get('touch.haptics')); // Android: вибрация телефона вместо вибромоторов геймпада
     if ((!this.padObj && !buzz) || this.rumbleOff) return;
     const now = performance.now(); if (now < (this.rumbleT || 0)) return;
     this.rumbleT = now + ms * 0.6;
@@ -1308,7 +1308,7 @@
       const b = this.qs(sel); if (!b) return;
       let id = null, lx = 0, ly = 0;
       this.on(b, 'pointerdown', (e) => { e.preventDefault(); resume(); id = e.pointerId; lx = e.clientX; ly = e.clientY; try { b.setPointerCapture(id); } catch (err) {} b.classList.add('held'); down(); });
-      this.on(b, 'pointermove', (e) => { if (e.pointerId !== id || !drag) return; this.turnBy((e.clientX - lx) * 0.0055, (e.clientY - ly) * 0.0055); lx = e.clientX; ly = e.clientY; });
+      this.on(b, 'pointermove', (e) => { if (e.pointerId !== id || !drag) return; const lk = window.NexaSettings ? NexaSettings.get('touch.look') / 100 : 1; this.turnBy((e.clientX - lx) * 0.0055 * lk, (e.clientY - ly) * 0.0055 * lk); lx = e.clientX; ly = e.clientY; });
       const end = (e) => { if (e.pointerId !== id) return; id = null; b.classList.remove('held'); up && up(); };
       this.on(b, 'pointerup', end); this.on(b, 'pointercancel', end);
     };

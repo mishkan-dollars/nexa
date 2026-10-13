@@ -85,7 +85,7 @@
   // ------------------------------------------------------------------ сцена
   function createStage(T, qn, mask) {
     const C = window.Missions._core, { merge, m4, sph, cylY } = C.geo;
-    const q = QL[qn] || QL.MEDIUM, seg = q.seg;
+    const q = QL[qn] || (qn === 'ULTRA' ? QL.HIGH : QL.MEDIUM), seg = q.seg;
     const canvas = document.createElement('canvas');
     const renderer = new T.WebGLRenderer({ canvas, antialias: q.aa, alpha: false });
     renderer.setClearColor(0x000000, 1);

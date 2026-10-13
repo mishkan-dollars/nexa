@@ -783,7 +783,7 @@
 
   var qualitySel = document.getElementById('quality');
   if (qualitySel && window.Missions) {
-    qualitySel.value = Missions.getQuality();
+    qualitySel.value = Missions.getQualitySaved ? Missions.getQualitySaved() : Missions.getQuality();
     qualitySel.addEventListener('change', function () { Missions.setQuality(qualitySel.value); });
   }
 
