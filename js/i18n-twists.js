@@ -113,4 +113,16 @@
     "ВОТ ОНО. ЗДАНИЕ NEXA. ЗАПОМНИ ЭТУ ДВЕРЬ.": ["THIS IS IT. THE NEXA BUILDING. REMEMBER THAT DOOR.", "DAS IST ES. DAS NEXA-GEBÄUDE. MERK DIR DIESE TÜR."],
     "ЭТО НЕ УЧЕНИЯ. ЗАМКИ НАСТОЯЩИЕ. БЕГИ!": ["THIS IS NOT A DRILL. THE LOCKS ARE REAL. RUN!", "DAS IST KEINE ÜBUNG. DIE SCHLÖSSER SIND ECHT. LAUF!"]
   });
+  I18N.add('en', {
+    "SUBJECT 024": ["СУБЪЕКТ 024","SUBJEKT 024"],
+    "RECORD": ["РЕКОРД","REKORD"],
+    "SUBJECT 024 BEATEN": ["СУБЪЕКТ 024 ПОБЕЖДЁН","SUBJEKT 024 GESCHLAGEN"],
+    "SUBJECT 024 WAS FASTER": ["СУБЪЕКТ 024 БЫЛ БЫСТРЕЕ","SUBJEKT 024 WAR SCHNELLER"],
+    "YOU — 60 S AGO": ["ТЫ — 60 С НАЗАД","DU — VOR 60 S"],
+    "RECORDING ERASED": ["ЗАПИСЬ СТЁРТА","AUFZEICHNUNG GELÖSCHT"],
+    "YOUR OWN RECORDING JOINS THE FIGHT — IT MOVES AND SHOOTS LIKE YOU DID A MINUTE AGO": ["ТВОЯ СОБСТВЕННАЯ ЗАПИСЬ ВСТУПАЕТ В БОЙ — ОНА ДВИЖЕТСЯ И СТРЕЛЯЕТ ТАК, КАК ТЫ МИНУТУ НАЗАД","DEINE EIGENE AUFZEICHNUNG GREIFT EIN — SIE BEWEGT SICH UND SCHIESST WIE DU VOR EINER MINUTE"]
+  });
+  I18N.add('ru', {
+    "ЗАПИСЬ СУБЪЕКТА 083 ВОСПРОИЗВЕДЕНА. ОДНА ТЕНЬ ЛИШНЯЯ.": ["THE RECORDING OF SUBJECT 083 IS PLAYING. ONE SHADOW TOO MANY.","DIE AUFZEICHNUNG VON SUBJEKT 083 LÄUFT. EIN SCHATTEN ZU VIEL."]
+  });
 }());

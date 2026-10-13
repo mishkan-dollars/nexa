@@ -203,4 +203,94 @@
       }
     }
   });
+
+  // ===================================================================== 8 PROFICIENCY TEST — призрак прошлого испытуемого
+  // На каждом этапе по полигону бежит прозрачный силуэт Субъекта 024 с «рекордным» временем. Уложился быстрее — бонус и «SUBJECT 024 BEATEN».
+  TW.add(8, {
+    name: 'ghost-subject',
+    REC: { static: 45, moving: 40, live: 70 },
+    setup(r, T) {
+      const S = T.s;
+      S.el = T.panel('tw-corner tw-box tw-rows', '<h3>SUBJECT 024</h3><p><span>RECORD</span><b class="tw-n">0</b></p>', true);
+      S.el.style.display = 'none'; S.n = S.el.querySelector('.tw-n');
+      S.stage = ''; S.wins = 0;
+    },
+    settle(r, T) {
+      const S = T.s; if (!S.stage || S.settled) return;
+      S.settled = true;
+      const el = T.t - S.t0, rec = this.REC[S.stage];
+      if (el < rec) { S.wins += 1; T.bonus(15, 'SUBJECT 024 BEATEN'); r.hint('SUBJECT 024 BEATEN', 3); }
+      else r.hint('SUBJECT 024 WAS FASTER', 2.6);
+      if (S.g) S.g.show(false);
+    },
+    phase(r, T, name) {
+      const S = T.s;
+      if (!this.REC[name]) return;
+      if (S.stage && S.stage !== name) this.settle(r, T);
+      S.stage = name; S.t0 = T.t; S.settled = false;
+      if (!S.g) S.g = T.ghost({ opacity: 0.32 });
+      S.g.show(true); S.el.style.display = ''; S.n.textContent = this.REC[name];
+    },
+    reset(r, T) { const S = T.s; if (S.g) S.g.show(false); },
+    tick(r, T, dt) {
+      const S = T.s;
+      if (!S.stage) return;
+      if (r.ending) { this.settle(r, T); S.el.style.display = 'none'; return; }
+      if (S.settled || r.locked) return;
+      const rec = this.REC[S.stage], u = (T.t - S.t0) / rec;
+      S.n.textContent = Math.max(0, Math.ceil(rec - (T.t - S.t0)));
+      if (u >= 1) { if (S.g) S.g.show(false); return; }
+      const f = (k) => ({ x: Math.sin(k * 18) * 8, z: 12 - k * 40 }), a = f(u), b = f(Math.min(1, u + 0.01));
+      S.g.show(true); S.g.set(a.x, a.z, Math.atan2(b.x - a.x, b.z - a.z));
+    }
+  });
+
+  // ===================================================================== 16 NEXA PROTOCOL — твоя запись из прошлого
+  // Пока идёт бой с Оператором, пишется движение игрока. Через 60 с в бой вступает «ЗАПИСЬ»: ты минутной давности — идёт твоим путём, стреляет, когда стрелял ты.
+  TW.add(16, {
+    name: 'own-recording',
+    LAG: 60,
+    phase(r, T, name) {
+      const S = T.s;
+      S.rec = []; S.t0 = T.t; S.e = null; S.rt = 0; S.on = name === 'operator';
+      T.att(() => { if (S.lab) { S.lab.visible = false; } S.e = null; });
+    },
+    reset(r, T) { T.s.on = false; },
+    tick(r, T, dt) {
+      const S = T.s;
+      if (!S.on || r.locked) return;
+      const el = T.t - S.t0, p = r.p;
+      S.rt -= dt;
+      if (S.rt <= 0) { S.rt = 0.1; S.rec.push([p.x, p.z, p.yaw + Math.PI, (r.time - (r.twShotT || -9)) < 0.15 ? 1 : 0]); }
+      if (!S.e && el >= this.LAG && T.foes((e) => e.type === 'boss').length) this.spawn(r, T);
+      const e = S.e;
+      if (e) {
+        if (e.dead) { S.e = null; if (S.lab) S.lab.visible = false; T.bonus(20, 'RECORDING ERASED'); r.hint('RECORDING ERASED', 2.4); return; }
+        S.lab.position.set(e.x, 2.35, e.z);
+      }
+    },
+    spawn(r, T) {
+      const S = T.s, T3 = window.THREE, def = this;
+      const a = S.rec[0] || [0, 8, 0, 0];
+      const e = r.enemy('grunt', a[0], a[1], { hp: 3, drop: false, exact: true });
+      e.n.vest.visible = true;
+      let fcd = 0;
+      e.ai = (q, dt2) => {
+        const k = Math.min(S.rec.length - 1, Math.floor((T.t - S.t0 - def.LAG) * 10)), s2 = S.rec[Math.max(0, k)];
+        if (!s2) return true;
+        const g = q.n.g.position, nx = s2[0], nz = s2[1];
+        if (!r.blockedE(nx, nz)) { g.x += (nx - g.x) * Math.min(1, dt2 * 8); g.z += (nz - g.z) * Math.min(1, dt2 * 8); }
+        q.n.yaw = Math.atan2(r.p.x - g.x, r.p.z - g.z); q.n.creeping = Math.hypot(nx - g.x, nz - g.z) > 0.15;
+        q.n.armT = 1; fcd -= dt2;
+        if (s2[3] && fcd <= 0 && q.los && q.stagger <= 0) { fcd = 0.11; r.enemyShoot(q, Math.hypot(r.p.x - g.x, r.p.z - g.z)); }
+        return true;
+      };
+      S.e = e;
+      if (!S.lab) S.lab = T.label('YOU — 60 S AGO', 0, 2.35, 0, { w: 2.6, size: 44, bill: true, keep: true });
+      S.lab.visible = true;
+      r.glitch && r.glitch(0.3); r.sfx('error');
+      r.hint('YOUR OWN RECORDING JOINS THE FIGHT — IT MOVES AND SHOOTS LIKE YOU DID A MINUTE AGO', 5);
+      r.say('OPERATOR', 'ЗАПИСЬ СУБЪЕКТА 083 ВОСПРОИЗВЕДЕНА. ОДНА ТЕНЬ ЛИШНЯЯ.', 3);
+    }
+  });
 }());
