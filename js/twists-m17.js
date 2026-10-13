@@ -680,4 +680,164 @@
     },
     phase(r, T, name) { T.s.sir = 0; }
   });
+
+  // ===================================================================== 27 HOSTAGE — освободить или взять в плен
+  // Раненые похитители иногда сдаются: опустились на колени. Можно взять в плен [E] (мораль, кредиты) или добить (жестоко). Итог — на финальной карточке.
+  TW.add(27, {
+    name: 'mercy',
+    setup(r, T) { T.s.cap = 0; T.s.exe = 0; T.s.freed = 0; },
+    enemy(r, T, e) {
+      const S = T.s;
+      if (T.ph !== 's1' || e.type === 'boss' || Math.random() > 0.5) return;
+      e.surr = true;
+      e.onHit = () => {
+        if (e.sur || e.dead || e.hp <= 0 || e.hp > e.max * 0.4) return;
+        e.sur = true; e.stagger = 0; e.tele = 0; e.burst = 0;
+        e.ai = (q) => { q.n.cvT = 1; q.n.daze = 1; q.n.armT = 0; q.n.creeping = false; return true; };
+        const it = T.interact({ pos: [e.x, 1.1, e.z], label: 'TAKE CAPTIVE', reach: 2.4, enabled: () => !e.dead && !e.friendly, use: () => { it.done(); e.friendly = true; e.n.vest.visible = true; S.cap += 1; T.bonus(15, 'CAPTIVE TAKEN'); r.sfx('notification'); } });
+        T.att(() => it.done());
+        e.onDeath = () => { if (e.sur && !e.friendly) { S.exe += 1; r.hint('EXECUTION — THE HANDLER TAKES NOTE', 2.2); } };
+        if (!S.said) { S.said = true; r.hint('A CAPTOR SURRENDERS — TAKE HIM CAPTIVE [E] OR FINISH HIM', 4); }
+      };
+    },
+    tick(r, T, dt) {
+      const S = T.s;
+      const sec = T.sec();
+      if (sec && sec.hos) S.freed = Math.max(S.freed, sec.hos.filter((h) => h.npc.goal).length);
+      if (r.ending && !S.card) {
+        const end = r.qs('.m-end');
+        if (end.classList.contains('on') && end.querySelector('h2').textContent === 'MISSION COMPLETE') {
+          S.card = true;
+          const k = S.exe === 0 && (S.cap > 0 || S.freed > 0) ? 'MERCIFUL' : S.exe > S.cap ? 'RUTHLESS' : 'PRAGMATIC';
+          end.querySelector('p').insertAdjacentHTML('beforeend', '<br>CONDUCT: ' + k + '<br>PRISONERS: ' + S.cap);
+        }
+      }
+    }
+  });
+
+  // ===================================================================== 28 DEMOLITION — обрушить платформу на охрану
+  // В боевых секторах над площадкой висит платформа на двух группах опор с красными зарядами. Выстрел в заряд роняет свою половину на всех под ней.
+  TW.add(28, {
+    name: 'collapse',
+    phase(r, T, name) {
+      const S = T.s, sec = T.secOf(name), T3 = window.THREE;
+      if (!sec || sec.b !== 'fight') return;
+      const cz = sec.cz, def = this;
+      r.scene.children.slice().forEach((o) => { const c = o.userData && o.userData.col; if (!c || c.off || ((c.y1 - c.y0) > 3.3 && (c.x1 - c.x0) > 8)) return; if (c.x0 < 6.8 && c.x1 > -6.8 && c.z0 < cz + 4.6 && c.z1 > cz - 4.6) T.gone(o); });
+      [-1, 1].forEach((s) => {
+        const slab = T.add(new T3.Mesh(r.g.box, r.basic(0x7a7a7a))); slab.scale.set(6, 0.5, 8); slab.position.set(s * 3.1, 3.5, cz);
+        const post = T.solid(s * 5.7, 1.7, cz - 3.2, 0.5, 3.4, 0.5, 0x555555), post2 = T.solid(s * 5.7, 1.7, cz + 3.2, 0.5, 3.4, 0.5, 0x555555);
+        const mark = T.add(new T3.Mesh(r.g.box, r.basic(0xd2271f))); mark.scale.set(0.6, 0.3, 0.6); mark.position.set(s * 5.35, 1.3, cz - 3.2);
+        const tg = r.shootTarget(s * 5.35, 1.3, cz - 3.2, 0.35, { hp: 2, onDeath: () => def.drop(r, T, slab, [post, post2], mark, s, cz) });
+        if (tg.m) tg.m.visible = false;
+        T.att(() => { if (tg.remove) tg.remove(); });
+      });
+      if (!S.said) { S.said = true; T.after(4, () => r.hint('RED CHARGES ON THE SUPPORTS — SHOOT ONE TO DROP THE PLATFORM ON THE GUARDS', 5)); }
+    },
+    drop(r, T, slab, posts, mark, s, cz) {
+      mark.visible = false; r.explode(s * 5.35, 1.3, cz - 3.2, 2.2, 10); posts.forEach((p) => T.gone(p));
+      let v = 0;
+      const off = r.addHook((dt) => {
+        if (r.locked) return;
+        v += dt * 14; slab.position.y -= v * dt; slab.rotation.z = s * Math.min(0.2, (3.5 - slab.position.y) * 0.1);
+        if (slab.position.y <= 0.5) {
+          slab.position.y = 0.5; off(); r.shake(0.12, 0.8); r.snd && r.snd.play('boom', { k: 0.8 }); r.sparks(s * 3, 0.5, cz, 0, 1, 0, 14);
+          const inside = (x, z) => Math.abs(x - s * 3.1) < 3.3 && Math.abs(z - cz) < 4.3; let n = 0;
+          T.foes().forEach((e) => { if (inside(e.x, e.z)) { r.damageEnemy(e, 99999, false); n += 1; } });
+          if (n) T.bonus(6 * n, 'COLLAPSE');
+          if (inside(r.p.x, r.p.z)) r.hurt(65);
+        }
+      });
+      T.att(off);
+    }
+  });
+
+  // ===================================================================== 29 GAS LEAK — газ как оружие
+  // В боевых секторах три вентиля: открыл — облако газа на 12 с (враги кашляют и гибнут). Противогаз [E] у входа даёт 30 с защиты и от газа сектора.
+  TW.add(29, {
+    name: 'gas-valves',
+    setup(r, T) {
+      const S = T.s;
+      S.mask = 0;
+      const h0 = r.hurt;
+      r.hurt = function (a, fx, fz) { if (S.mask > 0 && fx === undefined) a *= 0.1; return h0.call(this, a, fx, fz); };
+      S.vig = T.panel('', '', true); S.vig.style.cssText = 'inset:0;z-index:4;display:none;background:radial-gradient(ellipse at center,rgba(0,0,0,0) 35%,rgba(0,0,0,.85) 100%)';
+      S.hud = T.panel('tw-corner tw-box tw-rows', '<h3>GAS MASK</h3><p><span>LEFT</span><b class="tw-n">0</b></p>', true); S.hud.style.display = 'none'; S.n = S.hud.querySelector('.tw-n');
+    },
+    phase(r, T, name) {
+      const S = T.s, sec = T.secOf(name), T3 = window.THREE;
+      S.clouds = [];
+      T.att(() => { S.clouds.forEach((c) => { c.m.visible = false; if (c.m.parent) c.m.parent.remove(c.m); }); S.clouds = []; });
+      if (!sec || sec.b === 'run') return;
+      let taken = false;
+      const mit = T.interact({ pos: [0, 1.1, sec.zA - 3.4], label: 'TAKE THE GAS MASK', reach: 2.6, enabled: () => !taken && T.ph === name, use: () => { taken = true; mit.done(); S.mask = 30; r.sfx('notification'); r.hint('MASK ON — 30 S OF PROTECTION', 2.4); } });
+      const hw = sec.W / 2 - 1.2;
+      [[-1, 0.28], [1, 0.5], [-1, 0.72]].forEach((a) => {
+        const vx = a[0] * hw, vz = sec.zA - a[1] * sec.D, gx = a[0] * (hw - 5);
+        T.solid(vx, 0.6, vz, 0.5, 1.2, 0.5, 0x777777);
+        const wheel = T.add(new T3.Mesh(new T3.TorusGeometry(0.28, 0.06, 6, 12), r.basic(0xd2271f))); wheel.position.set(vx - a[0] * 0.4, 1.3, vz); wheel.rotation.y = Math.PI / 2;
+        let used = false;
+        const it = T.interact({ pos: [vx, 1.2, vz], label: 'OPEN THE VALVE', reach: 2.6, enabled: () => !used && T.ph === name, use: () => {
+          used = true; it.done();
+          const m = new T3.Mesh(new T3.SphereGeometry(5, 12, 9), new T3.MeshBasicMaterial({ color: 0xdddddd, transparent: true, opacity: 0.22, depthWrite: false }));
+          m.position.set(gx, 1.5, vz); r.scene.add(m); S.clouds.push({ m, x: gx, z: vz, t: 12, acc: 0 });
+          r.snd && r.snd.play('smoke'); r.hint('GAS RELEASED — KEEP OUT WITHOUT A MASK', 2.4);
+        } });
+      });
+      if (!S.said) { S.said = true; T.after(4, () => r.hint('VALVES ON THE WALLS RELEASE GAS — MASK AT THE ENTRANCE PROTECTS YOU FOR 30 S', 6)); }
+    },
+    reset(r, T) { T.s.mask = 0; },
+    tick(r, T, dt) {
+      const S = T.s;
+      if (!S.hud) return;
+      if (S.mask > 0 && !r.locked) { S.mask = Math.max(0, S.mask - dt); S.n.textContent = Math.ceil(S.mask); }
+      S.hud.style.display = S.vig.style.display = S.mask > 0 ? '' : 'none';
+      if (r.locked) return;
+      for (let i = S.clouds.length - 1; i >= 0; i -= 1) {
+        const c = S.clouds[i]; c.t -= dt; c.acc += dt; c.m.scale.setScalar(0.9 + 0.1 * Math.sin(T.t * 3));
+        if (c.t <= 0) { c.m.visible = false; if (c.m.parent) c.m.parent.remove(c.m); S.clouds.splice(i, 1); continue; }
+        if (c.acc < 0.5) continue;
+        c.acc = 0;
+        T.foes().forEach((e) => { if (Math.hypot(e.x - c.x, e.z - c.z) < 5.2) { r.damageEnemy(e, 10, false); e.stagger = Math.max(e.stagger, 0.4); } });
+        if (S.mask <= 0 && Math.hypot(r.p.x - c.x, r.p.z - c.z) < 5.2) { r.hurt(6); r.toast('COUGHING — GET OUT OF THE GAS', 0.8); }
+      }
+    }
+  });
+
+  // ===================================================================== 30 DIVERSION — пульт шума
+  // В скрытном секторе пульт: сирена в левом или правом крыле (по разу). Охрана бежит к динамику — маршруты рисуются стрелками по полу.
+  TW.add(30, {
+    name: 'noise-console',
+    phase(r, T, name) {
+      const S = T.s, sec = T.secOf(name), T3 = window.THREE;
+      S.lines = []; S.t = 0; S.spk = null;
+      T.att(() => { S.lines.forEach((l) => { l.visible = false; if (l.parent) l.parent.remove(l); }); S.lines = []; S.spk = null; });
+      if (!sec || sec.b !== 'stealth') return;
+      const hw = sec.W / 2 - 3, cz = sec.cz;
+      T.solid(0, 0.55, sec.zA - 4, 1.4, 1.1, 0.7, 0x333333); r.strip(0, 1.2, sec.zA - 4.36, 1.0, 0.3, 0.04, 0xffffff);
+      let used = false;
+      [['LEFT', -hw], ['RIGHT', hw]].forEach((a) => {
+        const it = T.interact({ pos: [a[1] * 0.1, 1.2, sec.zA - 4], label: 'SIREN: ' + a[0] + ' WING', reach: 2.8, enabled: () => !used && T.ph === name, use: () => {
+          used = true; it.done(); S.spk = [a[1], cz]; S.t = 13; r.snd && r.snd.play('alarm', { k: 0.5 }); r.toast('SIREN ON — GUARDS ARE MOVING', 2);
+          const mk = new T3.Mesh(r.g.box, r.basic(0xffffff)); mk.scale.set(0.8, 0.1, 0.8); mk.position.set(a[1], 0.08, cz); T.add(mk); S.mk = mk;
+        } });
+      });
+      if (!S.said) { S.said = true; T.after(3, () => r.hint('NOISE CONSOLE: PICK A WING — THE GUARDS WILL RUN TO THE SIREN', 5)); }
+    },
+    tick(r, T, dt) {
+      const S = T.s, M = r.mm;
+      if (!S.spk || r.locked || !M || !M.S) return;
+      S.t -= dt;
+      const gs = M.S.guards().filter((q) => !q.dead), T3 = window.THREE;
+      gs.forEach((q, i) => {
+        if (!M.S.alarm && S.t > 0) { q.inv = [S.spk[0], S.spk[1]]; q.invT = 4; q.hold = 0; }
+        let l = S.lines[i];
+        if (!l) { l = S.lines[i] = new T3.Mesh(r.g.box, new T3.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.45, depthWrite: false })); r.scene.add(l); }
+        const g = q.n.g.position, dx = S.spk[0] - g.x, dz = S.spk[1] - g.z, d = Math.hypot(dx, dz) || 1;
+        l.visible = S.t > 0; l.position.set(g.x + dx / 2, 0.06, g.z + dz / 2); l.scale.set(0.12, 0.03, d); l.rotation.y = Math.atan2(dx, dz);
+      });
+      if (S.mk) S.mk.visible = Math.sin(T.t * 10) > 0 && S.t > 0;
+      if (S.t <= 0) S.lines.forEach((l) => { l.visible = false; });
+    }
+  });
 }());
