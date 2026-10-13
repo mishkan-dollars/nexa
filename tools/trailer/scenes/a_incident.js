@@ -111,11 +111,11 @@
     // 1. проход с фонарём: впереди зигзаг перегородок, на ходу вокруг из темноты возникает круг силуэтов; луч медленно ведёт по ним
     { id: 'torch_walk', beats: 8, pre: 0.4,
       start(S) {
-        const r = S.r; AK.fpStart(S, 3.4, 10.5, 0.0); r.setAmbient(0.2); r.torch.intensity = 1.9; hideRing(S); S.A.set = false;
+        const r = S.r; AK.fpStart(S, 2.9, 10.5, 0.0); r.setAmbient(0.27); r.torch.intensity = 2.5; hideRing(S); S.A.set = false;
       },
       tick(S, t, dt, A) {
         const r = S.r, p = r.p;
-        if (t < 1.9) { S.fp.walkTo(3.4, 1.8, false); S.fp.look(0.0, -0.02, dt, 0.4, 2); }
+        if (t < 1.9) { S.fp.walkTo(2.9, 1.8, false); S.fp.look(0.0, -0.02, dt, 0.4, 2); }
         else { S.fp.stop(); }
         if (!A.set && t >= 1.45) { A.set = true; ringAt(S, p.x, p.z, 3.6, 0.5); AK.log(S, 'ring'); }
         if (t >= 1.9) S.fp.look(0.0 + Math.min(1, (t - 1.9) / 1.4) * -2.4 + 0.7, -0.03, dt, 0.5, 1.3);
@@ -124,30 +124,30 @@
     // 2. круг свидетелей и один в центре: облёт на высоте глаз, камера поднимается
     { id: 'ring_orbit', beats: 8, pre: 0.4,
       start(S) {
-        const r = S.r; AK.purge(S); r.setAmbient(0.3); r.torch.intensity = 2.4;
-        S.A.h = AK.hero(S, 3.4, 7.6, Math.PI, null);
-        r.p.x = 3.4; r.p.z = 7.6; ringAt(S, 3.4, 7.6, 3.6, 0.2); this.cam(S, 0, 0);
+        const r = S.r; AK.purge(S); r.setAmbient(0.34); r.torch.intensity = 2.6;
+        S.A.h = AK.hero(S, 5.0, 3.5, Math.PI, null);
+        r.p.x = 5.0; r.p.z = 3.5; ringAt(S, 5.0, 3.5, 3.2, 0.2); this.cam(S, 0, 0);
       },
-      tick(S, t, dt, A) { S.r.p.x = 3.4; S.r.p.z = 7.6; S.r.p.moving = 0; },
+      tick(S, t, dt, A) { S.r.p.x = 5.0; S.r.p.z = 3.5; S.r.p.moving = 0; },
       cam(S, k, t) {
-        const u = AK.u(S, k, 0.55), a = 0.35 + 1.9 * u, R = 8.2 - 1.2 * u;
-        AK.cam(S, t, [3.4 + Math.sin(a) * R, 1.25 + 1.5 * u, 7.6 + Math.cos(a) * R], [3.4, 1.25, 7.6], 62 - 6 * u, { amp: 0.012 });
+        const u = AK.u(S, k, 0.55), a = -1.1 + 1.65 * u, R = 6.4 - 0.6 * u;
+        AK.cam(S, t, [5.0 + Math.sin(a) * R, 1.2 + 1.5 * u, 3.5 + Math.cos(a) * R], [5.0, 1.2, 3.5], 62 - 6 * u, { amp: 0.012 });
       } },
     // 3. круг сжимается: потолка нет, камера высоко над центром
     { id: 'ring_close', beats: 6, pre: 0.3,
       start(S) {
-        const r = S.r; AK.purge(S); AK.ceil(S, false); r.setAmbient(0.55); r.torch.intensity = 1.2;
-        S.A.h = AK.hero(S, 3.4, 7.6, Math.PI, null);
-        r.p.x = 3.4; r.p.z = 7.6; ringAt(S, 3.4, 7.6, 4.6, 0.9); this.cam(S, 0, 0);
+        const r = S.r; AK.purge(S); AK.ceil(S, false); r.setAmbient(0.85); r.torch.intensity = 1.0;
+        S.A.h = AK.hero(S, 5.0, 3.5, Math.PI, null);
+        r.p.x = 5.0; r.p.z = 3.5; ringAt(S, 5.0, 3.5, 3.6, 0.9); this.cam(S, 0, 0);
       },
       tick(S, t, dt, A) {
-        const r = S.r; r.p.x = 3.4; r.p.z = 7.6; r.p.moving = 0;
-        r.ring.forEach((n, i) => { const a = 0.9 + (i / r.ring.length) * TAU; n.goal = { x: 3.4 + Math.sin(a) * 2.0, z: 7.6 + Math.cos(a) * 2.0, speed: 1.1, res: null }; });
+        const r = S.r; r.p.x = 5.0; r.p.z = 3.5; r.p.moving = 0;
+        r.ring.forEach((n, i) => { const a = 0.9 + (i / r.ring.length) * TAU; n.goal = { x: 5.0 + Math.sin(a) * 1.7, z: 3.5 + Math.cos(a) * 1.7, speed: 0.9, res: null }; });
       },
       end(S) { AK.ceil(S, true); },
       cam(S, k, t) {
         const u = AK.u(S, k, 0.5);
-        AK.cam(S, t, [3.4 + 1.4 * Math.sin(0.5 + u), 6.2 - 2.2 * u, 7.6 + 8.0 * Math.cos(0.5 + u) - 3.0 * u], [3.4, 0.7, 7.6], 58 - 6 * u, { amp: 0.01 });
+        AK.cam(S, t, [5.0 + 2.6 * Math.sin(0.5 + u), 7.4 - 2.4 * u, 3.5 + 4.0 * Math.cos(0.5 + u)], [5.0, 0.7, 3.5], 60 - 6 * u, { amp: 0.01 });
       } }
   ], 0.4);
 
