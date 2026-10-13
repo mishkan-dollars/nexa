@@ -41,6 +41,8 @@ const startEncoder = (id) => {
     if (!e.ff.stdin.write(buf)) await new Promise((res) => e.ff.stdin.once('drain', res));
     e.frames += 1;
   });
+  const sbFile = path.join(ROOT, 'tools', 'trailer', 'storyboard.json');
+  if (place && fs.existsSync(sbFile)) { const sb = JSON.parse(fs.readFileSync(sbFile, 'utf8')); if (sb.post) await page.evaluate((p) => window.Trl.setPost(p), sb.post); }
   await page.addScriptTag({ path: path.resolve(SCENE) });
   const t0 = Date.now();
   const res = await page.evaluate(async (a) => window.Trl.runScene(a.name, { cuts: a.cuts, fps: a.fps, pr: a.pr, send: (id, i, d) => window.__trlSend(id, i, d), place: a.place }),
@@ -49,7 +51,7 @@ const startEncoder = (id) => {
   for (const id of Object.keys(encoders)) encoders[id].ff.stdin.end();
   await Promise.all(Object.keys(encoders).map((id) => encoders[id].done));
   const manifest = { scene: NAME, w: W, h: H, fps: FPS, quality: Q, ms: Date.now() - t0, cuts: {} };
-  Object.keys(encoders).forEach((id) => { manifest.cuts[id] = { file: path.relative(ROOT, encoders[id].file), frames: encoders[id].frames, cam: res.cam && res.cam[id] }; });
+  Object.keys(encoders).forEach((id) => { manifest.cuts[id] = { file: path.relative(ROOT, encoders[id].file), frames: encoders[id].frames, cam: res.cam && res.cam[id], events: res.events && res.events[id] }; });
   manifest.placed = !!place;
   fs.writeFileSync(path.join(OUT, NAME + '.json'), JSON.stringify(manifest, null, 1));
   console.log(JSON.stringify({ scene: NAME, ms: manifest.ms, sim: { ms: res.ms, frames: res.frames }, cuts: Object.fromEntries(Object.entries(manifest.cuts).map(([k, v]) => [k, { file: v.file, frames: v.frames }])) }));

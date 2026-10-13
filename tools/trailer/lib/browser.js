@@ -19,7 +19,7 @@ async function openGame(opts) {
   const page = await ctx.newPage();
   page.setDefaultTimeout(0);
   page.on('pageerror', (e) => { if (!opts.quiet) console.error('[page]', String(e).slice(0, 400)); });
-  page.on('console', (m) => { if (opts.verbose) console.log('[console]', m.text().slice(0, 300)); });
+  page.on('console', (m) => { if (opts.verbose || process.env.NEXA_VERBOSE) console.log('[console]', m.type(), m.text().slice(0, 300)); });
   // звук в съёмке всегда выключен (правило проекта): контекст не возобновляется, медиа не играет
   await page.addInitScript((q) => {
     try {

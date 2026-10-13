@@ -343,19 +343,21 @@
       this.fxU = {
         tDiffuse: { value: this.rt.texture }, uK: { value: 0.2 }, uBlur: { value: new T.Vector2() },
         uCA: { value: full ? 0.0025 : 0 }, uTime: { value: 0 }, uGrain: { value: full ? 0.06 : 0.04 }, uVig: { value: 0.7 }, uGain: { value: 1.22 },
-        uShk: { value: new T.Vector4(0.5, 0.5, 0, 0) }, uCon: { value: 0 }, uAsp: { value: 1.78 }
+        uShk: { value: new T.Vector4(0.5, 0.5, 0, 0) }, uCon: { value: 0 }, uAsp: { value: 1.78 },
+        uExp: { value: 0 }, uHaz: { value: new T.Vector4(0.5, 0.5, 0, 0) }   // взрывы (explosions.js): засвет экспозиции и марево над огнём
       };
       this.fxMat = new T.ShaderMaterial({
         uniforms: this.fxU, depthTest: false, depthWrite: false,
         vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
         fragmentShader: [
-          'precision mediump float; varying vec2 vUv; uniform sampler2D tDiffuse; uniform float uK, uCA, uTime, uGrain, uVig, uGain, uCon, uAsp; uniform vec2 uBlur; uniform vec4 uShk;',
+          'precision mediump float; varying vec2 vUv; uniform sampler2D tDiffuse; uniform float uK, uCA, uTime, uGrain, uVig, uGain, uCon, uAsp, uExp; uniform vec2 uBlur; uniform vec4 uShk, uHaz;',
           'float rnd(vec2 c){ return fract(sin(dot(c, vec2(12.9898, 78.233))) * 43758.5453); }',
           'vec3 tap(vec2 uv, vec2 off){ vec3 c; c.r = texture2D(tDiffuse, uv + off * (1.0 + uCA * 40.0)).r; c.g = texture2D(tDiffuse, uv).g; c.b = texture2D(tDiffuse, uv - off * (1.0 + uCA * 40.0)).b; return c; }',
           'void main(){',
           '  vec2 p = vUv * 2.0 - 1.0; float r2 = dot(p, p);',
           '  vec2 q = p * (1.0 + uK * r2) / (1.0 + uK * 2.0); vec2 uv = q * 0.5 + 0.5;',
           '  float rg = 0.0; if (uShk.w > 0.001) { vec2 dd = (vUv - uShk.xy) * vec2(uAsp, 1.0); float dl = length(dd); float wd = 0.03 + uShk.z * 0.07; rg = exp(-pow((dl - uShk.z) / wd, 2.0)) * uShk.w; uv += normalize(dd + vec2(1e-5)) / vec2(uAsp, 1.0) * rg * 0.045; }',
+          '  if (uHaz.w > 0.001) { vec2 hd = (vUv - uHaz.xy) * vec2(uAsp, 1.0); float hm = (1.0 - smoothstep(0.0, uHaz.z, length(hd))) * uHaz.w; float p1 = mod(uTime * 7.0, 6.2831853), p2 = mod(uTime * 16.1, 6.2831853), p3 = mod(uTime * 11.9, 6.2831853); uv += vec2(sin(vUv.y * 46.0 + vUv.x * 21.0 - p1) + 0.6 * sin(vUv.y * 105.8 - p2 + 1.7), 0.35 * cos(vUv.y * 78.2 - vUv.x * 17.0 - p3)) * hm * 0.0042; }',
           '  vec2 ca = q * uCA * (0.4 + r2);',
           '  vec3 col = tap(uv, ca);',
           '  float bl = length(uBlur);',
@@ -363,7 +365,7 @@
           '  if (uCon > 0.002) { vec3 za = col; for (int i = 1; i < 6; i++) { za += tap(uv - (uv - 0.5) * 0.014 * uCon * float(i), ca); } col = za / 6.0; col = mix(col, vec3(dot(col, vec3(0.299, 0.587, 0.114))), uCon * 0.75); }',
           '  float vig = 1.0 - (uVig + uCon * 0.5) * smoothstep(0.3, 1.5, r2);',
           '  float g = rnd(vUv * 900.0 + fract(uTime) * 37.0) - 0.5;',
-          '  col = (col * uGain + 0.03 + rg * 0.1) * vig + g * uGrain;',
+          '  col = (col * uGain * (1.0 + uExp * 0.9) + 0.03 + rg * 0.1 + uExp * 0.1) * vig + g * uGrain;',
           '  gl_FragColor = vec4(col, 1.0);',
           '}'
         ].join('\n')

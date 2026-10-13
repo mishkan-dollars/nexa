@@ -94,6 +94,7 @@
         if (i > 90 && !r.inCinema && r.cineDepth === 0) break;
       }
       r.hurt = () => {}; r.hp = r.maxHp || 100;
+      hookSound(r);
       r.pr = o.pr || r.q.pr; r.resize();
       r.blurX = 0; r.blurY = 0; r.timeScale = 1;
       try { r.snd && r.snd.ambient && r.snd.ambient.set(null); } catch (e) { /* звука нет */ }
@@ -105,6 +106,21 @@
       return { id, quality: r.qName, canvas: [r.renderer.domElement.width, r.renderer.domElement.height], p: { x: r.p.x, z: r.p.z }, bounds: r.bounds || null, t: r.time };
     } finally { simDepth -= 1; }
   };
+
+  // ================================================================== журнал звуковых событий
+  // Звук в съёмке выключен, но игра «проигрывает» события через r.snd.shot/play/blast: пишем их (время симуляции r.time), по журналу сведём настоящие звуки из assets.
+  Trl.events = []; Trl.rec = false;
+  const hookSound = (r) => {
+    const sn = r.snd; if (!sn || sn.__trl) return; sn.__trl = true;
+    ['shot', 'play', 'blast'].forEach((k) => {
+      const orig = sn[k]; if (typeof orig !== 'function') return;
+      sn[k] = function (a, b) {
+        if (Trl.rec) Trl.events.push({ t: Math.round(r.time * 1000) / 1000, k, a: typeof a === 'string' ? a : (a && a.kind) || '', d: Math.round(((b && b.dist) || (a && a.dist) || 0) * 10) / 10, v: Math.round((((b && b.k) || (a && a.k)) || 1) * 100) / 100 });
+        return orig.apply(this, arguments);
+      };
+    });
+  };
+  Trl.hookSound = hookSound;
 
   // ================================================================== симуляция
   Trl.step = (dt) => {
@@ -254,7 +270,8 @@
     const info = await Trl.boot(spec.mission, { seed: spec.seed, pr: o.pr });
     Trl.seed(spec.seed || 1);
     if (spec.setup) await Trl.sim(() => spec.setup(Trl, info));   // setup должен быть синхронным (после await сид уже не действует)
-    const win = {};
+    const win = {}, evStart = {};
+    Trl.events.length = 0; Trl.rec = true;
     ids.forEach((id) => { const c = spec.cuts[id], s0 = Math.ceil(c.t0 * SIM / every - 1e-9) * every, n = place ? place[id].frames : Math.max(1, Math.ceil(c.dur * fps - 1e-6)); win[id] = { s0, n }; });
     const lastStep = Math.max.apply(null, ids.map((id) => win[id].s0 + (win[id].n - 1) * every)), counts = {}, camlog = {}, dir = new (T().Vector3)();
     const sent = o.send || (async () => {});
@@ -272,6 +289,7 @@
           if (c.over) c.over(O.ctx, k, tl, Trl, O);
           if (place && Trl.postFx) Trl.postFx(O.ctx, place[id].g0 + tl, j, O, id);
         });
+        if (j === 0) evStart[id] = Trl.r.time;
         counts[id] = j;
         const cam = Trl.r.camera; cam.getWorldDirection(dir);   // журнал камеры: по нему check-clips считает плавность (скорость/ускорение поворота и хода)
         (camlog[id] || (camlog[id] = [])).push([cam.position.x, cam.position.y, cam.position.z, dir.x, dir.y, dir.z, cam.fov].map((v) => Math.round(v * 10000) / 10000));
@@ -279,6 +297,9 @@
       }
       if (step % 30 === 0) await sleep(0);
     }
-    return { ms: Math.round(REAL.now() - t0), frames: counts, cam: camlog };
+    Trl.rec = false;
+    const events = {};
+    ids.forEach((id) => { const a = evStart[id], b = a + win[id].n / fps; events[id] = Trl.events.filter((e) => e.t >= a - 1e-6 && e.t < b).map((e) => Object.assign({}, e, { rel: Math.round((e.t - a) * 1000) / 1000 })); });
+    return { ms: Math.round(REAL.now() - t0), frames: counts, cam: camlog, events };
   };
 })();

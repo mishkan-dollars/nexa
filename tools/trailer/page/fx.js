@@ -122,3 +122,24 @@
     Fx.grain(ctx, frame, o.grain === undefined ? 0.07 : o.grain);
   };
 })();
+
+// ================================================================== накладка трейлера на кадры геймплея (вызывается из Trl.runScene при финальном рендере)
+// Только на акцентах трека (accents — секунды): короткая вспышка и лёгкий «пинок» масштаба. Камера не дёргается: пульс 0.8 % и быстро гаснет.
+(() => {
+  if (!window.Trl) return;
+  const Trl = window.Trl;
+  Trl.post = { accents: [], flash: 0.14, pulse: 0.008, rate: 12 };
+  Trl.setPost = (p) => Object.assign(Trl.post, p || {});
+  let tmp = null;
+  Trl.postFx = (ctx, g) => {
+    const P = Trl.post, W = ctx.canvas.width, H = ctx.canvas.height;
+    let a = 0;
+    for (let i = 0; i < P.accents.length; i += 1) { const s = g - P.accents[i]; if (s >= 0 && s < 0.4) a = Math.max(a, Math.exp(-s * P.rate)); }
+    if (a < 0.02) return;
+    if (P.pulse > 0) {
+      tmp = tmp || document.createElement('canvas'); tmp.width = W; tmp.height = H; tmp.getContext('2d').drawImage(ctx.canvas, 0, 0);
+      const sc = 1 + P.pulse * a; ctx.save(); ctx.translate(W / 2, H / 2); ctx.scale(sc, sc); ctx.drawImage(tmp, -W / 2, -H / 2); ctx.restore();
+    }
+    if (P.flash > 0) Fx.flash(ctx, P.flash * a, '#fff');
+  };
+})();
