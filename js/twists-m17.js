@@ -364,4 +364,53 @@
       }
     }
   });
+
+  // ===================================================================== 23 CAMERA LOOP — призрак из записи
+  // [L] — записать 10 секунд своей ходьбы. Дальше «призрак» крутит запись по кругу ~25 с, а охрана идёт посмотреть на него. Перезарядка 20 с.
+  TW.add(23, {
+    name: 'loop-ghost',
+    setup(r, T) {
+      const S = T.s;
+      S.st = 'idle'; S.cd = 0; S.rec = [];
+      S.el = T.panel('tw-corner tw-box', '<h3>LOOP</h3><p class="tw-a"></p>', true);
+      const go = () => this.press(r, T);
+      T.key('KeyL', go); T.btn('LOOP', 'right: 120px; bottom: 170px;', go);
+      this.paint(T);
+    },
+    paint(T) {
+      const S = T.s, k = S.st === 'rec' ? 'RECORDING' : S.st === 'ghost' ? 'GHOST ACTIVE' : S.cd > 0 ? 'RECHARGING' : 'READY [L]';
+      if (S.k !== k) { S.k = k; S.el.querySelector('.tw-a').textContent = k; }
+    },
+    phase(r, T, name) { this.stop(r, T); T.s.cd = 0; },
+    reset(r, T) { this.stop(r, T); },
+    stop(r, T) { const S = T.s; if (S.g) { S.g.rm(); S.g = null; } S.st = 'idle'; S.rec = []; },
+    press(r, T) {
+      const S = T.s, sec = T.sec();
+      if (S.st !== 'idle' || S.cd > 0 || !sec || sec.b !== 'stealth') { if (S.st === 'idle' && S.cd <= 0) r.toast('LOOP WORKS ONLY IN STEALTH SECTORS', 1.6); return; }
+      S.st = 'rec'; S.rec = []; S.t = 0; S.rt = 0; r.sfx('notification'); r.toast('RECORDING 10 S — WALK A ROUTE', 2);
+    },
+    tick(r, T, dt) {
+      const S = T.s;
+      if (!S.el) return;
+      if (S.cd > 0) S.cd = Math.max(0, S.cd - dt);
+      if (r.locked) return;
+      if (S.st === 'rec') {
+        S.t += dt; S.rt -= dt;
+        if (S.rt <= 0) { S.rt = 0.1; S.rec.push([r.p.x, r.p.z, r.p.yaw + Math.PI]); }
+        if (S.t >= 10) { S.st = 'ghost'; S.t = 0; S.life = 25; S.g = T.ghost({ opacity: 0.38 }); S.g.show(true); S.lt = 0; r.snd && r.snd.play('glitch', { k: 0.5 }); r.hint('GHOST DEPLOYED — GUARDS WILL GO TO LOOK AT IT', 3.5); }
+      } else if (S.st === 'ghost') {
+        S.life -= dt; S.lt += dt;
+        const n = S.rec.length, i = Math.floor((S.lt * 10) % Math.max(1, n)), a = S.rec[i] || S.rec[0];
+        if (a) S.g.set(a[0], a[1], a[2]);
+        S.lure = (S.lure || 0) - dt;
+        const M = r.mm;
+        if (S.lure <= 0 && M && M.S && a) {
+          S.lure = 0.6;
+          M.S.guards().forEach((q) => { const g = q.n.g.position; if (!M.S.alarm && q.unaware !== false && Math.hypot(g.x - a[0], g.z - a[1]) < 16) { q.inv = [a[0], a[1]]; q.invT = 3; q.hold = 0; } });
+        }
+        if (S.life <= 0) { this.stop(r, T); S.cd = 20; r.snd && r.snd.play('glitch', { k: 0.4 }); }
+      }
+      this.paint(T);
+    }
+  });
 }());

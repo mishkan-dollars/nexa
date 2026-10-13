@@ -125,4 +125,14 @@
   I18N.add('ru', {
     "ЗАПИСЬ СУБЪЕКТА 083 ВОСПРОИЗВЕДЕНА. ОДНА ТЕНЬ ЛИШНЯЯ.": ["THE RECORDING OF SUBJECT 083 IS PLAYING. ONE SHADOW TOO MANY.","DIE AUFZEICHNUNG VON SUBJEKT 083 LÄUFT. EIN SCHATTEN ZU VIEL."]
   });
+  I18N.add('en', {
+    "LOOP": ["ПЕТЛЯ","SCHLEIFE"],
+    "RECORDING": ["ЗАПИСЬ","AUFNAHME"],
+    "GHOST ACTIVE": ["ПРИЗРАК АКТИВЕН","GEIST AKTIV"],
+    "RECHARGING": ["ПЕРЕЗАРЯДКА","LÄDT"],
+    "READY [L]": ["ГОТОВО [L]","BEREIT [L]"],
+    "LOOP WORKS ONLY IN STEALTH SECTORS": ["ПЕТЛЯ РАБОТАЕТ ТОЛЬКО В СКРЫТНЫХ СЕКТОРАХ","SCHLEIFE FUNKTIONIERT NUR IN SCHLEICH-ABSCHNITTEN"],
+    "RECORDING 10 S — WALK A ROUTE": ["ЗАПИСЬ 10 С — ПРОЙДИ МАРШРУТ","AUFNAHME 10 S — GEH EINE ROUTE"],
+    "GHOST DEPLOYED — GUARDS WILL GO TO LOOK AT IT": ["ПРИЗРАК ЗАПУЩЕН — ОХРАНА ПОЙДЁТ НА НЕГО СМОТРЕТЬ","GEIST AUSGESETZT — DIE WÄCHTER SCHAUEN NACH IHM"]
+  });
 }());
