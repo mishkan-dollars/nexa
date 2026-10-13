@@ -187,7 +187,7 @@
     name: 'which-truck',
     setup(r, T) { /* грузовики строятся на старте сектора (нужны sec.tgt и построенные укрытия) */ },
     phase(r, T, name) {
-      const S = T.s, M = r.mm, sec = T.sec();
+      const S = T.s, sec = T.secOf(name);
       if (!sec || sec.b !== 'plant') return;
       S.sec = sec;
       if (!S.built) this.build(r, T, sec);

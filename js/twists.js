@@ -117,6 +117,8 @@
       return b;
     }
     sec() { const M = this.r.mm; return M ? M.cur : null; }
+    // сектор по имени фазы ('s3') — на старте попытки M.cur ещё указывает на прошлый сектор
+    secOf(name) { const M = this.r.mm, m = /^s(\d+)$/.exec(name || ''); return M && m ? M.secs[+m[1]] || null : null; }
     foes(filter) { const cb = this.r.cb; return cb ? cb.enemies.filter((e) => !e.dead && !e.friendly && !(e.t && e.t.passive) && (!filter || filter(e))) : []; }
     // подсказка/цель/реплика
     hint(text, sec) { this.r.hint(text, sec || 3.6); }
