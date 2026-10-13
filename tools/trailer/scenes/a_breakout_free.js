@@ -16,12 +16,16 @@
       const h = r.bounds.h;
       S.ceil = r.scene.children.filter((m) => m.isMesh && Math.abs(m.position.y - (h + 0.05)) < 0.01 && Math.abs(m.scale.y - 0.1) < 0.001);
     },
-    // убрать всех живых и мёртвых врагов (бочки и мишени остаются)
+    // враг этой сцены (помечен: чужих обитателей комнат мира не трогаем — ими управляет сам мир)
+    en(S, type, x, z, o) { const e = S.r.enemy(type, x, z, o); e.mine = true; return e; },
+    live(S) { return S.r.cb.enemies.filter((e) => e.mine && !e.dead && !e.t.passive); },
+    nearest(S, x, z) { let b = null, bd = 1e9; AK.live(S).forEach((e) => { const d = Math.hypot(e.x - x, e.z - z); if (d < bd) { bd = d; b = e; } }); return b; },
+    // убрать своих врагов (живых и павших) и силуэты-герои
     purge(S) {
       const r = S.r, cb = r.cb;
       for (let i = cb.enemies.length - 1; i >= 0; i -= 1) {
         const e = cb.enemies[i];
-        if (e.t.passive && !e.purge) continue;
+        if (!e.mine && !e.purge) continue;
         e.dead = true; e.alive = false; e.n.free = true; e.n.g.visible = false; if (e.n.laser) e.n.laser.visible = false;
         cb.enemies.splice(i, 1);
         const k = cb.shoot.indexOf(e); if (k >= 0) cb.shoot.splice(k, 1);
@@ -53,7 +57,7 @@
     // силуэт-«герой» для Free-кадров (игрока в свободной камере не видно): пассивная мишень с пистолетом
     hero(S, x, z, yaw, gun) {
       const r = S.r, e = r.enemy('target', x, z, { gun: gun === undefined ? 'pistol' : gun, exact: true, drop: false, yaw: yaw || 0 });
-      e.hp = 1e9; e.purge = true; e.n.armT = 0;
+      e.hp = 1e9; e.purge = true; e.mine = true; e.n.armT = 0;
       return e;
     },
     go(e, x, z, speed) { e.n.goal = { x, z, speed, res: null }; },
@@ -91,8 +95,7 @@
 
   // </KIT>
 
-  const live = (S) => S.r.cb.enemies.filter((e) => !e.dead && !e.t.passive);
-  const nearest = (S, x, z) => { let b = null, bd = 1e9; live(S).forEach((e) => { const d = Math.hypot(e.x - x, e.z - z); if (d < bd) { bd = d; b = e; } }); return b; };
+  const nearest = (S, x, z) => AK.nearest(S, x, z);
   const hidePlayer = (S, x, z) => { const p = S.r.p; p.x = x; p.z = z; p.moving = 0; };
   const barrelAt = (S, x, z) => S.r.cb.shoot.find((s) => s.barrel && s.alive && Math.hypot(s.x - x, s.z - z) < 0.3);
 
@@ -102,7 +105,7 @@
       start(S) {
         const r = S.r; AK.purge(S); r.openNow(r.d1); AK.ceil(S, false);
         S.A.h = AK.hero(S, 3.1, 21.4, Math.PI);
-        r.enemy('grunt', -1.2, 5.0, { yaw: 0, pers: 'pro' }); r.enemy('grunt', 1.4, 2.6, { yaw: 0, pers: 'pro' }); r.enemy('rusher', 0.0, 0.0, { yaw: 0, pers: 'zealot' });
+        AK.en(S, 'grunt', -1.2, 5.0, { yaw: 0, pers: 'pro' }); AK.en(S, 'grunt', 1.4, 2.6, { yaw: 0, pers: 'pro' }); AK.en(S, 'rusher', 0.0, 0.0, { yaw: 0, pers: 'zealot' });
         hidePlayer(S, 3.1, 21.4); this.cam(S, 0, 0);
       },
       tick(S, t, dt, A) {
@@ -151,7 +154,7 @@
       start(S) {
         const r = S.r; AK.purge(S); AK.ceil(S, true); r.openNow(r.d2); r.openNow(r.d3);
         S.A.h = AK.hero(S, 3.4, 7.0, Math.PI); S.A.h.n.armT = 1; AK.face(S.A.h, -5.2, -10);
-        [[-3.5, -8.4], [-4.0, -11.6], [-2.7, -10.0]].forEach((q, i) => r.enemy('grunt', q[0], q[1], { yaw: 0.6 + i, pers: 'lazy' }));
+        [[-3.5, -8.4], [-4.0, -11.6], [-2.7, -10.0]].forEach((q, i) => AK.en(S, 'grunt', q[0], q[1], { yaw: 0.6 + i, pers: 'lazy' }));
         hidePlayer(S, 3.4, 7.0); this.cam(S, 0, 0);
       },
       tick(S, t, dt, A) {

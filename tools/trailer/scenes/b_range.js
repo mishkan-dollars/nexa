@@ -91,7 +91,7 @@
     t0: 7.9, beats: 4, mode: 'free', lead: 0.7, hit: 1.05,
     prep(S) {
       const r = S.r; place(S, 0.4, 9.0, 0, 0); r.timeScale = 1;
-      const e = r.enemy('rusher', -1.2, -6.0, { yaw: 0, pers: 'zealot', drop: false, exact: true }); e.mine = true; S._b.rusher = e;
+      const e = r.enemy('rusher', -1.0, -4.2, { yaw: 0, pers: 'zealot', drop: false, exact: true }); e.mine = true; S._b.rusher = e;
     },
     tick(S, lt, dt) {
       const r = S.r, e = S._b.rusher;
@@ -104,7 +104,7 @@
       const e = S._b.rusher, u = lin2(k), h = sh(S, t, 0.012, 1);
       const px = lerp(-2.4, 0.3, u) + h[0], py = lerp(0.4, 0.9, u) + h[1], pz = lerp(10.9, 8.2, u);
       const tx = e ? e.x : 0, tz = e ? e.z : -6;
-      look(S, [px, py, pz], [lerp(0, tx, 0.85), 1.2, lerp(-6, tz, 0.85)], lerp(58, 72, k), lerp(0.05, -0.03, k));
+      look(S, [px, py, pz], [lerp(0, tx, 0.85), 1.2, lerp(-6, tz, 0.85)], lerp(60, 78, k), lerp(0.05, -0.03, k));
     }
   });
 
@@ -157,15 +157,15 @@
     prep(S) {
       const r = S.r;
       S._b.mv.forEach((e) => drop(S, e));
-      r.giveWeapon('ak', { equip: true }); refill(S); place(S, 0, 9.8, 0, 0);
-      S._b.ak = [['grunt', -6, -26], ['grunt', 6, -27], ['grunt', 0, -30], ['rusher', -3, -32]].map((a) => { const e = r.enemy(a[0], a[1], a[2], { yaw: 0, drop: false, pers: a[0] === 'grunt' ? 'pro' : 'zealot' }); e.mine = true; return e; });
-      const v = spawnMoving(S, -9, -6.5, 1.4, true); S._b.vest = v;
+      r.giveWeapon('ak', { equip: true }); refill(S); place(S, 0, 4.0, 0, 0);
+      S._b.ak = [['grunt', -2.5, -13], ['grunt', 3, -14.5], ['grunt', 0.5, -20], ['rusher', -3, -22]].map((a) => { const e = r.enemy(a[0], a[1], a[2], { yaw: 0, drop: false, pers: a[0] === 'grunt' ? 'pro' : 'zealot', exact: true }); e.mine = true; return e; });
+      const v = spawnMoving(S, -9, -3.5, 1.5, true); S._b.vest = v;
     },
     tick(S, lt, dt) {
       const r = S.r, ST = S._b;
       let best = null, bd = 1e9;
       for (const e of ST.ak) { if (e.dead) continue; const d = Math.hypot(e.x - r.p.x, e.z - r.p.z); if (d < bd && clear(S, e, 1.15)) { bd = d; best = e; } }
-      if (best) aim(S, dt, best, { y: 1.2, tau: 0.16, vmax: 4.5, tol: 0.035, ads: false });
+      if (best) { if (aim(S, dt, best, { y: 1.2, tau: 0.16, vmax: 4.5, tol: 0.045, ads: false })) ev('fp_ak', 'shot', lt); }
       else S.fp.look(0, 0, dt, 0.3, 2);
       ST.ak.forEach((e) => { if (e.dead && !e.cnt) { e.cnt = 1; ev('fp_ak', 'kill', lt); } });
     }
