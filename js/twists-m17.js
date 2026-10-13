@@ -413,4 +413,52 @@
       this.paint(T);
     }
   });
+
+  // ===================================================================== 17 DAYLIGHT — обычный день на площади
+  // В секторах бродят прохожие (цветные жилеты). Задел мирного — падает «мораль» (меню справа); в конце мораль превращается в кредиты.
+  TW.add(17, {
+    name: 'passers-by',
+    VEST: [0x3f6fa8, 0xb5483a, 0x4f8a5b, 0xc8a13a, 0x7a5aa8, 0x2f9aa0],
+    setup(r, T) {
+      const S = T.s; S.m = 100;
+      S.el = T.panel('tw-corner tw-box tw-rows', '<h3>MORALE</h3><p><span>CONDUCT</span><b class="tw-n">100%</b></p>', true);
+      S.n = S.el.querySelector('.tw-n');
+    },
+    hit(r, T, d, why) {
+      const S = T.s; S.m = Math.max(0, S.m - d); S.n.textContent = Math.round(S.m) + '%';
+      r.toast(why, 1.8); r.flash(0.25); r.snd && r.snd.play('hurt', { k: 0.4 });
+    },
+    phase(r, T, name) {
+      const S = T.s, sec = T.secOf(name);
+      if (!sec || sec.b === 'run') return;
+      const pts = T.spawnPts(sec, 6, 6), def = this;
+      pts.forEach((p, i) => {
+        const e = r.enemy('grunt', p[0], p[1], { friendly: true, drop: false, exact: true, hp: 0.4, yaw: Math.random() * 6.28 });
+        e.n.vest.material = r.basic(def.VEST[i % def.VEST.length]); e.n.vest.scale.set(0.44, 0.5, 0.34);
+        const c = { goal: null, wait: Math.random() * 2, pan: 0 };
+        e.ai = (q, dt) => {
+          const g = q.n.g.position, d = Math.hypot(r.p.x - g.x, r.p.z - g.z);
+          if (d < 16 && r.time - (r.twShotT || -9) < 1.2) c.pan = 5;
+          let tx, tz, sp;
+          if (c.pan > 0) { c.pan -= dt; const dx = g.x - r.p.x, dz = g.z - r.p.z, l = Math.hypot(dx, dz) || 1; tx = g.x + dx / l * 3; tz = g.z + dz / l * 3; sp = 4; q.n.cvT = 0; }
+          else {
+            if (c.wait > 0) { c.wait -= dt; q.n.creeping = false; return true; }
+            if (!c.goal || Math.hypot(c.goal[0] - g.x, c.goal[1] - g.z) < 0.6) { const q2 = T.spawnPts(sec, 1, 0)[0]; c.goal = q2; c.wait = 1 + Math.random() * 3; return true; }
+            tx = c.goal[0]; tz = c.goal[1]; sp = 1.1;
+          }
+          const dx = tx - g.x, dz = tz - g.z, l = Math.hypot(dx, dz) || 1;
+          q.n.yaw = Math.atan2(dx, dz);
+          const nx = g.x + dx / l * sp * dt, nz = g.z + dz / l * sp * dt;
+          if (!r.blockedE(nx, g.z) && Math.abs(nx) < sec.W / 2 - 1) g.x = nx;
+          if (!r.blockedE(g.x, nz) && nz < sec.zA - 1 && nz > sec.zB + 1) g.z = nz;
+          q.n.creeping = true; q.n.armT = 0;
+          return true;
+        };
+        e.onHit = () => { def.hit(r, T, 3, 'WATCH IT — CIVILIANS'); };
+        e.onDeath = () => { def.hit(r, T, 25, 'CIVILIAN KILLED'); };
+      });
+      if (!S.said) { S.said = true; T.after(4, () => r.hint('PEOPLE ARE WALKING THE PLAZA — DO NOT HIT THEM (MORALE)', 5)); }
+    },
+    finish(r, T, done) { if (done) r.twBonus = (r.twBonus || 0) + Math.round(T.s.m * 0.5); }
+  });
 }());

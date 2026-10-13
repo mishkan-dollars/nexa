@@ -161,4 +161,11 @@
     "ЗРИТЕЛИ ДЕЛАЮТ СТАВКИ. HIGH ИЛИ LOW?": ["THE AUDIENCE IS PLACING BETS. HIGH OR LOW?","DAS PUBLIKUM SETZT. HIGH ODER LOW?"],
     "ЗРИТЕЛИ ПОСТАВИЛИ НА HIGH!": ["THE AUDIENCE BET ON HIGH!","DAS PUBLIKUM HAT AUF HIGH GESETZT!"]
   });
+  I18N.add('en', {
+    "MORALE": ["МОРАЛЬ","MORAL"],
+    "CONDUCT": ["ПОВЕДЕНИЕ","VERHALTEN"],
+    "WATCH IT — CIVILIANS": ["ОСТОРОЖНЕЕ — МИРНЫЕ","VORSICHT — ZIVILISTEN"],
+    "CIVILIAN KILLED": ["МИРНЫЙ УБИТ","ZIVILIST GETÖTET"],
+    "PEOPLE ARE WALKING THE PLAZA — DO NOT HIT THEM (MORALE)": ["ПО ПЛОЩАДИ ХОДЯТ ЛЮДИ — НЕ ЗАДЕВАЙ ИХ (МОРАЛЬ)","LEUTE GEHEN ÜBER DEN PLATZ — TRIFF SIE NICHT (MORAL)"]
+  });
 }());
