@@ -235,9 +235,9 @@
       const e = addPiece(m, { ext: 0.02, snd: false }); launch(e, 1.4, PILE[0] + 0.1, PILE[1] + 0.05, 8); S.lighter = e;
     }, true);
     on(T.ign, () => ignite(true), true);
-    on(20.4, () => r.say(DIC, 'No suits. No names. Nothing left to follow.', 3.0));
+    on(18.6, () => r.say(DIC, 'No suits. No names. Nothing left to follow.', 3.0));
     on(T.show, () => { rem.g.visible = true; d.elbR.add(rem.g); rem.g.position.set(0, -0.31, 0.0); rem.g.rotation.set(PI / 2, 0, 0); rem.g.scale.setScalar(1); K.snd(r, 'rustle', { k: 0.6 }); }, true);
-    on(23.6, () => r.say(DIC, 'Six charges. Three floors. One button.', 2.6));
+    on(22.3, () => r.say(DIC, 'Six charges. Three floors. One button.', 2.6));
     on(T.take, () => { giveRemote(); K.snd(r, 'rustle', { k: 0.5 }); }, true);
     S.ev.sort((a, b) => a[0] - b[0]);
 

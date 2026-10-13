@@ -2,9 +2,11 @@
 // Запуск:  node tools/extract-voice.js
 // Источники: js/missions*.js, js/cutscenes.js, js/cinema.js, js/heist.js, js/missions4data.js (brief / say / bsay / hsay).
 // Переводы EN/DE берутся из словарей js/i18n-*.js (если строки в словаре нет — помечается «—»).
+// Миссия 48 (финал, английский) собирается отдельно (tools/lines48.js): коды D48_### заморожены в tools/voice-codes.json, озвучка — assets/voicelines/D48_###.mp3, в игре ищется по английскому тексту.
 'use strict';
 const fs = require('fs');
 const path = require('path');
+const { scan48 } = require('./lines48');
 const ROOT = path.join(__dirname, '..');
 const read = (f) => fs.readFileSync(path.join(ROOT, f), 'utf8');
 
@@ -12,6 +14,7 @@ const read = (f) => fs.readFileSync(path.join(ROOT, f), 'utf8');
 const LANGS = ['en', 'ru', 'de'];
 const dict = new Map(); // нормализованный ключ -> { en, ru, de }
 const norm = (s) => String(s).replace(/\s+/g, ' ').trim().toUpperCase();
+const enKey = (s) => String(s).replace(/\s+/g, ' ').trim(); // ключ английских реплик миссии 48 (регистр сохраняется), так же считает js/voice.js
 const fakeWin = { I18N: { add(src, obj) {
   const rest = LANGS.filter((l) => l !== src);
   Object.keys(obj).forEach((k) => {
@@ -136,7 +139,15 @@ lines.forEach((l) => {
   l.file_out = 'assets/voice/' + l.code + '.mp3';
   const t = tr(l.text); l.en = t.en; l.de = t.de;
 });
-const live = new Set(lines.map((l) => l.id + '|' + l.text));
+// Миссия 48 (финал, только английский): отдельный список — в VOICE_LINES*.md и voice-lines.json не попадает (у неё свой VOICE_48.md).
+// Коды D48_### заморожены так же («48|текст» -> код); озвучка лежит в assets/voicelines/D48_###.mp3, в игре ищется по английскому тексту (voice.js, ключ списка `en`).
+const lines48 = scan48(ROOT).map((l) => ({ id: 48, spk: l.who, text: l.text, file: 'js/' + l.f, ln: l.ln, dur: l.dur }));
+lines48.forEach((l) => {
+  const key = '48|' + l.text;
+  if (!frozen[key]) { used.D48 = (used.D48 || 0) + 1; frozen[key] = 'D48_' + String(used.D48).padStart(3, '0'); }
+  l.code = frozen[key];
+});
+const live = new Set(lines.concat(lines48).map((l) => l.id + '|' + l.text));
 const orphans = Object.keys(frozen).filter((k) => !live.has(k));
 fs.writeFileSync(CODES_FILE, JSON.stringify(frozen, null, 1));
 if (orphans.length) console.warn('ORPHAN codes (text changed or removed):', orphans.map((k) => frozen[k]).join(', '));
@@ -211,7 +222,7 @@ const sentence = (t) => {
   });
   fs.writeFileSync(path.join(ROOT, 'VOICE_LINES_EN.md'), t);
 }
-// ------------------------------------------------------------ assets/voice/list.json — для игры: map (текст -> коды) и files (код -> длительность, с)
+// ------------------------------------------------------------ assets/voice/list.json — для игры: map (русский текст -> коды), en (английский текст миссии 48 -> D48_###), fx (код -> обработка голоса) и files (код -> длительность, с)
 // В игру попадают только реально лежащие в assets/voice/*.mp3 файлы; длительность считается по заголовкам кадров mp3.
 function mp3Seconds(buf) {
   let p = 0;
@@ -240,10 +251,16 @@ function mp3Seconds(buf) {
     fs.readdirSync(d).filter((f) => /\.mp3$/i.test(f)).forEach((f) => { const c = f.replace(/\.mp3$/i, ''); files[c] = mp3Seconds(fs.readFileSync(path.join(d, f))); if (sub !== 'voice') dirs[c] = sub; else delete dirs[c]; });
   });
   lines.forEach((l) => { const k = norm(l.text); (map[k] = map[k] || []).push([l.id, l.code]); });
-  fs.writeFileSync(path.join(dir, 'list.json'), JSON.stringify({ v: 1, files, dirs, map }) + '\n');
+  // миссия 48: ключ — английский текст реплики (пробелы схлопнуты, РЕГИСТР СОХРАНЁН: «Wake up!» и «WAKE UP!» — разные реплики); значения [48, код].
+  // fx — обработка голоса при воспроизведении: VOICE (из-под мешка) — muffle, FACILITY SYSTEM (системное оповещение) — radio
+  const en = {}, fx = {}, FXOF = { VOICE: 'muffle', 'FACILITY SYSTEM': 'radio' };
+  lines48.forEach((l) => { const k = enKey(l.text); (en[k] = en[k] || []).push([48, l.code]); if (FXOF[l.spk]) fx[l.code] = FXOF[l.spk]; });
+  fs.writeFileSync(path.join(dir, 'list.json'), JSON.stringify({ v: 2, files, dirs, map, en, fx }) + '\n');
   const have = lines.filter((l) => files[l.code]).length;
   console.log('voice files found: ' + have + ' / ' + lines.length + (have < lines.length ? '  (missing: ' + lines.filter((l) => !files[l.code]).length + ')' : ''));
-  const stray = Object.keys(files).filter((c) => !lines.some((l) => l.code === c));
+  const have48 = lines48.filter((l) => files[l.code]).length;
+  console.log('mission 48 (en): ' + have48 + ' / ' + lines48.length + (have48 < lines48.length ? '  (missing: ' + lines48.filter((l) => !files[l.code]).map((l) => l.code).join(', ') + ')' : ''));
+  const stray = Object.keys(files).filter((c) => !lines.some((l) => l.code === c) && !lines48.some((l) => l.code === c));
   if (stray.length) console.warn('mp3 without a line:', stray.join(', '));
 }
 console.log('lines', lines.length, 'unique', uniq.size, 'chars', chars);

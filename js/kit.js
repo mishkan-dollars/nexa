@@ -544,7 +544,7 @@
     }
     el.volume = routed ? 1 : 0;
     const tr = { el, vol: o.vol === undefined ? 1 : o.vol, mix: 0, want: 0, fin: 0.8, fout: 1, an: null, pending: 0 };
-    const vol = () => clamp((snd ? snd.musVol() : 0.5) * tr.vol * tr.mix, 0, 1);
+    const vol = () => clamp((snd ? snd.musVol() : 0.5) * tr.vol * tr.mix * (self.vDuck === undefined ? 1 : self.vDuck), 0, 1);   // vDuck: приглушение под голосом (voice.js)
     tr.timer = setInterval(() => {
       const dt = 0.05;
       tr.mix = clamp(tr.mix + (tr.want ? dt / tr.fin : -dt / tr.fout), 0, 1);

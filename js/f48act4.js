@@ -622,8 +622,8 @@
         run: () => {
           r.fade(0, 0.5);
           K.amb.pulse(r, 'alarm', 1); K.amb.pulse(r, 'rumble', 0.8);
-          r.say('FACILITY SYSTEM', 'Warning. Lethal gas release on level two. All personnel evacuate.', 4.2);
-        },
+        }, says: [['FACILITY SYSTEM', 'Warning. Lethal gas release on level two. All personnel evacuate.', 4.2]],
+        // реплика идёт через says: с озвучкой шот сам тянется до конца голоса (cinema.js sayTime)
         tick: () => { G.front = Math.min(GAS0 + 1.8, G.front + 0.012); } }),
       sh({ at: [-1.2, 1.66, -33.7], to: [-1.45, 1.66, -34.2], look: () => [d.g.position.x, 1.62, d.g.position.z], fov: 28, dur: 5.2, hand: 0.5, tense: 0.5,
         says: [[DIC, 'Gas! They are venting the whole floor!', 2.6], [DIC, 'South. The stairs. Run!', 2.4]] }),

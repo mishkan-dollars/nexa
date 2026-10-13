@@ -450,6 +450,16 @@
     return n;
   }
 
+  // подарок из миссии (js/twists-*.js): игрушка или эмоция без оплаты; false — уже есть / нет такой
+  function grant(id) {
+    const d = DEF[id];
+    if (!d || S.owned.indexOf(id) >= 0) return false;
+    S.owned.push(id);
+    if (d.kind === 'emote') { const i = S.wheel.indexOf(null); if (i >= 0) S.wheel[i] = id; } else if (!S.loadout) S.loadout = id;
+    save();
+    return true;
+  }
+
   window.Toys = {
     CATALOG, EMOTES, def: (id) => DEF[id], REWARD_FIRST,
     emoteWheel: () => S.wheel.slice(), audio: () => ctx.audio,
@@ -462,7 +472,7 @@
     },
     init(o) { Object.assign(ctx, o || {}); },
     load: loadTpl, tpl: (id) => TPLR[id], make: makeToy, press: pressToy, release: releaseDent, step: stepToy, avatar, avatarUrl: (id) => AV[id] || '',
-    sfx, plushSfx, glitchSfx, action, renderShop, fillAvatars, openPreview, closePreview, reward, bonus, BEAR_SVG,
+    sfx, plushSfx, glitchSfx, action, renderShop, fillAvatars, openPreview, closePreview, reward, bonus, grant, BEAR_SVG,
     reset() { S = load(); },
     _dbg: () => ({ pv, S })
   };
