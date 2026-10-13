@@ -272,7 +272,7 @@
     if (spec.setup) await Trl.sim(() => spec.setup(Trl, info));   // setup должен быть синхронным (после await сид уже не действует)
     const win = {}, evStart = {};
     Trl.events.length = 0; Trl.rec = true;
-    ids.forEach((id) => { const c = spec.cuts[id], s0 = Math.ceil(c.t0 * SIM / every - 1e-9) * every, n = place ? place[id].frames : Math.max(1, Math.ceil(c.dur * fps - 1e-6)); win[id] = { s0, n }; });
+    ids.forEach((id) => { const c = spec.cuts[id], sh = place && place[id].shift || 0, s0 = Math.max(0, Math.ceil((c.t0 + sh) * SIM / every - 1e-9) * every), n = place ? place[id].frames : Math.max(1, Math.ceil(c.dur * fps - 1e-6)); win[id] = { s0, n }; });   // shift (с) — сдвиг окна нарезки по времени симуляции: ключевой момент hitAt садится ровно на долю
     const lastStep = Math.max.apply(null, ids.map((id) => win[id].s0 + (win[id].n - 1) * every)), counts = {}, camlog = {}, dir = new (T().Vector3)();
     const sent = o.send || (async () => {});
     const t0 = REAL.now();

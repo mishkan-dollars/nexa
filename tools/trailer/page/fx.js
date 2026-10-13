@@ -88,7 +88,7 @@
       drawLines(ctx, lines, 0, 0, size, spec, mode);
       ctx.restore();
     };
-    const split = (spec.split === undefined ? 1 : spec.split) * (p * 0.012 + (1 - inK) * 0.01) * W;
+    const split = (spec.split === undefined ? 1 : spec.split) * size * 0.055 * (0.65 * p + 0.45 * (1 - inK));   // разнос каналов пропорционален кеглю: мелкие надписи не размазываются
     if (split > 0.5) { draw('r', -split, 0.9); draw('c', split, 0.9); draw(null, 0, 0.95); } else draw(null, 0, 1);
     // подпись под словом
     if (spec.sub) {

@@ -41,8 +41,9 @@ const cards = LAY.segs.filter((s) => s.type === 'card' && (!ONLY || ONLY.include
           let wi = -1; for (let i = 0; i < words.length; i += 1) if (t + 1e-6 >= words[i].at) wi = i;
           Fx.black(ctx, gf);
           if (wi >= 0) {
-            const w = words[wi], age = t - w.at, p = Math.exp(-age * (w.rate || 9));
-            Fx.card(ctx, w, age, p, gf);
+            const w = words[wi], age = t - w.at;
+            if (w.lines) w.lines.forEach((ln) => { const a = age - (ln.delay || 0); if (a >= 0) Fx.card(ctx, ln, a, Math.exp(-a * (ln.rate || 9)), gf); });   // карточка из нескольких строк с задержками
+            else Fx.card(ctx, w, age, Math.exp(-age * (w.rate || 9)), gf);
           }
           Fx.finish(ctx, gf, { vig: seg.vig, grain: seg.grain });
           if (seg.fadeOutLast && t > seg.fadeFrom) Fx.flash(ctx, Math.min(1, (t - seg.fadeFrom) / 0.2), '#000');

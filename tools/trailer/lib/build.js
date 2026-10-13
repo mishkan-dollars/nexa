@@ -29,7 +29,7 @@ function plan() {
       const key = s.scene + '/' + s.cut;
       if (used[key]) { console.error('нарезка использована дважды:', key); bad += 1; }
       used[key] = true;
-      (scenes[s.scene] = scenes[s.scene] || {})[s.cut] = { frames: s.frames, g0: +(s.f0 / FPS).toFixed(5) };
+      (scenes[s.scene] = scenes[s.scene] || {})[s.cut] = { frames: s.frames, g0: +(s.f0 / FPS).toFixed(5), shift: s.shift || 0 };
     }
   });
   if (prev !== lay.total) { console.error('таймлайн не доходит до конца трека:', prev, 'из', lay.total); bad += 1; }

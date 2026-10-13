@@ -57,6 +57,7 @@ let nHits = 0;
 lay.segs.filter((s) => s.type === 'card').forEach((s) => {
   (s.words || []).forEach((w, i) => {
     const t = beatT(w.b);
+    if (w.lines) { w.lines.forEach((ln, k) => { if (ln.hit === false) return; add(boom(true), t + (ln.delay || 0), (k === 0 ? 0.9 : 0.55) * SFX, 0); add(highpass(trim(asset('bodyhit.mp3'), 0.3), 1200), t + (ln.delay || 0), 0.18 * SFX, 0); nHits += 1; }); return; }
     add(boom(true), t, 0.85 * SFX, 0); nHits += 1;
     add(highpass(trim(asset('bodyhit.mp3'), 0.3), 1200), t, 0.22 * SFX, 0);   // короткий «щелчок» удара
     if (w.glitch !== false && (i % 4 === 0 || w.big)) add(asset('glitch' + (2 + (i % 3)) + '.mp3'), t, 0.18 * SFX, (i % 2 ? 0.2 : -0.2));
