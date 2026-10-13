@@ -157,8 +157,9 @@
     prep(S) {
       const r = S.r;
       S._b.mv.forEach((e) => drop(S, e));
+      r.cb.enemies.slice().forEach((e) => { if (!e.dead && e.type === 'target' && !e.mine && Math.abs(e.x) < 3.6) drop(S, e); });   // убрать мишени с линии огня
       r.giveWeapon('ak', { equip: true }); refill(S); place(S, 0, 4.0, 0, 0);
-      S._b.ak = [['rusher', -3.5, -15], ['grunt', -2.5, -12], ['grunt', 3, -13.5], ['heavy', 0.5, -19]].map((a) => { const e = r.enemy(a[0], a[1], a[2], { yaw: 0, drop: false, pers: a[0] === 'grunt' ? 'pro' : a[0] === 'heavy' ? 'jugg' : 'zealot', exact: true, hp: a[0] === 'heavy' ? 0.5 : 1 }); e.mine = true; return e; });
+      S._b.ak = [['rusher', -4, -12], ['grunt', -2, -10.5], ['grunt', 3.5, -12], ['heavy', 0.5, -17]].map((a) => { const e = r.enemy(a[0], a[1], a[2], { yaw: 0, drop: false, pers: a[0] === 'grunt' ? 'pro' : a[0] === 'heavy' ? 'jugg' : 'zealot', exact: true, hp: a[0] === 'heavy' ? 0.5 : 1 }); e.mine = true; return e; });
       const v = spawnMoving(S, -9, -3.5, 1.5, true); S._b.vest = v;
     },
     tick(S, lt, dt) {

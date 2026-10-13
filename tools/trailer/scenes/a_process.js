@@ -103,7 +103,7 @@
     // 1. FP: идём между колоннами к светящемуся терминалу, отвернувшись; процесс ползёт; на секунду оглядываемся — он замер ближе
     { id: 'creep_walk', beats: 8, pre: 0.4,
       start(S) {
-        const r = S.r; AK.fpStart(S, -8.4, 7.4, -0.55); r.setAmbient(0.34); r.placeNpc(r.s, 4.0, 8.2); r.s.creeping = false; r.s.yaw = 0;
+        const r = S.r; AK.fpStart(S, -8.4, 7.4, -0.55); r.setAmbient(0.4); r.placeNpc(r.s, 4.0, 8.2); r.s.creeping = false; r.s.yaw = 0;
         S.A.p = [[-5.5, 4.0], [-2.0, 1.2], [1.0, -1.5]];
       },
       tick(S, t, dt, A) {
@@ -116,24 +116,24 @@
     // 2. колонны, силуэт между ними: низкий проезд навстречу; он замирает, когда камера смотрит на него, и сдвигается между кадрами
     { id: 'pillar_stalk', beats: 6, pre: 0.3,
       start(S) {
-        const r = S.r; AK.purge(S); dropCreep(S); r.setAmbient(0.34); r.p.x = -9; r.p.z = 9; r.p.moving = 0; r.placeNpc(r.s, 2.5, -3.0); r.faceNow(r.s, -3, 6); r.s.creeping = false; this.cam(S, 0, 0);
+        const r = S.r; AK.purge(S); dropCreep(S); r.setAmbient(0.4); r.p.x = -9; r.p.z = 9; r.p.moving = 0; r.placeNpc(r.s, 2.5, -3.0); r.faceNow(r.s, -3, 6); r.s.creeping = false; this.cam(S, 0, 0);
       },
       tick(S, t, dt, A) { const r = S.r; r.p.x = -9; r.p.z = 9; r.p.moving = 0; const g = r.s.g.position; const d = Math.hypot(-3 - g.x, 6 - g.z); if (d > 0.3) { g.x += (-3 - g.x) / d * 0.75 * dt; g.z += (6 - g.z) / d * 0.75 * dt; r.s.creeping = true; } },
       cam(S, k, t) {
         const u = AK.u(S, k, 0.55);
         AK.cam(S, t, [-8.5 + 4.2 * u, 0.9 + 0.1 * u, 8.5 - 1.5 * u], [2.0 - 0.8 * u, 1.35, -2.0 + 0.8 * u], 60 - 6 * u, { amp: 0.01 });
       } },
-    // 3. терминал: герой подходит к светящемуся блоку, процесс стоит позади в тени; камера у пола, подъём
+    // 3. терминал: герой подходит к светящемуся экрану и на миг встаёт перед ним — чёрный силуэт на белом; камера сбоку, чуть выше пола
     { id: 'terminal_reveal', beats: 6, pre: 0.3,
       start(S) {
-        const r = S.r; AK.purge(S); dropCreep(S); r.setAmbient(0.34); r.p.x = -9; r.p.z = 9; r.p.moving = 0;
-        S.A.h = AK.hero(S, 5.8, -4.8, 0.4 * Math.PI * 0 + Math.PI * 1.25, null);
-        r.placeNpc(r.s, 3.0, 2.0); r.faceNow(r.s, 8, -9); r.s.creeping = false; this.cam(S, 0, 0);
+        const r = S.r; AK.purge(S); dropCreep(S); r.setAmbient(0.4); r.p.x = -9; r.p.z = 9; r.p.moving = 0;
+        S.A.h = AK.hero(S, 5.8, -4.4, Math.PI * 1.25, null);
+        r.placeNpc(r.s, 2.4, -6.8); r.faceNow(r.s, 8, -9); r.s.creeping = false; this.cam(S, 0, 0);
       },
-      tick(S, t, dt, A) { S.r.p.x = -9; S.r.p.z = 9; S.r.p.moving = 0; AK.go(A.h, 8.2, -8.0, 1.6); },
+      tick(S, t, dt, A) { S.r.p.x = -9; S.r.p.z = 9; S.r.p.moving = 0; AK.go(A.h, 8.5, -8.3, 1.9); },
       cam(S, k, t) {
         const u = AK.u(S, k, 0.5);
-        AK.cam(S, t, [3.8 + 0.8 * u, 0.3 + 1.1 * u, -2.2 - 2.4 * u], [8.6, 1.05 + 0.2 * u, -8.6], 62 - 8 * u, { amp: 0.008, roll: 0.02 * (1 - u) });
+        AK.cam(S, t, [4.7 + 1.5 * u, 0.9 + 0.3 * u, -4.4 - 1.5 * u], [9.2, 1.35, -9.3], 58 - 8 * u, { amp: 0.008, roll: 0.015 * (1 - u) });
       } }
   ], 0.4);
 
