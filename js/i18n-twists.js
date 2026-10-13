@@ -198,4 +198,7 @@
     "SHOOT THE WHITE FUEL CAPS — CHAIN REACTIONS, BUT SIRENS CALL GUARDS": ["СТРЕЛЯЙ В БЕЛЫЕ КРЫШКИ БАКОВ — ЦЕПНАЯ РЕАКЦИЯ, НО СИРЕНЫ ЗОВУТ ОХРАНУ","SCHIESS AUF DIE WEISSEN TANKDECKEL — KETTENREAKTION, ABER SIRENEN RUFEN WÄCHTER"],
     "SIRENS — SECURITY RESPONDING": ["СИРЕНЫ — ОХРАНА ВЫДВИНУЛАСЬ","SIRENEN — SICHERHEIT RÜCKT AN"]
   });
+  I18N.add('en', {
+    "[{s0} x{0}]": ["[{s0} x{0}]","[{s0} x{0}]"]
+  });
 }());

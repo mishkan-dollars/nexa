@@ -673,7 +673,6 @@
       car.m.material = r.mat(0x151515);
       r.explode(car.tx, 0.8, car.tz, 4.6, 80);
       r.snd && r.snd.play('alarm', { k: 0.4 });
-      if (depth === 0) T.bonus(0, '');
       S.cars.forEach((o) => { if (!o.dead && Math.hypot(o.cx - car.cx, o.cz - car.cz) < 6.5) T.after(0.45, () => { if (o.tg && o.tg.alive) o.tg.damage(99); }); });
       S.sir += 1;
       const sec = T.sec();
