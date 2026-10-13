@@ -112,7 +112,7 @@
   }
 
   function renderDesktop() {
-    return '<div class="center-shell"><div data-lobbybg style="background-image:url(assets/menubg.png);background-size:cover;background-position:center;background-repeat:no-repeat;position:absolute;inset:0;opacity:.75;"></div><div style="position:relative;z-index:1;width:min(680px,100%);"><div style="text-align:center;margin-bottom:60px;"><p style="font:700 32px/1.1 var(--display);letter-spacing:.12em;color:var(--red);margin-bottom:12px;">NEXA/OS</p><p style="color:var(--muted);font-size:11px;letter-spacing:.15em;">BEHAVIORAL RESEARCH DIVISION</p><p style="color:var(--muted);font-size:10px;letter-spacing:.2em;margin:8px 0 0;">TERMINAL 083 // SYSTEM READY</p></div><div class="os-status"><span><i class="status-dot blink"></i>DISK ACTIVE</span><span>MEM 0640K</span><span>SUBJECT 083<span class="cursor"></span></span></div><div class="menu-actions os-window">' + missionButton() + '<button class="action" data-action="play">HIGH_LOW.exe</button><button class="action" data-action="missions" data-cursor="interact">MISSIONS</button><button class="action" data-action="shop" data-cursor="interact">SHOP</button><button class="action" data-action="sandbox" data-cursor="interact">SANDBOX</button><button class="action" data-action="archive">ARCHIVE</button><button class="action" data-action="system-log">SYSTEM LOG</button></div></div></div>';
+    return '<div class="center-shell"><div data-lobbybg style="background-image:url(assets/menubg.png);background-size:cover;background-position:center;background-repeat:no-repeat;position:absolute;inset:0;opacity:.75;"></div><div style="position:relative;z-index:1;width:min(680px,100%);"><div style="text-align:center;margin-bottom:60px;"><p style="font:700 32px/1.1 var(--display);letter-spacing:.12em;color:var(--red);margin-bottom:12px;">NEXA/OS</p><p style="color:var(--muted);font-size:11px;letter-spacing:.15em;">BEHAVIORAL RESEARCH DIVISION</p><p style="color:var(--muted);font-size:10px;letter-spacing:.2em;margin:8px 0 0;">TERMINAL 083 // SYSTEM READY</p></div><div class="os-status"><span><i class="status-dot blink"></i>DISK ACTIVE</span><span>MEM 0640K</span><span>SUBJECT 083<span class="cursor"></span></span></div><div class="menu-actions os-window">' + missionButton() + '<button class="action" data-action="play">HIGH_LOW.exe</button><button class="action" data-action="missions" data-cursor="interact">MISSIONS</button><button class="action" data-action="shop" data-cursor="interact">SHOP</button><button class="action" data-action="sandbox" data-cursor="interact">SANDBOX</button><button class="action" data-action="online" data-cursor="interact">ONLINE LOBBY</button><button class="action" data-action="archive">ARCHIVE</button><button class="action" data-action="system-log">SYSTEM LOG</button></div></div></div>';
   }
 
   function missionButton() {
@@ -386,6 +386,7 @@
   function buildView() {
     var phase = game.state.phase;
     if (!bootComplete) return renderBoot();
+    if (currentView === 'ONLINE' && window.OnlineLobby) return OnlineLobby.render();   // онлайн-лобби (onlinelobby.js): не закрыто первыми заданиями — друг приходит по ссылке
     var menuLike = phase === PHASES.MENU || currentView === 'ARCHIVE' || currentView === 'SYSTEM_LOG' || currentView === 'MISSIONS' || currentView === 'SHOP';
     if ((!taskAccepted || introLocked()) && menuLike) return renderTaskDialog();   // пока первые 6 заданий не пройдены, кроме задания ничего нет
     if (currentView === 'SHOP' && window.Toys) return Toys.renderShop();
@@ -432,6 +433,7 @@
     lastKey = viewKey();
     afterRender();
     if (window.Lobby3D) Lobby3D.sync(lobbyView());
+    if (window.OnlineLobby) OnlineLobby.afterRender(currentView === 'ONLINE');
   }
 
   // экраны NEXA/OS (рабочий стол, задание, миссии, магазин, архив, лог): за ними идёт 3D-фон лобби
@@ -550,9 +552,26 @@
     render();
   }
 
+  // Онлайн (coop.js): тот же режим запускается у обоих игроков; прогресс сюжета не трогаем, по выходу — обратно в онлайн-лобби
+  function startCoop(spec) {
+    if (missionActive || !window.Missions) return false;
+    var id = spec.mode === 'mission' ? spec.mission : 'coopbox';
+    if (id !== 'coopbox' && (id < 1 || id > 47 || !Missions._core.MISSIONS[id])) return false;
+    missionActive = true;
+    if (window.Lobby3D) Lobby3D.sync(false);
+    audio.stopMusic();
+    audio.stopHarddrive();
+    var noop = function () {};
+    var back = function () { missionActive = false; currentView = 'ONLINE'; audio.startHarddrive(); audio.playMusic('menu'); if (window.NexaCoop) NexaCoop.end(); render(); };
+    var run = Missions.start(id, { audio: audio, playSfx: function (k) { audio.playSfx(k); }, onStage: noop, onCutscene: noop, onComplete: back, onExit: back, coop: spec });
+    if (!run) { missionActive = false; audio.startHarddrive(); audio.playMusic('menu'); return false; }
+    return true;
+  }
+
   function handleAction(action, value) {
-    if (introLocked() && action !== 'start-mission') return;   // первые 6 заданий обязательны: магазин, песочница, терминал, архив и повторы закрыты
+    if (introLocked() && action !== 'start-mission' && !(action === 'menu' && currentView === 'ONLINE')) return;   // первые 6 заданий обязательны: магазин, песочница, терминал, архив и повторы закрыты
     if (window.Toys && Toys.action(action, value)) return;
+    if (window.OnlineLobby && OnlineLobby.action(action, value)) return;
     if (action === 'accept-task') {
       taskAccepted = true;
       audio.playSfx('notification');
@@ -874,6 +893,7 @@
   function start() {
     loadProgress();
     if (window.Toys) Toys.init({ audio: audio, setView: function (v) { currentView = v; }, render: render, startSandbox: startSandbox });
+    if (window.OnlineLobby) OnlineLobby.init({ audio: audio, setView: function (v) { currentView = v; }, render: render, startCoop: startCoop });
     bindScreen();
     audio.startHarddrive();        // единственный экземпляр; стартует сразу после unlock, на время 3D миссии выключается (startMission/endMission)
     audio.playSfx('boot');
@@ -885,6 +905,7 @@
       audio.playMusic('menu');
       render();
       // отладка: ?go=48 — сразу запустить миссию в обход замков списка; с ?m48=<этап> финал начнётся с этого этапа (flash, head, bombs…)
+      if (window.OnlineLobby) OnlineLobby.boot();   // ссылка ?join=… сразу открывает онлайн-лобби
       var go = /[?&]go=(\d+)/.exec(location.search);
       if (go) startMission(Number(go[1]), true);
     }, 2800);

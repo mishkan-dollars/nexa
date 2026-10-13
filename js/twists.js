@@ -126,6 +126,25 @@
     // сектор по имени фазы ('s3') — на старте попытки M.cur ещё указывает на прошлый сектор
     secOf(name) { const M = this.r.mm, m = /^s(\d+)$/.exec(name || ''); return M && m ? M.secs[+m[1]] || null : null; }
     foes(filter) { const cb = this.r.cb; return cb ? cb.enemies.filter((e) => !e.dead && !e.friendly && !(e.t && e.t.passive) && (!filter || filter(e))) : []; }
+    // точки появления врагов внутри сектора (не за стеной, не в укрытии, не вплотную к игроку)
+    spawnPts(sec, n, minD) {
+      const r = this.r, hw = (sec.W || 24) / 2 - 2.6, out = [];
+      for (let i = 0; i < n; i += 1) {
+        let best = null;
+        for (let t = 0; t < 24 && !best; t += 1) {
+          const x = (Math.random() * 2 - 1) * hw, z = sec.zB + 3 + Math.random() * Math.max(2, sec.D - 6);
+          if (r.blockedE(x, z) || (r.inRoom && r.inRoom(x, z)) || hyp(x - r.p.x, z - r.p.z) < (minD || 7) || out.some((o) => hyp(o[0] - x, o[1] - z) < 1.4)) continue;
+          best = [x, z];
+        }
+        out.push(best || [(Math.random() * 2 - 1) * hw, sec.zB + 4 + Math.random() * 6]);
+      }
+      return out;
+    }
+    // подкрепление в секторе: types — ['grunt','rusher',...]
+    wave(sec, types, gap) {
+      const r = this.r, pts = this.spawnPts(sec, types.length);
+      return r.spawnWave(types.map((t, i) => [Array.isArray(t) ? t[0] : t, pts[i][0], pts[i][1], Array.isArray(t) ? t[1] : undefined]), { gap: gap || 0.4 });
+    }
     // подсказка/цель/реплика
     hint(text, sec) { this.r.hint(text, sec || 3.6); }
     say(who, text, hold) { return this.r.say(who, text, hold); }

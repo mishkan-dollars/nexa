@@ -54,15 +54,20 @@
   const route = (run, el, kind) => {
     const snd = run.snd, ctx = snd && snd.ctx, make = FX[kind];
     if (!ctx || !make || location.protocol === 'file:') return null;
+    let src = null;
     try {
-      const src = ctx.createMediaElementSource(el), fx = make(ctx), g = ctx.createGain();
+      src = ctx.createMediaElementSource(el);
+      const fx = make(ctx), g = ctx.createGain();
       g.gain.value = 0;
       let node = src;
       fx.nodes.forEach((n) => { node.connect(n); node = n; });
       node.connect(g); g.connect(snd.dest || ctx.destination);
       if (ctx.state === 'suspended') ctx.resume().catch(() => {});
       return { src, gain: g, nodes: fx.nodes.concat([g]), k: fx.k };
-    } catch (e) { return null; }
+    } catch (e) {
+      if (src) { try { src.disconnect(); src.connect(snd.dest || ctx.destination); } catch (e2) {} }   // элемент уже привязан к контексту: без обработки, но слышно (громкость — el.volume)
+      return null;
+    }
   };
   // громкость: у обычной реплики — el.volume; у обработанной громкость элемента 1 (volume/muted применяются ДО узла), громкость ведёт GainNode
   const setVol = (run, el) => {
@@ -92,7 +97,7 @@
   };
 
   // ------------------------------------------------------------ предзагрузка клипов миссии
-  // обычные миссии (≤ 7 реплик) качаются сразу; финал (130 клипов, ≈ 6 минут речи, ≈ 20 МБ) — партиями по порядку сюжета (D48_001 …), следующая партия — когда прошла предыдущая
+  // обычные миссии (≤ 7 реплик) качаются сразу; финал (130 клипов, ≈ 7 минут речи, ≈ 8 МБ) — партиями по 8 клипов в порядке кодов (D48_001 …), следующая партия через 0,6 с после предыдущей
   const BATCH = 8, GAP = 600;
   const warmBatches = (codes) => {
     let i = 0;

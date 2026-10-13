@@ -81,14 +81,15 @@
         r.box(x1 - 0.06, H / 2, z0 + 0.3, 0.12, H, 0.5, 0x5a5a5a, true);                         // косяки двери
         r.box(x1 - 0.06, H / 2, z1 - 0.3, 0.12, H, 0.5, 0x5a5a5a, true);
         r.box(x0 + 0.06, H / 2, cz, 0.12, H, LEN, 0x686868, false);                              // задняя стена
-        const door = r.door(x1 - 0.06, cz, LEN - 1.0, H - 0.1, true);
+        const door = r.door(x1 - 0.06, cz, LEN - 1.0, hot ? H - 0.35 : H - 0.1, true);
         door.material = r.mat(hot ? 0x3b3b3b : 0x4a4a4a);
-        T.label(String(num), x1 + 0.03, H - 0.45, cz, { w: 1.4, size: 96, yaw: PI / 2, bg: 'rgba(0,0,0,.35)', keep: true });
-        T.label('CONTAINER ' + num, x1 + 0.03, 0.55, cz, { w: 2.2, size: 44, yaw: PI / 2, bg: false, keep: true, color: '#d8d8d8' });
+        if (hot) door.position.y += 0.3;
+        // таблички едут вместе с дверью (поднимаются, когда она открывается)
+        door.attach(T.label(String(num), x1 + 0.07, 1.75, cz, { w: 1.4, size: 96, yaw: PI / 2, bg: 'rgba(0,0,0,.35)', keep: true }));
+        door.attach(T.label('CONTAINER ' + num, x1 + 0.07, 0.7, cz, { w: 2.2, size: 44, yaw: PI / 2, bg: false, keep: true, color: '#d8d8d8' }));
         const c = { num, door, cz, x0, x1, hot, opened: false };
         if (hot) {
           // приоткрыта: щель внизу и свет из неё
-          door.position.y += 0.3; door.userData.h = H - 0.1;
           r.strip(x1 + 0.02, 0.12, cz, 0.05, 0.24, LEN - 1.1, 0xffffff);
           r.strip((x0 + x1) / 2, H - 0.16, cz, 1.6, 0.05, 1.6, 0xffffff);
           // мишка на ящике у задней стены
@@ -253,8 +254,7 @@
             used = true; it.done(); S.wrong += 1;
             r.snd && r.snd.play('alarm'); r.flash(0.3); r.shake(0.05, 0.6);
             r.hint('WRONG TRUCK — EMPTY CARGO BAY. THE ALARM IS ON', 3.4);
-            const list = r.around(['grunt', 'grunt', 'rusher'], 9, 16);
-            r.spawnWave(list, { gap: 0.4 });
+            T.wave(sec, ['grunt', 'grunt', 'rusher']);
           }
         });
         T.att(() => { const i = r.interactables.indexOf(it); if (i >= 0) r.interactables.splice(i, 1); });
