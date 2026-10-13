@@ -1407,7 +1407,7 @@ body.in-online .terminal { animation: none !important; transform: none !importan
   .ol-tag .tg-n { font-size: 18px; } .ol-tag .tg-s { font-size: 14px; }
 }
 @media (max-height: 520px) and (orientation: landscape) {
-  .ol { --car-h: 70px; } .ol-top { padding-top: 4px; padding-bottom: 4px; } .ol-quest { top: 52px; padding: 6px 10px; } .ol-quest .q-t b { font-size: 19px; } .ol-quest .q-s { display: none; }
+  .ol { --car-h: 70px; } .ol-top { padding-top: 4px; padding-bottom: 4px; } .ol-quest { display: none; } .ol-tag.t0 { top: 36%; } .ol-tag.t1 { top: 42%; } .ol-tabs { max-width: 62vw; } .ol-quest .q-t b { font-size: 19px; } .ol-quest .q-s { display: none; }
   .ol-bl { padding: 8px; width: min(240px, 38vw); } .ol-bl h2 { font-size: 18px; margin-bottom: 6px; } .ol-grey { padding: 5px 8px; margin-bottom: 6px; } .ol-play { font-size: 24px; padding: 6px; } .ol-hint { display: none; }
   .ol-br { transform: scale(.7); transform-origin: right bottom; } .ol-card { height: 54px; } .ol-sheet { top: 50px; }
 }
