@@ -201,4 +201,29 @@
   I18N.add('en', {
     "[{s0} x{0}]": ["[{s0} x{0}]","[{s0} x{0}]"]
   });
+  I18N.add('en', {
+    "CONDUCT: MERCIFUL": ["ПОВЕДЕНИЕ: МИЛОСЕРДНЫЙ","VERHALTEN: BARMHERZIG"],
+    "CONDUCT: RUTHLESS": ["ПОВЕДЕНИЕ: БЕЗЖАЛОСТНЫЙ","VERHALTEN: SKRUPELLOS"],
+    "CONDUCT: PRAGMATIC": ["ПОВЕДЕНИЕ: ПРАГМАТИЧНЫЙ","VERHALTEN: PRAGMATISCH"],
+    "PRISONERS: {0}": ["ПЛЕННЫХ: {0}","GEFANGENE: {0}"],
+    "TAKE CAPTIVE": ["ВЗЯТЬ В ПЛЕН","GEFANGEN NEHMEN"],
+    "CAPTIVE TAKEN": ["ПЛЕННЫЙ ВЗЯТ","GEFANGENER GENOMMEN"],
+    "EXECUTION — THE HANDLER TAKES NOTE": ["КАЗНЬ — КУРАТОР ЭТО ЗАПИШЕТ","HINRICHTUNG — DER EINSATZLEITER NOTIERT ES"],
+    "A CAPTOR SURRENDERS — TAKE HIM CAPTIVE [E] OR FINISH HIM": ["ПОХИТИТЕЛЬ СДАЁТСЯ — ВОЗЬМИ В ПЛЕН [E] ИЛИ ДОБЕЙ","EIN ENTFÜHRER ERGIBT SICH — NIMM IHN GEFANGEN [E] ODER MACH IHN FERTIG"],
+    "COLLAPSE": ["ОБРУШЕНИЕ","EINSTURZ"],
+    "RED CHARGES ON THE SUPPORTS — SHOOT ONE TO DROP THE PLATFORM ON THE GUARDS": ["КРАСНЫЕ ЗАРЯДЫ НА ОПОРАХ — СТРЕЛЯЙ В ОДИН, ЧТОБЫ РОНЯТЬ ПЛАТФОРМУ НА ОХРАНУ","ROTE LADUNGEN AN DEN STÜTZEN — SCHIESS AUF EINE, UM DIE PLATTFORM AUF DIE WÄCHTER ZU WERFEN"],
+    "GAS MASK": ["ПРОТИВОГАЗ","GASMASKE"],
+    "TIME LEFT": ["ОСТАЛОСЬ","VERBLEIBEND"],
+    "TAKE THE GAS MASK": ["ВЗЯТЬ ПРОТИВОГАЗ","GASMASKE NEHMEN"],
+    "MASK ON — 30 S OF PROTECTION": ["МАСКА НАДЕТА — 30 С ЗАЩИТЫ","MASKE AUF — 30 S SCHUTZ"],
+    "OPEN THE VALVE": ["ОТКРЫТЬ ВЕНТИЛЬ","VENTIL ÖFFNEN"],
+    "GAS RELEASED — KEEP OUT WITHOUT A MASK": ["ГАЗ ВЫПУЩЕН — БЕЗ МАСКИ НЕ ВХОДИ","GAS FREIGESETZT — OHNE MASKE FERNBLEIBEN"],
+    "COUGHING — GET OUT OF THE GAS": ["КАШЕЛЬ — ВЫБЕРИСЬ ИЗ ГАЗА","HUSTEN — RAUS AUS DEM GAS"],
+    "VALVES ON THE WALLS RELEASE GAS — MASK AT THE ENTRANCE PROTECTS YOU FOR 30 S": ["ВЕНТИЛИ НА СТЕНАХ ВЫПУСКАЮТ ГАЗ — МАСКА У ВХОДА ЗАЩИЩАЕТ 30 С","VENTILE AN DEN WÄNDEN SETZEN GAS FREI — DIE MASKE AM EINGANG SCHÜTZT 30 S"],
+    "SIREN: {s0} WING": ["СИРЕНА: {s0} КРЫЛО","SIRENE: {s0} FLÜGEL"],
+    "LEFT": ["ЛЕВОЕ","LINKER"],
+    "RIGHT": ["ПРАВОЕ","RECHTER"],
+    "SIREN ON — GUARDS ARE MOVING": ["СИРЕНА ВКЛЮЧЕНА — ОХРАНА ДВИЖЕТСЯ","SIRENE AN — DIE WÄCHTER SETZEN SICH IN BEWEGUNG"],
+    "NOISE CONSOLE: PICK A WING — THE GUARDS WILL RUN TO THE SIREN": ["ПУЛЬТ ШУМА: ВЫБЕРИ КРЫЛО — ОХРАНА ПОБЕЖИТ К СИРЕНЕ","LÄRMPULT: WÄHLE EINEN FLÜGEL — DIE WÄCHTER LAUFEN ZUR SIRENE"]
+  });
 }());

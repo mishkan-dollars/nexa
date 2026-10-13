@@ -762,7 +762,7 @@
       const h0 = r.hurt;
       r.hurt = function (a, fx, fz) { if (S.mask > 0 && fx === undefined) a *= 0.1; return h0.call(this, a, fx, fz); };
       S.vig = T.panel('', '', true); S.vig.style.cssText = 'inset:0;z-index:4;display:none;background:radial-gradient(ellipse at center,rgba(0,0,0,0) 35%,rgba(0,0,0,.85) 100%)';
-      S.hud = T.panel('tw-corner tw-box tw-rows', '<h3>GAS MASK</h3><p><span>LEFT</span><b class="tw-n">0</b></p>', true); S.hud.style.display = 'none'; S.n = S.hud.querySelector('.tw-n');
+      S.hud = T.panel('tw-corner tw-box tw-rows', '<h3>GAS MASK</h3><p><span>TIME LEFT</span><b class="tw-n">0</b></p>', true); S.hud.style.display = 'none'; S.n = S.hud.querySelector('.tw-n');
     },
     phase(r, T, name) {
       const S = T.s, sec = T.secOf(name), T3 = window.THREE;
