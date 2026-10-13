@@ -1432,3 +1432,13 @@ body.in-online .terminal { animation: none !important; transform: none !importan
 .nx-tag small { display: block; font-size: 12px; letter-spacing: .12em; color: #ffd60a; text-transform: uppercase; }
 .nx-note { position: absolute; left: 50%; top: 18%; transform: translateX(-50%); z-index: 9; background: rgba(0,0,0,.6); border: 1px solid #ffe600; padding: 4px 16px; border-radius: 4px; pointer-events: none; font-size: 18px; letter-spacing: .1em; text-align: center; animation: olIn .2s ease-out; transition: opacity .5s; }
 .mission.touch .nx-chat { bottom: 70px; } .mission.touch .nx-btns { top: 46px; }
+@media (max-width: 720px) and (orientation: portrait) {
+  .ol-stage { inset: 56px 0 calc(var(--car-h) + 222px) 0; }
+  .ol-quest { display: none; } .ol-hint { display: none; }
+  .ol-bl { left: 8px; right: 8px; width: auto; bottom: calc(var(--car-h) + 8px); }
+  .ol-br { bottom: calc(var(--car-h) + 130px); }
+  .ol-plat.p0 { top: 82%; width: 40%; } .ol-plat.p1 { left: 18%; top: 62%; width: 26%; } .ol-plat.p2 { left: 82%; top: 60%; width: 26%; }
+  .ol-fig.f0 { bottom: 14%; height: 80%; } .ol-fig.f1 { left: 82%; bottom: 36%; height: 48%; } .ol-tag.t0 { top: 14%; } .ol-tag.t1 { left: 76%; top: 30%; }
+  .ol-invite { left: 78%; top: 44%; padding: 4px 10px; font-size: 15px; }
+  .ol-comm { }
+}
