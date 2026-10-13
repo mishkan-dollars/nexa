@@ -93,7 +93,7 @@
       K.suitMode(r, true);
       K.suitFov(r, 102, 0.6);
       K.stress(r, 1, 5);                                               // экран плывёт: сильный стресс героя
-      mus.play(2.0, true);
+      if (mus.want && mus.mix > 0.05) mus.play(2.0); else mus.play(2.0, true);   // повтор после смерти: трек не перезапускаем
       K.ally.follow(r, [d], { side: -1, back: 3.0 });                  // у каждого свой слот: Диктор слева-сзади, девушка справа-сзади
       K.ally.follow(r, [g], { side: 1, back: 3.6 });
       r.objective('CLEAR THE HALL   0 / ' + NEED);

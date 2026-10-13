@@ -36,8 +36,12 @@
     const fl = document.createElement('canvas'); fl.width = fl.height = 64;
     const f = fl.getContext('2d'), fg = f.createRadialGradient(32, 32, 0, 32, 32, 32);
     [[0, 1], [0.12, 0.95], [0.4, 0.3], [1, 0]].forEach((s) => fg.addColorStop(s[0], 'rgba(255,255,255,' + s[1] + ')')); f.fillStyle = fg; f.fillRect(0, 0, 64, 64);
+    const so = document.createElement('canvas'); so.width = so.height = 128;
+    const sg = so.getContext('2d'), sgr = sg.createRadialGradient(64, 64, 4, 64, 64, 64);                  // копоть на земле: тёмное пятно с лучами от эпицентра
+    sgr.addColorStop(0, 'rgba(0,0,0,0.92)'); sgr.addColorStop(0.5, 'rgba(0,0,0,0.6)'); sgr.addColorStop(1, 'rgba(0,0,0,0)'); sg.fillStyle = sgr; sg.fillRect(0, 0, 128, 128);
+    for (let i = 0; i < 40; i += 1) { const a = Math.random() * 6.283, l = 30 + Math.random() * 33; sg.strokeStyle = 'rgba(0,0,0,' + (0.15 + Math.random() * 0.3) + ')'; sg.lineWidth = 1 + Math.random() * 3; sg.beginPath(); sg.moveTo(64 + Math.cos(a) * 18, 64 + Math.sin(a) * 18); sg.lineTo(64 + Math.cos(a) * l, 64 + Math.sin(a) * l); sg.stroke(); }
     const mk = (cv) => new THREE.CanvasTexture(cv);
-    return (TX = { fire: [puffTex('fire', 3), puffTex('fire', 29), puffTex('fire', 57)], smoke: [puffTex('smoke', 1), puffTex('smoke', 17), puffTex('smoke', 41), puffTex('smoke', 73)], ring: mk(ring), dot: mk(dot), flash: mk(fl) });
+    return (TX = { soot: mk(so), fire: [puffTex('fire', 3), puffTex('fire', 29), puffTex('fire', 57)], smoke: [puffTex('smoke', 1), puffTex('smoke', 17), puffTex('smoke', 41), puffTex('smoke', 73)], ring: mk(ring), dot: mk(dot), flash: mk(fl) });
   }
 
   // ------------------------------------------------------------------ пулы
@@ -142,6 +146,37 @@
         const o = c.createOscillator(); o.type = 'sine'; o.frequency.value = f; const g = c.createGain(); g.gain.setValueAtTime(0, t0 + 0.25);
         g.gain.linearRampToValueAtTime(0.05, t0 + 0.7 + i * 0.1); g.gain.linearRampToValueAtTime(0.034, t0 + 3.5); g.gain.linearRampToValueAtTime(0, t0 + 8.5); o.connect(g); g.connect(out); o.start(t0 + 0.25); o.stop(t0 + 8.6);
       });
+      // эхо города: отражения от соседних кварталов — поздние, глухие, всё более срезанные по верху удары
+      const noiseAt = (ts, dur) => { const n = c.createBufferSource(); n.buffer = nb; n.start(ts, Math.random() * 3, dur); return n; };
+      [[0.8, 0.5, 1100, 1.5], [1.6, 0.34, 700, 1.7], [2.7, 0.24, 480, 1.9], [4.1, 0.15, 330, 2.1]].forEach((q, i) => {
+        const ts = t0 + q[0], e = noiseAt(ts, q[3]), ef = c.createBiquadFilter(), eg = c.createGain(); ef.type = 'lowpass'; ef.frequency.value = q[2]; ef.Q.value = 0.6;
+        eg.gain.setValueAtTime(0, ts); eg.gain.linearRampToValueAtTime(q[1], ts + 0.04); eg.gain.exponentialRampToValueAtTime(0.002, ts + q[3]); e.connect(ef); ef.connect(eg); eg.connect(out);
+        const th = c.createOscillator(), tg = c.createGain(); th.type = 'sine'; th.frequency.setValueAtTime(52 - i * 5, ts); th.frequency.exponentialRampToValueAtTime(24, ts + 1.1);
+        tg.gain.setValueAtTime(0, ts); tg.gain.linearRampToValueAtTime(q[1] * 0.9, ts + 0.03); tg.gain.exponentialRampToValueAtTime(0.002, ts + 1.2); th.connect(tg); tg.connect(out); th.start(ts); th.stop(ts + 1.25);
+      });
+      // дождь обломков: зернистый шорох (частых зёрен больше в начале) и тяжёлые удары кусков о землю; к 9-й секунде стихает
+      const qk = clamp(((r.q && r.q.parts) || 12) / 20, 0.3, 1);
+      for (let i = 0, n = Math.round(40 + 60 * qk); i < n; i += 1) {
+        const tt = 2.2 + 7 * Math.pow(Math.random(), 1.5), a = rnd(0.05, 0.22) * (1 - (tt - 2.2) / 8), ts = t0 + tt, gr = noiseAt(ts, 0.06), gf = c.createBiquadFilter(), gg = c.createGain();
+        gf.type = 'bandpass'; gf.frequency.value = rnd(500, 3600); gf.Q.value = 1.2; gg.gain.setValueAtTime(a, ts); gg.gain.exponentialRampToValueAtTime(0.001, ts + 0.06); gr.connect(gf); gf.connect(gg); gg.connect(out);
+      }
+      for (let i = 0; i < 14; i += 1) {
+        const ts = t0 + 2.6 + rnd(0, 6.2), a = rnd(0.2, 0.4) * (1 - (ts - t0 - 2.6) / 8), o = c.createOscillator(), og = c.createGain(); o.type = 'sine'; o.frequency.setValueAtTime(rnd(60, 95), ts); o.frequency.exponentialRampToValueAtTime(34, ts + 0.22);
+        og.gain.setValueAtTime(0, ts); og.gain.linearRampToValueAtTime(a, ts + 0.008); og.gain.exponentialRampToValueAtTime(0.001, ts + 0.3); o.connect(og); og.connect(out); o.start(ts); o.stop(ts + 0.32);
+        const cr = noiseAt(ts, 0.1), cf = c.createBiquadFilter(), cg2 = c.createGain(); cf.type = 'lowpass'; cf.frequency.value = rnd(900, 2400); cg2.gain.setValueAtTime(a * 0.8, ts); cg2.gain.exponentialRampToValueAtTime(0.001, ts + 0.1); cr.connect(cf); cf.connect(cg2); cg2.connect(out);
+      }
+      // скрежет металла: пила через узкий полосовой фильтр, частота ползёт вниз, дрожь; плюс низкий стон каркаса
+      [[1.2, 1.1, 0.2], [2.5, 1.5, 0.26], [4.0, 1.2, 0.2], [5.6, 1.6, 0.16]].forEach((q) => {
+        const ts = t0 + q[0] + rnd(0, 0.25), d = q[1], o = c.createOscillator(), bp = c.createBiquadFilter(), lfo = c.createOscillator(), lg = c.createGain(), g = c.createGain();
+        o.type = 'sawtooth'; o.frequency.setValueAtTime(rnd(210, 330), ts); o.frequency.exponentialRampToValueAtTime(rnd(120, 190), ts + d);
+        bp.type = 'bandpass'; bp.Q.value = 7; bp.frequency.setValueAtTime(rnd(1300, 2100), ts); bp.frequency.exponentialRampToValueAtTime(rnd(520, 900), ts + d);
+        lfo.type = 'square'; lfo.frequency.value = rnd(17, 34); lg.gain.value = q[2] * 0.7;
+        g.gain.setValueAtTime(0, ts); g.gain.linearRampToValueAtTime(q[2], ts + 0.12); g.gain.setValueAtTime(q[2], ts + d * 0.6); g.gain.linearRampToValueAtTime(0, ts + d);
+        lfo.connect(lg); lg.connect(g.gain); o.connect(bp); bp.connect(g); g.connect(out); o.start(ts); o.stop(ts + d + 0.05); lfo.start(ts); lfo.stop(ts + d + 0.05);
+      });
+      { const ts = t0 + 1.0, o = c.createOscillator(), vb = c.createOscillator(), vg = c.createGain(), g = c.createGain(); o.type = 'triangle'; o.frequency.setValueAtTime(58, ts); o.frequency.exponentialRampToValueAtTime(36, ts + 3.2);
+        vb.type = 'sine'; vb.frequency.value = 5.5; vg.gain.value = 2.2; vb.connect(vg); vg.connect(o.frequency);
+        g.gain.setValueAtTime(0, ts); g.gain.linearRampToValueAtTime(0.38, ts + 0.8); g.gain.linearRampToValueAtTime(0, ts + 3.3); o.connect(g); g.connect(out); o.start(ts); o.stop(ts + 3.4); vb.start(ts); vb.stop(ts + 3.4); }
     } catch (e) { /* звук не критичен */ }
   }
   function chargeThump(r, q) {                                                                // глухой удар заряда внутри здания (поверх blastFx)
@@ -161,15 +196,16 @@
       const B = { r, TW, t: 0, on: false, ev: [], pulses: [], emit: [], glowI: 0, col: null, dust: null, main: false, done: false, heapOn: false, disposed: false };
       B.mainAt = 2.7;
       B.fire = mkPool(sc, Math.round(46 + 70 * qk), tx.fire, true);
-      B.smoke = mkPool(sc, Math.round(80 + 130 * qk), tx.smoke, false);
+      B.smoke = mkPool(sc, Math.round(110 + 170 * qk), tx.smoke, false);
       B.flashS = (() => { const s = new T.Sprite(new T.SpriteMaterial({ map: tx.flash, transparent: true, depthWrite: false, blending: T.AdditiveBlending, fog: false, opacity: 0, color: 0xffe2b0 })); s.visible = false; sc.add(s); return s; })();
       B.flashes = [];
+      B.scorch = (() => { const g2 = new T.PlaneGeometry(1, 1); g2.rotateX(-PI / 2); const m = new T.Mesh(g2, new T.MeshBasicMaterial({ map: tx.soot, transparent: true, depthWrite: false, fog: false, opacity: 0, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 })); m.position.set(0, 0.06, -34); m.scale.set(76, 1, 40); m.visible = false; sc.add(m); return m; })();
       B.light = new T.PointLight(0xffa45c, 0, 95, 1.3); B.light.position.set(0, 8, -24); sc.add(B.light);
       // обломки (инстанс)
       const nd = Math.round(140 + 260 * qk), mesh = new T.InstancedMesh(new T.BoxGeometry(1, 1, 1), new T.MeshLambertMaterial({ color: 0xffffff }), nd), z0 = new T.Matrix4().makeScale(0, 0, 0), cc = new T.Color();
       for (let i = 0; i < nd; i += 1) { mesh.setMatrixAt(i, z0); mesh.setColorAt(i, cc.setHex(0x555555)); }
       mesh.frustumCulled = false; sc.add(mesh);
-      B.D = { mesh, n: nd, p: new Float32Array(nd * 3), v: new Float32Array(nd * 3), a: new Float32Array(nd * 3), w: new Float32Array(nd * 3), s: new Float32Array(nd * 3), on: new Uint8Array(nd), rest: new Uint8Array(nd), cur: 0, obj: new T.Object3D(), col: cc };
+      B.D = { mesh, n: nd, tr: new Float32Array(nd), tt: new Float32Array(nd), p: new Float32Array(nd * 3), v: new Float32Array(nd * 3), a: new Float32Array(nd * 3), w: new Float32Array(nd * 3), s: new Float32Array(nd * 3), on: new Uint8Array(nd), rest: new Uint8Array(nd), cur: 0, obj: new T.Object3D(), col: cc };
       // угольки
       const ne = Math.round(160 + 260 * qk), eg = new T.BufferGeometry(), ep = new Float32Array(ne * 3), ecol = new Float32Array(ne * 3);
       for (let i = 0; i < ne; i += 1) ep[i * 3 + 1] = -100;
@@ -189,7 +225,7 @@
       B.pulse = (x, y, z, pk, decay) => { B.pulses.push({ t: B.t, x, y, z, pk, decay }); };
       B.flashAt = (x, y, z, sz, dur, pk) => { B.flashes.push({ t: B.t, x, y, z, sz, dur, pk: pk || 1 }); };
       const fire = (o) => spawn(B.fire, o), smoke = (o) => spawn(B.smoke, o);
-      const chunk = (x, y, z, vx, vy, vz, size, c, rs) => {
+      const chunk = (x, y, z, vx, vy, vz, size, c, rs, trail) => {
         const D = B.D; let i = -1;
         for (let j = 0; j < D.n; j += 1) { const k = (D.cur + j) % D.n; if (!D.on[k]) { i = k; break; } }
         if (i < 0) i = D.cur;
@@ -199,6 +235,7 @@
         D.w[i * 3] = rnd(-w, w); D.w[i * 3 + 1] = rnd(-w, w); D.w[i * 3 + 2] = rnd(-w, w);
         D.s[i * 3] = size * rnd(0.6, 1.5); D.s[i * 3 + 1] = size * rnd(0.4, 1.2); D.s[i * 3 + 2] = size * rnd(0.6, 1.5);
         D.mesh.setColorAt(i, D.col.setHex(c)); D.mesh.instanceColor.needsUpdate = true;
+        D.tr[i] = trail || 0; D.tt[i] = 0;                                                  // trail — сколько секунд тянется дымный след
       };
       const ember = (x, y, z, sp, up) => {
         const E = B.E; let i = -1;
@@ -238,6 +275,15 @@
         shake(0.05 + 0.012 * i); r.cineJolt && r.cineJolt(0.35 + 0.08 * i);
         B.glowI = Math.min(1.6, B.glowI + 0.18);
       };
+      const secondary = (x, y, z, i) => {                                                          // вторичные подрывы в руинах: баллоны, трансформаторы, топливо
+        r.blastFx(x, y, z, 6.5, i % 2 ? 'frag' : 'bomb'); chargeThump(r, 0.8 + i * 0.05);
+        B.pulse(x, y + 2, z + 6, 9, 3); B.flashAt(x, y + 1, z + 4, 26, 0.45, 0.9); B.glowI = Math.min(1.8, B.glowI + 0.2);
+        for (let k = 0; k < 8; k += 1) fire({ x: x + rnd(-2.5, 2.5), y: y + rnd(-1, 2), z: z + rnd(-2, 2), vx: rnd(-3, 3), vy: rnd(3, 9), vz: rnd(-1, 6), s0: rnd(3, 5), s1: rnd(9, 14), dur: rnd(1.0, 1.9), op: rnd(0.7, 1), c0: 1, c1: 0.14, drag: 1.3, rise: 1.5, spin: rnd(-1, 1) });
+        for (let k = 0; k < 6; k += 1) smoke({ x: x + rnd(-2.5, 2.5), y: y + rnd(0, 2), z: z + rnd(-2, 2), vx: rnd(-2, 2), vy: rnd(4, 9), vz: rnd(0, 4), s0: rnd(3, 5), s1: rnd(10, 16), dur: rnd(4, 7), op: rnd(0.55, 0.75), c0: 0.1, c1: 0.06, drag: 0.7, rise: 1.0, spin: rnd(-0.3, 0.3), warm: 0.5 });
+        for (let k = 0; k < 10; k += 1) chunk(x + rnd(-2, 2), y, z, rnd(-6, 6), rnd(5, 14), rnd(-2, 9), rnd(0.15, 0.4), 0x4a4b50, 8, rnd(1.2, 2.6));
+        for (let k = 0; k < 30; k += 1) ember(x, y + 1, z, rnd(4, 12), 1);
+        shake(0.07); r.cineJolt && r.cineJolt(0.5);
+      };
       const CH = [[-18, 0], [14, 1], [-4, 2], [22, 0], [-22, 1], [8, 2]];
       CH.forEach((q, i) => B.ev.push({ t: i * 0.34, fn: () => charge(q[0], q[1], i) }));
 
@@ -267,7 +313,7 @@
         // обломки веером
         for (let i = 0; i < Math.round(110 * qk + 60); i += 1) {
           const a = rnd(-0.9, 0.9), sp = rnd(8, 26), c = [0x5a5b60, 0x6a6c72, 0x4a3a34, 0x2e2f33][i & 3];
-          chunk(rnd(-28, 28), rnd(1, 15), rnd(-44, -30), Math.sin(a) * sp * 0.5, rnd(4, 20), Math.cos(a) * sp * 0.8, rnd(0.12, 0.55), c, 9);
+          chunk(rnd(-28, 28), rnd(1, 15), rnd(-44, -30), Math.sin(a) * sp * 0.5, rnd(4, 20), Math.cos(a) * sp * 0.8, rnd(0.12, 0.55), c, 9, i % 3 === 0 ? rnd(1.6, 3.2) : 0);
         }
         for (let i = 0; i < 200; i += 1) ember(rnd(-26, 26), rnd(1, 14), rnd(-42, -30), rnd(6, 20), 1);
         // ударная волна и пыль по земле
@@ -275,6 +321,17 @@
         for (let i = 0; i < 34; i += 1) { const a = (i / 34) * PI - PI / 2 + rnd(-0.1, 0.1), sp = rnd(8, 20); smoke({ x: Math.sin(a) * 26, y: 0.6, z: -30 + Math.cos(a) * 3, vx: Math.sin(a) * sp * 0.35, vy: rnd(0, 1.5), vz: Math.cos(a) * sp, s0: 3, s1: rnd(9, 16), dur: rnd(4, 8), op: 0.5, c0: 0.46, c1: 0.2, drag: 1.5, rise: 0.2, spin: rnd(-0.3, 0.3), fl: 0.4, delay: rnd(0.1, 0.6) }); }
         // этажи складываются
         TW.levels.forEach((L) => { L.userData.sy0 = 1; });
+        // сажа в огне: тёмные клубы прорастают сквозь пламя
+        for (let i = 0; i < Math.round(12 + 14 * qk); i += 1) smoke({ x: rnd(-26, 26), y: rnd(1, 13), z: rnd(-44, -31), vx: rnd(-2, 2), vy: rnd(4, 11), vz: rnd(1, 9), s0: rnd(4, 7), s1: rnd(11, 18), dur: rnd(3, 5.5), op: rnd(0.55, 0.8), c0: 0.06, c1: 0.04, drag: 1.1, rise: 1.2, spin: rnd(-0.5, 0.5), delay: rnd(0.12, 0.5) });
+        // ударный купол: вторая, быстрая и тонкая кромка конденсата над землёй
+        { const r2 = B.rings[1]; r2.u.on = true; r2.u.t0 = B.t; r2.u.dur = 1.7; r2.u.r1 = 95; r2.u.op = 0.5; r2.position.set(0, 9, -36); r2.material.color.setHex(0xf2f6ff); r2.visible = true; }
+        // окна: после главного взрыва в каждом этаже по очереди вырываются струи пыли (сверху вниз по ходу обрушения)
+        B.jets = [[2, 0.0], [1, 0.5], [0, 1.0]].map((j) => ({ y: WINY[j[0]], t0: B.t + j[1], t1: B.t + j[1] + 1.4, acc: 0 }));
+        // вторичные подрывы по времени
+        [[1.5, -14, 3, -34], [2.6, 17, 5, -41], [3.9, -6, 2, -37], [5.3, 9, 8, -44], [6.8, -21, 4, -40]].forEach((q, i) => B.ev.push({ t: B.t + q[0], fn: () => secondary(q[1], q[2], q[3], i) }));
+        // засвет экспозиции, марево над огнём, копоть на земле
+        { const xx = X(); if (xx) { xx.exp = 1; xx.hz.x = 0; xx.hz.y = 12; xx.hz.z = -38; xx.hz.t = 0; xx.hz.R = 24; } }
+        B.scorchT = B.t;
         B.col = { t: -0.55, dur: 6.2 }; B.heapOn = true; B.heap.visible = true;
         B.dust = { t: 0, until: 8.5 };
         B.glowI = 1.4; B.ev.sort((p, q) => p.t - q.t);
@@ -369,12 +426,17 @@
           if (S.t > 0) { S.v.y -= g * dt; S.m.position.addScaledVector(S.v, dt); S.m.rotation.x += S.w.x * dt; S.m.rotation.y += S.w.y * dt; S.m.rotation.z += S.w.z * dt; if (S.m.position.y < 0.4) { S.m.position.y = 0.4; S.v.set(0, 0, 0); S.w.set(0, 0, 0); S.fly = false; } }
         }
         // обломки (инстанс)
+        B.tb = 3;
         {
           const D = B.D; let any = false;
           for (let i = 0; i < D.n; i += 1) {
             if (!D.on[i] || D.rest[i]) continue;
             any = true;
             const i3 = i * 3;
+            if (D.tr[i] > 0) {                                                                        // дымный след от тяжёлого куска (не больше трёх клубов за кадр на все)
+              D.tr[i] -= dt; D.tt[i] -= dt;
+              if (D.tt[i] <= 0 && B.tb > 0) { D.tt[i] = 0.06; B.tb -= 1; smoke({ x: D.p[i3], y: D.p[i3 + 1], z: D.p[i3 + 2], vx: rnd(-0.6, 0.6), vy: rnd(0.2, 1.2), vz: rnd(-0.6, 0.6), s0: 0.7 + D.s[i3] * 1.5, s1: 3.2 + D.s[i3] * 3, dur: rnd(1.6, 2.8), op: 0.32, c0: 0.28, c1: 0.14, drag: 1.1, rise: 0.4, spin: rnd(-0.4, 0.4), warm: 0.5 }); }
+            }
             D.v[i3 + 1] -= g * dt;
             D.p[i3] += D.v[i3] * dt; D.p[i3 + 1] += D.v[i3 + 1] * dt; D.p[i3 + 2] += D.v[i3 + 2] * dt;
             D.a[i3] += D.w[i3] * dt; D.a[i3 + 1] += D.w[i3 + 1] * dt; D.a[i3 + 2] += D.w[i3 + 2] * dt;
@@ -428,6 +490,13 @@
           B.light.intensity = Math.min(16, I) + (B.main ? 1.1 : 0.5) * fl;
           if (B.heapOn && B.heap.children[1]) B.heap.children[1].material.color.setScalar(0.65 + 0.35 * Math.abs(Math.sin(B.t * 5.1 + Math.sin(B.t * 2.3))));
         }
+        if (B.jets) B.jets.forEach((j) => {                                                       // струи пыли из окон этажей
+          if (B.t < j.t0 || B.t > j.t1) return;
+          j.acc += (10 + 22 * qk) * dt;
+          while (j.acc >= 1) { j.acc -= 1; smoke({ x: rnd(-27, 27), y: j.y + rnd(-1.2, 1.2), z: ZF - 0.5, vx: rnd(-1.5, 1.5), vy: rnd(-0.5, 2), vz: rnd(14, 26), s0: rnd(2.2, 3.4), s1: rnd(8, 13), dur: rnd(2.8, 4.4), op: rnd(0.45, 0.62), c0: rnd(0.42, 0.56), c1: 0.2, drag: 1.0, rise: 0.15, spin: rnd(-0.3, 0.3), warm: 0.4 }); }
+        });
+        if (B.main && x && B.t - B.mainAt < 16 && B.t - (B.hzT || 0) > 4.5) { B.hzT = B.t; x.hz.x = 0; x.hz.y = 10; x.hz.z = -38; x.hz.t = 0.8; x.hz.R = 20 - 8 * clamp((B.t - B.mainAt) / 16, 0, 1); }   // марево над пожаром держится дольше шара
+        if (B.scorchT !== undefined) { B.scorch.visible = true; B.scorch.material.opacity = 0.82 * sm(0, 1, (B.t - B.scorchT) / 3); }
         stepPool(B.fire, dt, r.camera.position, true);
         stepPool(B.smoke, dt, r.camera.position, false);
       };
@@ -439,7 +508,7 @@
       B.dispose = () => {
         if (B.disposed) return; B.disposed = true; B.on = false; try { B.un && B.un(); } catch (e) { /* уже снят */ }
         [B.fire, B.smoke].forEach((a) => a.forEach((s) => { sc.remove(s); s.material.dispose(); }));
-        sc.remove(B.flashS); sc.remove(B.light); sc.remove(B.D.mesh); sc.remove(B.E.pts); sc.remove(B.heap);
+        sc.remove(B.flashS); sc.remove(B.light); sc.remove(B.scorch); B.scorch.geometry.dispose(); B.scorch.material.dispose(); sc.remove(B.D.mesh); sc.remove(B.E.pts); sc.remove(B.heap);
         B.D.mesh.geometry.dispose(); B.D.mesh.material.dispose(); B.E.geo.dispose(); B.E.pts.material.dispose();
         B.rings.forEach((m) => { sc.remove(m); m.material.dispose(); });
         B.heap.traverse((o) => { if (o.isMesh) { o.geometry.dispose(); o.material.dispose(); } });
