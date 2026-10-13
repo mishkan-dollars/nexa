@@ -145,6 +145,19 @@
       const r = this.r, pts = this.spawnPts(sec, types.length);
       return r.spawnWave(types.map((t, i) => [Array.isArray(t) ? t[0] : t, pts[i][0], pts[i][1], Array.isArray(t) ? t[1] : undefined]), { gap: gap || 0.4 });
     }
+    // «призрак»: полупрозрачная фигура игрока (не враг). g.set(x, z, yaw) — yaw в формате NPC (вперёд = sin, cos); g.rm() — убрать
+    ghost(o) {
+      o = o || {};
+      const r = this.r, T3 = window.THREE, n = r.npc(0, 0, 0);
+      const mat = new T3.MeshBasicMaterial({ color: o.color || 0xffffff, transparent: true, opacity: o.opacity || 0.3, depthWrite: false });
+      n.g.traverse((m) => { if (m.isMesh) { m.material = mat; m.castShadow = false; } });
+      n.g.visible = false;
+      const gh = { n, mat,
+        set(x, z, yaw) { n.g.position.set(x, 0, z); n.yaw = yaw; n.g.rotation.y = yaw; n.creeping = true; },
+        show(v) { n.g.visible = !!v; if (!v) n.creeping = false; },
+        rm() { n.g.visible = false; if (n.g.parent) n.g.parent.remove(n.g); const i = r.npcs.indexOf(n); if (i >= 0) r.npcs.splice(i, 1); } };
+      return gh;
+    }
     // подсказка/цель/реплика
     hint(text, sec) { this.r.hint(text, sec || 3.6); }
     say(who, text, hold) { return this.r.say(who, text, hold); }
