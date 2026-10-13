@@ -153,16 +153,17 @@
 
   // 6. FP: Калаш против вооружённых мишеней, «жилет» пересекает линию огня
   cut('fp_ak', {
-    t0: 18.4, beats: 4, mode: 'fp', lead: 0.9,
+    t0: 18.4, beats: 4, mode: 'fp', lead: 0.5,
     prep(S) {
       const r = S.r;
       S._b.mv.forEach((e) => drop(S, e));
       r.giveWeapon('ak', { equip: true }); refill(S); place(S, 0, 4.0, 0, 0);
-      S._b.ak = [['grunt', -2.5, -13], ['grunt', 3, -14.5], ['grunt', 0.5, -20], ['rusher', -3, -22]].map((a) => { const e = r.enemy(a[0], a[1], a[2], { yaw: 0, drop: false, pers: a[0] === 'grunt' ? 'pro' : 'zealot', exact: true }); e.mine = true; return e; });
+      S._b.ak = [['rusher', -3.5, -15], ['grunt', -2.5, -12], ['grunt', 3, -13.5], ['heavy', 0.5, -19]].map((a) => { const e = r.enemy(a[0], a[1], a[2], { yaw: 0, drop: false, pers: a[0] === 'grunt' ? 'pro' : a[0] === 'heavy' ? 'jugg' : 'zealot', exact: true, hp: a[0] === 'heavy' ? 0.5 : 1 }); e.mine = true; return e; });
       const v = spawnMoving(S, -9, -3.5, 1.5, true); S._b.vest = v;
     },
     tick(S, lt, dt) {
       const r = S.r, ST = S._b;
+      if (lt < -0.12) { S.fp.look(0, 0, dt, 0.3, 2); return; }
       let best = null, bd = 1e9;
       for (const e of ST.ak) { if (e.dead) continue; const d = Math.hypot(e.x - r.p.x, e.z - r.p.z); if (d < bd && clear(S, e, 1.15)) { bd = d; best = e; } }
       if (best) { if (aim(S, dt, best, { y: 1.2, tau: 0.16, vmax: 4.5, tol: 0.045, ads: false })) ev('fp_ak', 'shot', lt); }
