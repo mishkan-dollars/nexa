@@ -54,7 +54,7 @@
       r.strip(px, 2.9, gz, 0.9, 0.05, 0.9, 0xffffff);
       T.label('DANCE FILE', px, 2.55, gz - 0.02, { w: 1.8, size: 52, keep: true, yaw: -PI / 2 });
       S.door = door; S.gz = gz; S.px = px; S.open = false; S.got = false;
-      S.it = r.interact({ pos: [px - 0.9, 1.1, gz], label: 'LEARN THE DANCE', reach: 2.8, enabled: () => S.open && !S.got, use: () => this.learn(r, T) });
+      S.it = T.interact({ pos: [px - 0.9, 1.1, gz], label: 'LEARN THE DANCE', reach: 2.8, enabled: () => S.open && !S.got, use: () => { S.it.done(); this.learn(r, T); } });
     },
     phase(r, T, name) {
       const S = T.s, M = r.mm;

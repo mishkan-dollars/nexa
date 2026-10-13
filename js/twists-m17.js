@@ -12,19 +12,21 @@
   const row = (k, v) => ({ html: '<span>' + k + '</span><b>' + esc(v) + '</b>' });
   const fmtT = (s) => { s = Math.max(0, Math.floor(s)); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
   // прямоугольник [x0,x1]×[z0,z1] свободен от коллайдеров (кроме внешних стен — они отступают внутрь по x0/x1)
-  const freeRect = (r, x0, x1, z0, z1, m) => !r.colliders.some((c) => !c.off && (c.y0 === undefined || c.y0 < 1.5) && x0 - m < c.x1 && x1 + m > c.x0 && z0 - m < c.z1 && z1 + m > c.z0);
+  const freeRect = (r, x0, x1, z0, z1, m) => !r.colliders.some((c) => !c.off && (c.y0 === undefined || c.y0 < 1.5) && x0 < c.x1 && x1 + m > c.x0 && z0 - m < c.z1 && z1 + m > c.z0);
 
   // ===================================================================== 19 CLEANERS — личное досье в архиве
   // Взломал терминал архива — на экране ваше досье: задания, убийства, смерти, любимое оружие (статистика копится локально, см. Twists.stats).
   TW.add(19, {
     name: 'dossier',
-    setup(r, T) {
-      const S = T.s, def = this;
-      S.shown = false;
-      const h0 = r.hack;
-      r.hack = function (o) {
-        return Promise.resolve(h0.call(this, o)).then((ok) => { if (ok && !S.shown && !r.disposed && T.ph === 's1') { S.shown = true; try { def.show(r, T); } catch (e) { console.warn('[twist 19 dossier]', e); } } return ok; });
-      };
+    // успех взлома = интерактив терминала исчез не из-за смерти (смерть режет список интерактивов, но тогда r.dead)
+    setup(r, T) { T.s.shown = false; T.s.had = false; },
+    phase(r, T, name) { T.s.had = false; },
+    tick(r, T, dt) {
+      const S = T.s, sec = T.sec();
+      if (S.shown || r.dead || T.ph !== 's1' || !sec || sec.b !== 'hack' || !sec.term) return;
+      const t = sec.term, has = r.interactables.some((i) => Math.abs(i.pos.x - t.x) < 0.01 && Math.abs(i.pos.z - t.z) < 0.01);
+      if (has) S.had = true;
+      else if (S.had && !r.locked) { S.shown = true; this.show(r, T); }
     },
     show(r, T) {
       const st = TW.stats(r);
@@ -36,7 +38,7 @@
       const el = T.panel('tw-left tw-box tw-rows tw-fade', '<h3>NEXA ARCHIVE — PERSONAL FILE</h3><p><span>SUBJECT</span><b>083</b></p>');
       el.style.maxWidth = 'min(430px, 84vw)';
       T.after(0.05, () => el.classList.add('on'));
-      const notes = st.deaths > 0 ? [{ html: '<em>NOTE: THE SUBJECT DIED ' + st.deaths + ' TIMES AND CAME BACK EVERY TIME.</em>', cls: '' }] : [{ html: '<em>NOTE: NO DEATHS ON FILE. NEXA FINDS THIS SUSPICIOUS.</em>' }];
+      const notes = st.deaths > 1 ? [{ html: '<em>NOTE: THE SUBJECT DIED ' + st.deaths + ' TIMES AND CAME BACK EVERY TIME.</em>' }] : st.deaths === 1 ? [{ html: '<em>NOTE: THE SUBJECT DIED ONCE AND CAME BACK.</em>' }] : [{ html: '<em>NOTE: NO DEATHS ON FILE. NEXA FINDS THIS SUSPICIOUS.</em>' }];
       const lines = [
         row('TASKS COMPLETED', String(done)),
         row('HOSTILES NEUTRALIZED', String(st.kills)),
@@ -94,8 +96,9 @@
           bear.position.set(bx, 0.62, cz); bear.rotation.y = PI / 2;
           r.scene.add(bear); r.crate(bx, cz, 0.7, 0.7, 0.42, 0x3a3a3a);
           S.bear = bear; S.bpos = [bx, cz];
-          c.it1 = r.interact({ pos: [x1 + 0.2, 1.1, cz], label: 'OPEN CONTAINER 14', reach: 2.8, enabled: () => !c.opened, use: () => { c.opened = true; r.openDoor(door, 1.0); r.sfx('notification'); } });
-          c.it2 = r.interact({ pos: [bx + 0.4, 1.0, cz], label: 'TAKE THE PLUSH BEAR', reach: 2.4, enabled: () => c.opened && !S.taken, use: () => this.take(r, T) });
+          const here = () => !!r.mm.cur && r.mm.cur.k === 1;
+          c.it1 = T.interact({ pos: [x1 + 0.2, 1.1, cz], label: 'OPEN CONTAINER 14', reach: 2.8, enabled: () => here() && !c.opened, use: () => { c.opened = true; c.it1.done(); r.openDoor(door, 1.0); r.sfx('notification'); } });
+          c.it2 = T.interact({ pos: [bx + 0.4, 1.0, cz], label: 'TAKE THE PLUSH BEAR', reach: 2.4, enabled: () => here() && c.opened && !S.taken, use: () => { c.it2.done(); this.take(r, T); } });
         }
         S.cont.push(c);
       });
@@ -244,10 +247,10 @@
       S.trucks.forEach((g) => {
         if (g.goal) return;
         let used = false;
-        const it = r.interact({
+        const it = T.interact({
           pos: [g.x, 1.1, g.z + 2.4], label: 'SET THE CHARGES', reach: 2.6, enabled: () => T.ph === 's' + sec.k && !used && !(sec.brk && sec.brk.broken),
           use: () => {
-            used = true; S.wrong += 1;
+            used = true; it.done(); S.wrong += 1;
             r.snd && r.snd.play('alarm'); r.flash(0.3); r.shake(0.05, 0.6);
             r.hint('WRONG TRUCK — EMPTY CARGO BAY. THE ALARM IS ON', 3.4);
             const list = r.around(['grunt', 'grunt', 'rusher'], 9, 16);

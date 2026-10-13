@@ -116,6 +116,12 @@
       r.on(b, 'pointerdown', (e) => { e.preventDefault(); if (!r.locked && !r.paused) safe(this, 'btn', fn); });
       return b;
     }
+    // интерактив с done(): помечает использованным и убирает из списка (так делает и r.useOnce — бот и подсказки не цепляются за него дальше)
+    interact(def) {
+      const r = this.r, it = r.interact(def);
+      it.done = () => { it.used = true; const i = r.interactables.indexOf(it); if (i >= 0) r.interactables.splice(i, 1); };
+      return it;
+    }
     sec() { const M = this.r.mm; return M ? M.cur : null; }
     // сектор по имени фазы ('s3') — на старте попытки M.cur ещё указывает на прошлый сектор
     secOf(name) { const M = this.r.mm, m = /^s(\d+)$/.exec(name || ''); return M && m ? M.secs[+m[1]] || null : null; }

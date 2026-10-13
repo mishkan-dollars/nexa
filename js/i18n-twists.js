@@ -5,6 +5,7 @@
   I18N.add('en', {
     // --- общее
     "+{0} CR {s0}": ["+{0} CR {s0}", "+{0} CR {s0}"],
+    "{s0} — {0}%": ["{s0} — {0}%", "{s0} — {0}%"],
     // --- 10 LIFT SHAFT
     "FREE FALL — IMPACT IN {0}": ["СВОБОДНОЕ ПАДЕНИЕ — УДАР ЧЕРЕЗ {0}", "FREIER FALL — AUFPRALL IN {0}"],
     "THE CABLE SNAPPED! NO COVER — CROUCH [C] TO BRACE FOR IMPACT": ["ТРОС ОБОРВАЛСЯ! УКРЫТИЙ НЕТ — ПРИСЯДЬ [C], ЧТОБЫ СГРУППИРОВАТЬСЯ ПЕРЕД УДАРОМ", "DAS SEIL IST GERISSEN! KEINE DECKUNG — HOCKE DICH [C] HIN, UM DEN AUFPRALL ABZUFANGEN"],
@@ -22,9 +23,94 @@
     "TORCH BUTTON — SWITCH IT OFF AND THEY LOSE YOU (YOU LOSE THEM TOO)": ["КНОПКА ФОНАРЯ — ВЫКЛЮЧИ, И ОНИ ПОТЕРЯЮТ ТЕБЯ (ТЫ ИХ ТОЖЕ)", "LAMPEN-TASTE — SCHALTE SIE AUS, DANN VERLIEREN SIE DICH (DU SIE AUCH)"],
     "TORCH [T] — SWITCH IT OFF AND THEY LOSE YOU (YOU LOSE THEM TOO)": ["ФОНАРЬ [T] — ВЫКЛЮЧИ, И ОНИ ПОТЕРЯЮТ ТЕБЯ (ТЫ ИХ ТОЖЕ)", "LAMPE [T] — SCHALTE SIE AUS, DANN VERLIEREN SIE DICH (DU SIE AUCH)"],
     // --- 12 NIGHT TRAIN
-    "SUBJECT 024 — STANDING ON THE PLATFORM, WATCHING THE TRAIN": ["СУБЪЕКТ 024 — СТОИТ НА ПЛАТФОРМЕ И СМОТРИТ НА ПОЕЗД", "SUBJEKT 024 — STEHT AUF DEM BAHNSTEIG UND BEOBACHTET DEN ZUG"]
+    "SUBJECT 024 — STANDING ON THE PLATFORM, WATCHING THE TRAIN": ["СУБЪЕКТ 024 — СТОИТ НА ПЛАТФОРМЕ И СМОТРИТ НА ПОЕЗД", "SUBJEKT 024 — STEHT AUF DEM BAHNSTEIG UND BEOBACHTET DEN ZUG"],
+    // --- 19 CLEANERS
+    "NEXA ARCHIVE — PERSONAL FILE": ["АРХИВ NEXA — ЛИЧНОЕ ДЕЛО", "NEXA-ARCHIV — PERSONALAKTE"],
+    "SUBJECT": ["СУБЪЕКТ", "SUBJEKT"],
+    "TASKS COMPLETED": ["ЗАДАНИЙ ВЫПОЛНЕНО", "AUFTRÄGE ERLEDIGT"],
+    "HOSTILES NEUTRALIZED": ["ВРАГОВ УСТРАНЕНО", "FEINDE ELIMINIERT"],
+    "HEADSHOTS": ["ВЫСТРЕЛОВ В ГОЛОВУ", "KOPFSCHÜSSE"],
+    "TIMES TERMINATED": ["РАЗ ПРЕКРАЩЕНО", "MAL BEENDET"],
+    "FAVOURITE TOOL": ["ЛЮБИМЫЙ ИНСТРУМЕНТ", "LIEBLINGSWERKZEUG"],
+    "TIME UNDER OBSERVATION": ["ВРЕМЯ ПОД НАБЛЮДЕНИЕМ", "ZEIT UNTER BEOBACHTUNG"],
+    "NOTE: THE SUBJECT DIED {0} TIMES AND CAME BACK EVERY TIME.": ["ЗАМЕТКА: СУБЪЕКТ УМИРАЛ {0} РАЗ И КАЖДЫЙ РАЗ ВОЗВРАЩАЛСЯ.", "HINWEIS: DAS SUBJEKT STARB {0} MAL UND KAM JEDES MAL ZURÜCK."],
+    "NOTE: THE SUBJECT DIED ONCE AND CAME BACK.": ["ЗАМЕТКА: СУБЪЕКТ УМЕР ОДИН РАЗ И ВЕРНУЛСЯ.", "HINWEIS: DAS SUBJEKT STARB EINMAL UND KAM ZURÜCK."],
+    "NOTE: NO DEATHS ON FILE. NEXA FINDS THIS SUSPICIOUS.": ["ЗАМЕТКА: СМЕРТЕЙ В ДЕЛЕ НЕТ. В NEXA ЭТО СЧИТАЮТ ПОДОЗРИТЕЛЬНЫМ.", "HINWEIS: KEINE TODESFÄLLE VERMERKT. NEXA HÄLT DAS FÜR VERDÄCHTIG."],
+    // --- 21 FIRST JOB
+    "CONTAINER {0}": ["КОНТЕЙНЕР {0}", "CONTAINER {0}"],
+    "OPEN CONTAINER {0}": ["ОТКРЫТЬ КОНТЕЙНЕР {0}", "CONTAINER {0} ÖFFNEN"],
+    "TAKE THE PLUSH BEAR": ["ВЗЯТЬ ПЛЮШЕВОГО МИШКУ", "PLÜSCHBÄREN NEHMEN"],
+    "DOCK LOG: CONTAINER 14 WAS LOGGED AS EMPTY. SOMEONE HAS BEEN INSIDE.": ["ЖУРНАЛ ПОРТА: КОНТЕЙНЕР 14 ЗАПИСАН КАК ПУСТОЙ. КТО-ТО ПОБЫВАЛ ВНУТРИ.", "HAFENLOGBUCH: CONTAINER 14 ALS LEER VERMERKT. JEMAND WAR DRIN."],
+    "THE BEAR IS ALREADY IN YOUR COLLECTION": ["МИШКА УЖЕ В ВАШЕЙ КОЛЛЕКЦИИ", "DER BÄR IST SCHON IN DEINER SAMMLUNG"],
+    "TOY UNLOCKED: BLACK BEAR": ["ИГРУШКА ОТКРЫТА: ЧЁРНЫЙ МИШКА", "SPIELZEUG FREIGESCHALTET: SCHWARZER BÄR"],
+    "YOU ALREADY OWN THE BEAR": ["МИШКА У ВАС УЖЕ ЕСТЬ", "DEN BÄREN BESITZT DU SCHON"],
+    "PLUSH BEAR": ["ПЛЮШЕВЫЙ МИШКА", "PLÜSCHBÄR"],
+    // --- 26 WIRETAP
+    "...THE WEST WALL CAMERA? DEAD SINCE MONDAY. NOBODY FIXED IT.": ["...КАМЕРА У ЗАПАДНОЙ СТЕНЫ? С ПОНЕДЕЛЬНИКА МЁРТВАЯ. НИКТО НЕ ЧИНИЛ.", "...DIE KAMERA AN DER WESTWAND? SEIT MONTAG TOT. KEINER HAT SIE REPARIERT."],
+    "...THE EAST WALL CAMERA? DEAD SINCE MONDAY. NOBODY FIXED IT.": ["...КАМЕРА У ВОСТОЧНОЙ СТЕНЫ? С ПОНЕДЕЛЬНИКА МЁРТВАЯ. НИКТО НЕ ЧИНИЛ.", "...DIE KAMERA AN DER OSTWAND? SEIT MONTAG TOT. KEINER HAT SIE REPARIERT."],
+    "...I'M GOING OUT FOR A SMOKE. COVER FOR ME, OK?": ["...ВЫЙДУ ПОКУРИТЬ. ПРИКРОЙ МЕНЯ, ЛАДНО?", "...ICH GEH MAL RAUCHEN. DECK MICH, OK?"],
+    "...DID YOU SEE THE GAME LAST NIGHT?": ["...ТЫ ВИДЕЛ ВЧЕРАШНИЙ МАТЧ?", "...HAST DU DAS SPIEL GESTERN GESEHEN?"],
+    "...THIS FLOOR SMELLS LIKE OLD COFFEE.": ["...НА ЭТОМ ЭТАЖЕ ПАХНЕТ ВЫДОХШИМСЯ КОФЕ.", "...AUF DIESEM STOCK RIECHT ES NACH ALTEM KAFFEE."],
+    "...I HATE THE NIGHT SHIFT.": ["...НЕНАВИЖУ НОЧНЫЕ СМЕНЫ.", "...ICH HASSE DIE NACHTSCHICHT."],
+    "...THEY WANT A REPORT BY MORNING. A REPORT ON WHAT?": ["...К УТРУ НУЖЕН ОТЧЁТ. ОТЧЁТ О ЧЁМ?", "...BIS MORGEN SOLL EIN BERICHT STEHEN. EIN BERICHT WOZU?"],
+    "...MY WIFE SAYS I SNORE AT WORK TOO.": ["...ЖЕНА ГОВОРИТ, Я И НА РАБОТЕ ХРАПЛЮ.", "...MEINE FRAU SAGT, ICH SCHNARCHE AUCH BEI DER ARBEIT."],
+    "...DON'T TELL ANYONE, BUT I NEVER CHECK THE STAIRS.": ["...ТОЛЬКО НИКОМУ: Я НИКОГДА НЕ ПРОВЕРЯЮ ЛЕСТНИЦУ.", "...SAG'S KEINEM, ABER DIE TREPPE KONTROLLIERE ICH NIE."],
+    "INTEL: A CAMERA IS OFFLINE": ["РАЗВЕДДАННЫЕ: КАМЕРА ОТКЛЮЧЕНА", "INFO: EINE KAMERA IST AUSGEFALLEN"],
+    "INTEL: A GUARD LEFT HIS POST": ["РАЗВЕДДАННЫЕ: ОХРАННИК ОТОШЁЛ С ПОСТА", "INFO: EIN WÄCHTER HAT SEINEN POSTEN VERLASSEN"],
+    "GUARD CHATTER — LISTEN CLOSELY: SOME OF IT IS USEFUL": ["РАЗГОВОРЫ ОХРАНЫ — ВСЛУШАЙТЕСЬ: ЧАСТЬ ИЗ НИХ ПОЛЕЗНА", "WÄCHTERGESPRÄCH — HÖR GENAU ZU: MANCHES IST NÜTZLICH"],
+    // --- 31 CONVOY
+    "CONVOY MANIFEST": ["СПИСОК КОЛОННЫ", "KONVOI-MANIFEST"],
+    "TARGET: STEADY LAMP, PLATE ENDS IN": ["ЦЕЛЬ: РОВНАЯ ЛАМПА, НОМЕР ЗАКАНЧИВАЕТСЯ НА", "ZIEL: DAUERLICHT, KENNZEICHEN ENDET AUF"],
+    "WRONG TRUCK — EMPTY CARGO BAY. THE ALARM IS ON": ["НЕ ТОТ ГРУЗОВИК — КУЗОВ ПУСТ. ТРЕВОГА ВКЛЮЧЕНА", "FALSCHER LKW — LADERAUM LEER. ALARM IST AN"],
+    // --- 32 FLASHBANG
+    "ENEMY FLASHBANG! KICK IT BACK [V]": ["СВЕТОШУМОВАЯ ОТ ВРАГА! ОТПИНЬ ЕЁ НАЗАД [V]", "BLENDGRANATE VOM GEGNER! TRITT SIE ZURÜCK [V]"],
+    "ENEMY FLASHBANG! KICK IT BACK (KICK BUTTON)": ["СВЕТОШУМОВАЯ ОТ ВРАГА! ОТПИНЬ ЕЁ НАЗАД (КНОПКА УДАРА НОГОЙ)", "BLENDGRANATE VOM GEGNER! TRITT SIE ZURÜCK (KICK-TASTE)"],
+    "FLASHBANG!": ["СВЕТОШУМОВАЯ!", "BLENDGRANATE!"],
+    "RETURN TO SENDER": ["ВЕРНУЛ ОТПРАВИТЕЛЮ", "AN ABSENDER ZURÜCK"],
+    "THEY ARE BLIND — FINISH THEM": ["ОНИ СЛЕПЫ — ДОБЕЙ ИХ", "SIE SIND BLIND — MACH SIE FERTIG"],
+    // --- 37 GHOST
+    "DANCE FILE": ["ФАЙЛ ТАНЦА", "TANZDATEI"],
+    "LEARN THE DANCE": ["РАЗУЧИТЬ ТАНЕЦ", "TANZ LERNEN"],
+    "GHOST PROTOCOL INTACT — A SERVICE DOOR HAS UNLOCKED": ["ПРОТОКОЛ «ПРИЗРАК» СОБЛЮДЁН — СЛУЖЕБНАЯ ДВЕРЬ ОТКРЫЛАСЬ", "GEISTERPROTOKOLL EINGEHALTEN — EINE SERVICETÜR IST ENTRIEGELT"],
+    "YOU ALREADY KNOW THIS DANCE": ["ЭТОТ ТАНЕЦ ВЫ УЖЕ ЗНАЕТЕ", "DIESEN TANZ KENNST DU SCHON"],
+    "NEW EMOTE UNLOCKED: {s0} — HOLD [B]": ["НОВАЯ ЭМОЦИЯ ОТКРЫТА: {s0} — ЗАЖМИ [B]", "NEUES EMOTE FREIGESCHALTET: {s0} — [B] HALTEN"],
+    "ALL DANCES KNOWN — BONUS CREDITS": ["ВСЕ ТАНЦЫ УЖЕ ИЗВЕСТНЫ — БОНУСНЫЕ КРЕДИТЫ", "ALLE TÄNZE BEKANNT — BONUS-CREDITS"],
+    "GHOST REWARD": ["НАГРАДА ПРИЗРАКА", "GEISTER-BELOHNUNG"],
+    // --- 39 HEAVY ARMOR
+    "RED TANK ON THEIR BACKS — GO AROUND OR FLASH THEM, THEN SHOOT THE TANK": ["КРАСНЫЙ БАЛЛОН У НИХ НА СПИНЕ — ОБОЙДИ ИЛИ ОСЛЕПИ СВЕТОШУМОВОЙ, ПОТОМ СТРЕЛЯЙ В БАЛЛОН", "ROTE FLASCHE AUF IHREM RÜCKEN — UMGEHEN ODER BLENDEN, DANN AUF DIE FLASCHE SCHIESSEN"],
+    "TANK DETONATED": ["БАЛЛОН ВЗОРВАН", "FLASCHE EXPLODIERT"],
+    "TANK SHOT": ["ВЫСТРЕЛ В БАЛЛОН", "SCHUSS AUF DIE FLASCHE"],
+    // --- 45 BLUEPRINTS
+    "BLUEPRINT": ["ЧЕРТЁЖ", "BAUPLAN"],
+    "SHEET {0} OF {1} — THE PLAN IS TAKING SHAPE": ["ЛИСТ {0} ИЗ {1} — ПЛАН ПРОЯВЛЯЕТСЯ", "BLATT {0} VON {1} — DER PLAN NIMMT GESTALT AN"],
+    "MARK 083 UNLOCKED": ["МЕТКА 083 ОТКРЫТА", "MARKIERUNG 083 FREIGESCHALTET"],
+    "NEXA INDUSTRIES — HEADQUARTERS": ["NEXA INDUSTRIES — ШТАБ-КВАРТИРА", "NEXA INDUSTRIES — HAUPTSITZ"],
+    "SECTION A-A": ["РАЗРЕЗ А-А", "SCHNITT A-A"],
+    "FLOOR 3 — DIRECTOR": ["ЭТАЖ 3 — ДИРЕКТОР", "ETAGE 3 — DIREKTOR"],
+    "FLOOR 2 — VAULT": ["ЭТАЖ 2 — ХРАНИЛИЩЕ", "ETAGE 2 — TRESOR"],
+    "FLOOR 1 — LOBBY": ["ЭТАЖ 1 — ХОЛЛ", "ETAGE 1 — FOYER"],
+    "BASEMENT — LIFTS": ["ПОДВАЛ — ЛИФТЫ", "KELLER — AUFZÜGE"],
+    "YARD": ["ДВОР", "HOF"],
+    "DEEP LEVEL — 210 M": ["ГЛУБОКИЙ УРОВЕНЬ — 210 М", "TIEFEBENE — 210 M"],
+    "MISSING SHEET": ["ЛИСТ ОТСУТСТВУЕТ", "BLATT FEHLT"],
+    // --- 46 REHEARSAL
+    "REHEARSAL MODE": ["РЕЖИМ РЕПЕТИЦИИ", "PROBENMODUS"],
+    "NO REAL RISK": ["РЕАЛЬНОГО РИСКА НЕТ", "KEIN ECHTES RISIKO"],
+    "STEP {0} / 4": ["ШАГ {0} / 4", "SCHRITT {0} / 4"],
+    "THIS IS NOT A DRILL": ["ЭТО НЕ УЧЕНИЯ", "DAS IST KEINE ÜBUNG"],
+    "THE LOCKS ARE REAL": ["ЗАМКИ НАСТОЯЩИЕ", "DIE SCHLÖSSER SIND ECHT"],
+    "GET OUT ALIVE": ["ВЫБЕРИСЬ ЖИВЫМ", "KOMM LEBEND RAUS"],
+    "REHEARSAL COMPLETE": ["РЕПЕТИЦИЯ ЗАВЕРШЕНА", "PROBE ABGESCHLOSSEN"],
+    "SCORE {0}%": ["РЕЗУЛЬТАТ {0}%", "ERGEBNIS {0}%"],
+    "THE REHEARSAL WAS REAL — GET OUT": ["РЕПЕТИЦИЯ БЫЛА НАСТОЯЩЕЙ — БЕГИ ОТСЮДА", "DIE PROBE WAR ECHT — RAUS HIER"]
   });
   I18N.add('ru', {
-    "ТРОС ОБОРВАН. СВОБОДНОЕ ПАДЕНИЕ.": ["THE CABLE IS CUT. FREE FALL.", "SEIL GERISSEN. FREIER FALL."]
+    "ТРОС ОБОРВАН. СВОБОДНОЕ ПАДЕНИЕ.": ["THE CABLE IS CUT. FREE FALL.", "SEIL GERISSEN. FREIER FALL."],
+    "ЭТО ТВОЁ ДОСЬЕ. ОНИ ВЕДУТ УЧЁТ КАЖДОГО ТВОЕГО ШАГА.": ["THIS IS YOUR FILE. THEY KEEP TRACK OF YOUR EVERY MOVE.", "DAS IST DEINE AKTE. SIE ZÄHLEN JEDEN DEINER SCHRITTE."],
+    "СТРАННАЯ НАХОДКА. ПОХОЖЕ, КТО-ТО ОСТАВИЛ ЭТО ДЛЯ ТЕБЯ.": ["A STRANGE FIND. LOOKS LIKE SOMEONE LEFT THIS FOR YOU.", "EIN SELTSAMER FUND. SIEHT AUS, ALS HÄTTE JEMAND DAS FÜR DICH DA GELASSEN."],
+    "ГРУЗОВИК С КОНТЕЙНЕРОМ ОДИН. У НЕГО РОВНАЯ ЛАМПА, А НОМЕР ЗАКАНЧИВАЕТСЯ НА {0}. У ОСТАЛЬНЫХ ЛАМПА МИГАЕТ.": ["THERE IS ONLY ONE TRUCK WITH THE CONTAINER. ITS LAMP IS STEADY AND THE PLATE ENDS IN {0}. THE OTHERS BLINK.", "ES GIBT NUR EINEN LKW MIT DEM CONTAINER. SEIN LICHT BRENNT DAUERHAFT, DAS KENNZEICHEN ENDET AUF {0}. DIE ANDEREN BLINKEN."],
+    "ПРИЗРАКАМ ПОЛАГАЕТСЯ НАГРАДА. ПОТАНЦУЙ, КОГДА БУДЕТ ВРЕМЯ.": ["GHOSTS DESERVE A REWARD. DANCE WHEN YOU GET THE CHANCE.", "GEISTER VERDIENEN EINE BELOHNUNG. TANZ, WENN DU ZEIT HAST."],
+    "ВОТ ОНО. ЗДАНИЕ NEXA. ЗАПОМНИ ЭТУ ДВЕРЬ.": ["THIS IS IT. THE NEXA BUILDING. REMEMBER THAT DOOR.", "DAS IST ES. DAS NEXA-GEBÄUDE. MERK DIR DIESE TÜR."],
+    "ЭТО НЕ УЧЕНИЯ. ЗАМКИ НАСТОЯЩИЕ. БЕГИ!": ["THIS IS NOT A DRILL. THE LOCKS ARE REAL. RUN!", "DAS IST KEINE ÜBUNG. DIE SCHLÖSSER SIND ECHT. LAUF!"]
   });
 }());
