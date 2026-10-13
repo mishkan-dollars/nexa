@@ -461,4 +461,155 @@
     },
     finish(r, T, done) { if (done) r.twBonus = (r.twBonus || 0) + Math.round(T.s.m * 0.5); }
   });
+
+  // ===================================================================== 18 SAFEHOUSE — 20 секунд на ловушки
+  // Перед обороной генератора 20 с на расстановку ловушек: бочки (взрываются от пули), мины (от приближения врага), ящики-баррикады. [P] поставить, [O] сменить.
+  TW.add(18, {
+    name: 'trap-prep',
+    setup(r, T) {
+      const S = T.s;
+      S.el = T.panel('tw-box', '<h3>TRAPS</h3><p class="tw-a"></p>', true);
+      S.el.style.cssText += ';left:50%;bottom:92px;transform:translateX(-50%);display:none;text-align:center';
+      S.a = S.el.querySelector('.tw-a');
+      T.key('KeyP', () => this.place(r, T)); T.key('KeyO', () => { const S2 = T.s; if (S2.prep > 0) { S2.sel = (S2.sel + 1) % 3; this.paint(T); } });
+      T.btn('PLACE', 'right: 120px; bottom: 170px;', () => this.place(r, T)); T.btn('SWITCH', 'right: 120px; bottom: 230px;', () => { T.s.sel = (T.s.sel + 1) % 3; this.paint(T); });
+    },
+    NAMES: ['BARREL', 'MINE', 'CRATE'],
+    paint(T) {
+      const S = T.s;
+      S.a.innerHTML = [0, 1, 2].map((i) => (i === S.sel ? '<b>[' : '') + this.NAMES[i] + ' x' + S.inv[i] + (i === S.sel ? ']</b>' : '')).join('  |  ') + '<br><em>[P] PLACE  [O] SWITCH</em>';
+    },
+    phase(r, T, name) {
+      const S = T.s, sec = T.secOf(name);
+      S.prep = 0; S.items = []; S.mines = [];
+      T.att(() => { S.el.style.display = 'none'; S.prep = 0; S.items.forEach((f) => f()); S.items = []; S.mines.forEach((m) => { m.m.visible = false; if (m.m.parent) m.m.parent.remove(m.m); }); S.mines = []; r.banner(null); });
+      if (!sec || sec.b !== 'hold') return;
+      S.sec = sec; S.prep = 20; S.sel = 0; S.inv = [3, 3, 4]; S.el.style.display = ''; S.patched = false; this.paint(T);
+      r.hint('SET TRAPS BEFORE THE GENERATOR: BARRELS, MINES, CRATES', 5);
+    },
+    place(r, T) {
+      const S = T.s, p = r.p;
+      if (!(S.prep > 0) || S.inv[S.sel] <= 0) return;
+      const x = p.x - Math.sin(p.yaw) * 2.6, z = p.z - Math.cos(p.yaw) * 2.6, sec = S.sec;
+      if (r.blocked(x, z) || z > sec.zA - 1.5 || z < sec.zB + 1.5 || Math.abs(x) > sec.W / 2 - 1) { r.toast('NO ROOM HERE', 1.2); return; }
+      S.inv[S.sel] -= 1;
+      if (S.sel === 0) { const b = r.barrel(x, z); S.items.push(() => { b.alive = false; b.col.off = true; b.m.visible = b.band.visible = false; const i = r.cb.shoot.indexOf(b); if (i >= 0) r.cb.shoot.splice(i, 1); }); }
+      else if (S.sel === 2) T.solid(x, 0.5, z, 1.6, 1, 0.8, 0x6a6a6a);
+      else {
+        const T3 = window.THREE, g = new T3.Group();
+        g.add(new T3.Mesh(new T3.CylinderGeometry(0.25, 0.25, 0.07, 10), r.basic(0x2a2a2a)));
+        const led = new T3.Mesh(new T3.BoxGeometry(0.06, 0.05, 0.06), r.basic(0xffffff)); led.position.y = 0.06; g.add(led);
+        g.position.set(x, 0.04, z); r.scene.add(g); S.mines.push({ m: g, led, x, z, t: 0 });
+      }
+      r.snd && r.snd.play('click'); this.paint(T);
+    },
+    tick(r, T, dt) {
+      const S = T.s;
+      if (!S.sec) return;
+      if (S.prep > 0 && !r.locked) {
+        S.prep -= dt;
+        r.banner('TRAP PREP — GENERATOR LOCKED ' + Math.max(1, Math.ceil(S.prep)), S.prep < 5);
+        if (S.prep <= 0) { S.prep = 0; S.el.style.display = 'none'; r.banner(null); r.hint('TRAPS ARMED — START THE GENERATOR', 3); }
+      }
+      if (!S.patched) {
+        const it = r.interactables.find((i) => i.label === 'START THE GENERATOR' && !i.twp);
+        if (it) { it.twp = true; const e0 = it.enabled; it.enabled = () => S.prep <= 0 && (!e0 || e0()); S.patched = true; }
+      }
+      S.mines.forEach((m, i) => {
+        m.t += dt; m.led.visible = (m.t % 0.8) < 0.4;
+        if (m.t < 1 || r.locked) return;
+        if (T.foes().some((e) => Math.hypot(e.x - m.x, e.z - m.z) < 1.5)) {
+          m.m.visible = false; if (m.m.parent) m.m.parent.remove(m.m); S.mines.splice(i, 1);
+          r.explode(m.x, 0.3, m.z, 3.6, 80); if (!S.slo) { S.slo = true; r.slowmo(0.35, 1.2); } r.hint('TRAP TRIGGERED', 1.6);
+        }
+      });
+    }
+  });
+
+  // ===================================================================== 20 SCRAPYARD — компактор как оружие
+  // В боевых секторах посреди двора плита-пресс. Рычаг сбоку [E]: 1.2 с сирены — и плита падает, давя всё под собой. Заманите охрану на плиту, сами не стойте.
+  TW.add(20, {
+    name: 'compactor',
+    phase(r, T, name) {
+      const S = T.s, sec = T.secOf(name);
+      S.busy = false;
+      if (!sec || sec.b !== 'fight') return;
+      const cx = 0, cz = sec.cz, T3 = window.THREE, lx = sec.W / 2 - 3;
+      // освободить место под плитой и у рычага
+      r.scene.children.slice().forEach((o) => { const c = o.userData && o.userData.col; if (!c || c.off || ((c.y1 - c.y0) > 3.3 && (c.x1 - c.x0) > 8)) return; if ((c.x0 < 3.4 && c.x1 > -3.4 && c.z0 < cz + 3.4 && c.z1 > cz - 3.4) || (c.x0 < lx + 0.6 && c.x1 > lx - 0.6 && c.z0 < cz + 0.6 && c.z1 > cz - 0.6)) T.gone(o); });
+      const floor = T.add(new T3.Mesh(r.g.box, r.basic(0x3a3a3a))); floor.scale.set(6, 0.04, 6); floor.position.set(cx, 0.03, cz);
+      const slab = T.add(new T3.Mesh(r.g.box, r.basic(0x888888))); slab.scale.set(6, 0.9, 6); slab.position.set(cx, 6.5, cz);
+      const lev = T.solid(lx, 0.6, cz, 0.5, 1.2, 0.4, 0x999999);
+      let used = false;
+      const it = T.interact({ pos: [lx, 1.1, cz], label: 'PULL THE COMPACTOR LEVER', reach: 2.8, enabled: () => !used && !S.busy, use: () => { used = true; it.done(); S.busy = true; this.go(r, T, slab, floor, cx, cz); } });
+      if (!S.said) { S.said = true; T.after(4, () => r.hint('COMPACTOR LEVER AT THE WALL — LURE THE GUARDS ONTO THE PLATE', 5)); }
+    },
+    go(r, T, slab, floor, cx, cz) {
+      r.snd && r.snd.play('alarm', { k: 0.6 });
+      r.toast('COMPACTOR ARMED — CLEAR THE PLATE', 1.4);
+      let t = 0;
+      const off = r.addHook((dt) => {
+        if (r.locked) return;
+        t += dt;
+        if (t < 1.2) floor.material = r.basic(Math.sin(t * 30) > 0 ? 0xffffff : 0x3a3a3a);
+        else if (t < 1.45) { slab.position.y = 6.5 - (t - 1.2) / 0.25 * 6.0; }
+        else if (t < 1.5) {
+          slab.position.y = 0.5; floor.material = r.basic(0x3a3a3a); off();
+          r.shake(0.1, 0.6); r.snd && r.snd.play('boom', { k: 0.7 }); r.sparks(cx, 0.4, cz, 0, 1, 0, 14);
+          const inside = (x, z) => Math.abs(x - cx) < 3.2 && Math.abs(z - cz) < 3.2; let n = 0;
+          T.foes().forEach((e) => { if (inside(e.x, e.z)) { r.damageEnemy(e, 99999, false); n += 1; } });
+          if (n) T.bonus(5 * n, 'CRUSHED');
+          if (inside(r.p.x, r.p.z)) r.hurt(70);
+          T.after(2, () => { const h = r.addHook((d2) => { slab.position.y += d2 * 6; if (slab.position.y > 6.5) { slab.position.y = 6.5; h(); } }); });
+          T.s.busy = false;
+        }
+      });
+      T.att(off);
+    }
+  });
+
+  // ===================================================================== 22 LOCKSMITH — отмычка на тайминг
+  // Взломы заменены замками: вращающаяся стрелка, нажми [Space] / [E] / кнопку, когда она в светлом секторе. Каждый штифт быстрее и уже.
+  TW.add(22, {
+    name: 'lockpick',
+    setup(r, T) {
+      const def = this;
+      r.hack = function (o) { return def.pick(r, T, o || {}); };
+    },
+    pick(r, T, o) {
+      if (r.hacking || r.disposed) return Promise.resolve(false);
+      return new Promise((resolve) => {
+        r.hacking = true; r.syncLock(); r.fireHeld = false; r.padFire = false; r.aimWant = false; r.keys = {};
+        if (!r.touch && document.pointerLockElement) { try { document.exitPointerLock(); } catch (e) { /* ignore */ } }
+        const root = document.createElement('div'); root.className = 'm-hack';
+        root.innerHTML = '<div class="hk-box"><div class="hk-head"><b></b><span></span></div><div class="hk-body"><div class="hk-line"></div><div class="tw-lock" style="position:relative;width:150px;height:150px;border-radius:50%;margin:10px auto;border:2px solid #fff"><div class="tw-needle" style="position:absolute;left:50%;top:50%;width:2px;height:70px;margin-left:-1px;background:#fff;transform-origin:50% 0%"></div></div><button type="button" class="hk-btn">PICK</button></div><div class="hk-foot"></div></div>';
+        r.layer.appendChild(root);
+        const q = (s) => root.querySelector(s), ring = q('.tw-lock'), nd = q('.tw-needle'), line = q('.hk-line'), sub = q('.hk-head span'), foot = q('.hk-foot');
+        q('.hk-head b').textContent = o.title || 'LOCK';
+        const pins = o.kind === 'match' ? 4 : 3;
+        let pin = 0, tries = 3, ang = 0, dir = 1, speed = 150, w = 70, a0 = 120, lock = 0, done = false;
+        const snd = (n, k) => r.snd && r.snd.play(n, { k: k || 1 });
+        const arc = () => { ring.style.background = 'conic-gradient(from ' + a0 + 'deg, rgba(255,255,255,.9) 0 ' + w + 'deg, #111 ' + w + 'deg 360deg)'; line.textContent = 'PIN ' + (pin + 1) + ' / ' + pins; sub.textContent = 'TRIES ' + '■'.repeat(tries); };
+        const end = (ok, quiet) => {
+          if (done) return; done = true; clearInterval(iv); document.removeEventListener('keydown', onKey, true); r.hackAbort = null;
+          const fin = () => { root.remove(); r.hacking = false; if (!r.disposed) { r.syncLock(); if (!r.touch && !quiet) r.requestLock(); } resolve(ok); };
+          if (quiet) { fin(); return; }
+          foot.textContent = ok ? 'LOCK OPEN' : 'PICK BROKEN'; snd(ok ? 'keycard' : 'bad'); setTimeout(fin, 700);
+        };
+        const press = () => {
+          if (lock > 0 || done) return;
+          const d = (((ang - a0) % 360) + 360) % 360;
+          if (d <= w) { pin += 1; snd('lockpick', 0.9); if (pin >= pins) { end(true); return; } w = Math.max(22, w * 0.75); a0 = Math.random() * 360; speed *= 1.18; lock = 0.3; arc(); }
+          else { tries -= 1; snd('bad', 0.7); lock = 0.6; foot.textContent = 'SLIPPED'; arc(); if (tries <= 0) end(false); }
+        };
+        const onKey = (e) => { if (e.code === 'Escape') { e.preventDefault(); end(false, true); } else if (e.code === 'Space' || e.code === 'Enter' || e.code === 'KeyE') { e.preventDefault(); press(); } };
+        document.addEventListener('keydown', onKey, true);
+        q('.hk-btn').addEventListener('pointerdown', (e) => { e.preventDefault(); press(); });
+        r.hackAbort = (quiet) => end(false, quiet === true);
+        const iv = setInterval(() => { if (done || r.paused) return; lock = Math.max(0, lock - 0.03); ang = (ang + speed * 0.03 * dir + 360) % 360; nd.style.transform = 'rotate(' + (180 - ang) + 'deg)'; }, 30);
+        r.intervals.push(iv);
+        arc(); foot.textContent = r.touch ? 'TAP PICK' : '[SPACE] PICK';
+      });
+    }
+  });
 }());
