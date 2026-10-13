@@ -102,7 +102,7 @@
     { id: 'cell_dash', beats: 6, pre: 0.4,
       start(S) {
         const r = S.r; AK.fpStart(S, 0.5, 34.6, 0.0); r.closeDoor(r.d1);
-        AK.en(S, 'grunt', -1.0, 7.0, { yaw: 0, pers: 'pro' }); AK.en(S, 'grunt', 1.6, 5.0, { yaw: 0, pers: 'pro' });
+        AK.en(S, 'grunt', -1.8, 15.5, { yaw: 0, pers: 'pro' }); AK.en(S, 'grunt', 2.0, 17.5, { yaw: 0, pers: 'panic' });
       },
       tick(S, t, dt, A) {
         const r = S.r, p = r.p;
@@ -114,12 +114,12 @@
     // 2. перестрелка в зале: между колоннами, шаг влево-вправо, охрана лезёт в дверь
     { id: 'hall_fight', beats: 6, pre: 0.4,
       start(S) {
-        const r = S.r; AK.fpStart(S, 0.0, 23.0, 0.0); r.openNow(r.d1);
+        const r = S.r; AK.fpStart(S, 0.0, 16.5, 0.0); r.openNow(r.d1);
         AK.en(S, 'grunt', -1.2, 6.0, { yaw: 0, pers: 'pro' }); AK.en(S, 'grunt', 1.5, 4.0, { yaw: 0, pers: 'pro' }); AK.en(S, 'grunt', 0.0, 1.0, { yaw: 0, pers: 'panic' });
       },
       tick(S, t, dt, A) {
         const r = S.r, x = Math.sin(t * 2.2) * 1.6;
-        S.fp.walkTo(x, 22.5 - 0.15 * t, false);
+        S.fp.walkTo(x, 16.5, false);
         S.engage(dt, { tau: 0.2, vmax: 3.6, head: t > 1.0, delay: 0.15, range: 40, tol: 0.05 });
       },
       cam(S) { AK.ensureFP(S); } },
@@ -161,7 +161,10 @@
       tick(S, t, dt, A) {
         const r = S.r;
         if (t < 1.4) { S.fp.walkTo(0, -60, true); S.fp.look(0, 0, dt, 0.4, 3); }
-        else { S.fp.stop(); S.engage(dt, { tau: 0.18, vmax: 4, head: true, delay: 0.1, tol: 0.06, range: 60 }); }
+        else {
+          S.fp.stop();
+          if (!S.engage(dt, { tau: 0.18, vmax: 4, head: true, delay: 0.1, tol: 0.06, range: 60 })) S.fp.look(0, -0.03, dt, 0.5, 2);
+        }
       },
       cam(S) { AK.ensureFP(S); } }
   ], 0.4);
