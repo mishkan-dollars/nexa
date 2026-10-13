@@ -606,10 +606,79 @@
         document.addEventListener('keydown', onKey, true);
         q('.hk-btn').addEventListener('pointerdown', (e) => { e.preventDefault(); press(); });
         r.hackAbort = (quiet) => end(false, quiet === true);
-        const iv = setInterval(() => { if (done || r.paused) return; lock = Math.max(0, lock - 0.03); ang = (ang + speed * 0.03 * dir + 360) % 360; nd.style.transform = 'rotate(' + (180 - ang) + 'deg)'; }, 30);
+        const iv = setInterval(() => { if (done || r.paused) return; lock = Math.max(0, lock - 0.03); ang = (ang + speed * 0.03 * dir + 360) % 360; nd.style.transform = 'rotate(' + (ang - 180) + 'deg)'; }, 30);
         r.intervals.push(iv);
         arc(); foot.textContent = r.touch ? 'TAP PICK' : '[SPACE] PICK';
       });
     }
+  });
+
+  // ===================================================================== 24 DEAD DROP — поезд по расписанию
+  // Вдоль восточной стены каждого сектора — пути. Раз в ~28 с: сирена 5 с и состав сметает всё на путях (вас тоже). Пинком [V] можно столкнуть охрану под поезд.
+  TW.add(24, {
+    name: 'train-schedule',
+    phase(r, T, name) {
+      const S = T.s, sec = T.secOf(name), T3 = window.THREE;
+      S.train = null; S.sec = null;
+      if (!sec || sec.b === 'boss') return;
+      S.sec = sec; S.next = 14; S.x0 = sec.W / 2 - 4.5; S.x1 = sec.W / 2 - 0.3; S.xc = (S.x0 + S.x1) / 2;
+      const bed = T.add(new T3.Mesh(r.g.box, r.basic(0x1d1d1d))); bed.scale.set(S.x1 - S.x0, 0.04, sec.D - 2); bed.position.set(S.xc, 0.03, sec.cz);
+      [-1, 1].forEach((s) => { const rl = T.add(new T3.Mesh(r.g.box, r.basic(0x9a9a9a))); rl.scale.set(0.1, 0.06, sec.D - 2); rl.position.set(S.xc + s * 0.9, 0.06, sec.cz); });
+      const edge = T.add(new T3.Mesh(r.g.box, r.basic(0xe0e0e0))); edge.scale.set(0.12, 0.05, sec.D - 2); edge.position.set(S.x0 - 0.1, 0.05, sec.cz);
+      const tr = T.add(new T3.Group());
+      const body = new T3.Mesh(r.g.box, r.basic(0x2c2c2c)); body.scale.set(3, 3.2, 14); body.position.y = 1.6; tr.add(body);
+      for (let i = 0; i < 5; i += 1) { const w = new T3.Mesh(r.g.box, r.basic(0xf0f0f0)); w.scale.set(3.05, 0.7, 1.8); w.position.set(0, 2.0, -5.2 + i * 2.6); tr.add(w); }
+      tr.visible = false; S.tr = tr;
+      if (!S.said) { S.said = true; T.after(4, () => r.hint('TRAINS RUN ALONG THE EAST WALL — STAY OFF THE TRACKS, KICK [V] GUARDS ONTO THEM', 6)); }
+    },
+    tick(r, T, dt) {
+      const S = T.s;
+      if (!S.sec || r.locked) return;
+      if (!S.train) {
+        S.next -= dt;
+        if (S.next > 0 && S.next < 5) { if (!S.warn) { S.warn = true; r.snd && r.snd.play('train'); } if (!S.pn) S.pn = T.panel('tw-mid tw-box', '<h3>TRAIN IN <span></span></h3>'); S.pn.querySelector('span').textContent = Math.ceil(S.next); }
+        if (S.next <= 0) { S.warn = false; if (S.pn) { S.pn.remove(); S.pn = null; } S.train = { z: S.sec.zA + 10, hit: {} }; S.tr.visible = true; r.shake(0.03, 4); }
+        return;
+      }
+      const t = S.train; t.z -= 34 * dt; S.tr.position.set(S.xc, 0, t.z);
+      const inside = (x, z) => x > S.x0 - 0.2 && x < S.x1 + 0.2 && Math.abs(z - t.z) < 7.4;
+      T.foes().forEach((e) => { if (inside(e.x, e.z)) { r.damageEnemy(e, 99999, false); T.bonus(8, 'RUN OVER'); } });
+      if (inside(r.p.x, r.p.z) && !t.hp) { t.hp = true; r.hurt(90); r.toast('HIT BY THE TRAIN', 1.6); }
+      if (t.z < S.sec.zB - 18) { S.train = null; S.tr.visible = false; S.next = 26; }
+    }
+  });
+
+  // ===================================================================== 25 PARKING LEVEL 3 — взрывающиеся машины
+  // У каждой машины на торце белая крышка бензобака. Выстрел — взрыв и цепная реакция соседних машин, но сирены зовут подкрепление охраны.
+  TW.add(25, {
+    name: 'fuel-tanks',
+    setup(r, T) {
+      const S = T.s; S.cars = []; S.sir = 0;
+      r.scene.children.slice().forEach((m) => {
+        const c = m.userData && m.userData.col; if (!c || c.off) return;
+        const w = c.x1 - c.x0, d = c.z1 - c.z0, h = c.y1 - c.y0;
+        if (Math.abs(h - 1.7) > 0.05 || !((Math.abs(w - 4.2) < 0.05 && Math.abs(d - 1.9) < 0.05) || (Math.abs(w - 1.9) < 0.05 && Math.abs(d - 4.2) < 0.05))) return;
+        const alongX = w > d, cx = (c.x0 + c.x1) / 2, cz = (c.z0 + c.z1) / 2, tx = alongX ? c.x1 + 0.1 : cx, tz = alongX ? cz : c.z1 + 0.1;
+        const car = { m, cx, cz, tx, tz, dead: false };
+        r.strip(tx, 0.55, tz, alongX ? 0.14 : 0.5, 0.3, alongX ? 0.5 : 0.14, 0xffffff);
+        car.tg = r.shootTarget(tx, 0.55, tz, 0.3, { hp: 4, onDeath: () => this.boom(r, T, car, 0) });
+        if (car.tg.m) car.tg.m.visible = false;
+        S.cars.push(car);
+      });
+      T.after(5, () => r.hint('SHOOT THE WHITE FUEL CAPS — CHAIN REACTIONS, BUT SIRENS CALL GUARDS', 6));
+    },
+    boom(r, T, car, depth) {
+      const S = T.s;
+      if (car.dead) return; car.dead = true;
+      car.m.material = r.mat(0x151515);
+      r.explode(car.tx, 0.8, car.tz, 4.6, 80);
+      r.snd && r.snd.play('alarm', { k: 0.4 });
+      if (depth === 0) T.bonus(0, '');
+      S.cars.forEach((o) => { if (!o.dead && Math.hypot(o.cx - car.cx, o.cz - car.cz) < 6.5) T.after(0.45, () => { if (o.tg && o.tg.alive) o.tg.damage(99); }); });
+      S.sir += 1;
+      const sec = T.sec();
+      if (S.sir <= 4 && sec && sec.b !== 'boss') T.after(1.5, () => { T.wave(sec, ['grunt', 'grunt']); r.toast('SIRENS — SECURITY RESPONDING', 1.8); });
+    },
+    phase(r, T, name) { T.s.sir = 0; }
   });
 }());

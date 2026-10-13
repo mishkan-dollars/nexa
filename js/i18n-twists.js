@@ -168,4 +168,34 @@
     "CIVILIAN KILLED": ["МИРНЫЙ УБИТ","ZIVILIST GETÖTET"],
     "PEOPLE ARE WALKING THE PLAZA — DO NOT HIT THEM (MORALE)": ["ПО ПЛОЩАДИ ХОДЯТ ЛЮДИ — НЕ ЗАДЕВАЙ ИХ (МОРАЛЬ)","LEUTE GEHEN ÜBER DEN PLATZ — TRIFF SIE NICHT (MORAL)"]
   });
+  I18N.add('en', {
+    "BARREL": ["БОЧКА","FASS"],
+    "MINE": ["МИНА","MINE"],
+    "CRATE": ["ЯЩИК","KISTE"],
+    "TRAPS": ["ЛОВУШКИ","FALLEN"],
+    "[P] PLACE  [O] SWITCH": ["[P] ПОСТАВИТЬ  [O] СМЕНИТЬ","[P] PLATZIEREN  [O] WECHSELN"],
+    "TRAP PREP — GENERATOR LOCKED {0}": ["ПОДГОТОВКА ЛОВУШЕК — ГЕНЕРАТОР ЗАБЛОКИРОВАН {0}","FALLEN VORBEREITEN — GENERATOR GESPERRT {0}"],
+    "SET TRAPS BEFORE THE GENERATOR: BARRELS, MINES, CRATES": ["РАССТАВЬ ЛОВУШКИ ДО ГЕНЕРАТОРА: БОЧКИ, МИНЫ, ЯЩИКИ","STELL FALLEN VOR DEM GENERATOR AUF: FÄSSER, MINEN, KISTEN"],
+    "NO ROOM HERE": ["ЗДЕСЬ НЕТ МЕСТА","HIER IST KEIN PLATZ"],
+    "TRAPS ARMED — START THE GENERATOR": ["ЛОВУШКИ ВЗВЕДЕНЫ — ЗАПУСКАЙ ГЕНЕРАТОР","FALLEN SCHARF — STARTE DEN GENERATOR"],
+    "TRAP TRIGGERED": ["ЛОВУШКА СРАБОТАЛА","FALLE AUSGELÖST"],
+    "PULL THE COMPACTOR LEVER": ["ДЁРНУТЬ РЫЧАГ ПРЕССА","PRESSHEBEL ZIEHEN"],
+    "COMPACTOR ARMED — CLEAR THE PLATE": ["ПРЕСС ВЗВЕДЁН — СОЙДИ С ПЛИТЫ","PRESSE SCHARF — VERLASS DIE PLATTE"],
+    "COMPACTOR LEVER AT THE WALL — LURE THE GUARDS ONTO THE PLATE": ["РЫЧАГ ПРЕССА У СТЕНЫ — ЗАМАНИ ОХРАНУ НА ПЛИТУ","PRESSHEBEL AN DER WAND — LOCKE DIE WÄCHTER AUF DIE PLATTE"],
+    "CRUSHED": ["РАЗДАВЛЕНО","ZERQUETSCHT"],
+    "LOCK": ["ЗАМОК","SCHLOSS"],
+    "PICK": ["ОТМЫЧКА","DIETRICH"],
+    "PIN {0} / {1}": ["ШТИФТ {0} / {1}","STIFT {0} / {1}"],
+    "LOCK OPEN": ["ЗАМОК ОТКРЫТ","SCHLOSS OFFEN"],
+    "PICK BROKEN": ["ОТМЫЧКА СЛОМАНА","DIETRICH GEBROCHEN"],
+    "SLIPPED": ["СОРВАЛОСЬ","ABGERUTSCHT"],
+    "TAP PICK": ["НАЖМИ PICK","PICK TIPPEN"],
+    "[SPACE] PICK": ["[ПРОБЕЛ] ВЗЛОМ","[LEERTASTE] KNACKEN"],
+    "TRAIN IN": ["ПОЕЗД ЧЕРЕЗ","ZUG IN"],
+    "HIT BY THE TRAIN": ["СБИТ ПОЕЗДОМ","VOM ZUG ERFASST"],
+    "RUN OVER": ["ПЕРЕЕХАНО","ÜBERFAHREN"],
+    "TRAINS RUN ALONG THE EAST WALL — STAY OFF THE TRACKS, KICK [V] GUARDS ONTO THEM": ["ПОЕЗДА ХОДЯТ У ВОСТОЧНОЙ СТЕНЫ — НЕ ВЫХОДИ НА ПУТИ, ПИНКОМ [V] СТАЛКИВАЙ ОХРАНУ","ZÜGE FAHREN AN DER OSTWAND — BLEIB VON DEN GLEISEN WEG, STOSSE WÄCHTER MIT [V] HINEIN"],
+    "SHOOT THE WHITE FUEL CAPS — CHAIN REACTIONS, BUT SIRENS CALL GUARDS": ["СТРЕЛЯЙ В БЕЛЫЕ КРЫШКИ БАКОВ — ЦЕПНАЯ РЕАКЦИЯ, НО СИРЕНЫ ЗОВУТ ОХРАНУ","SCHIESS AUF DIE WEISSEN TANKDECKEL — KETTENREAKTION, ABER SIRENEN RUFEN WÄCHTER"],
+    "SIRENS — SECURITY RESPONDING": ["СИРЕНЫ — ОХРАНА ВЫДВИНУЛАСЬ","SIRENEN — SICHERHEIT RÜCKT AN"]
+  });
 }());
