@@ -15,6 +15,7 @@
       AK.purge(S);
       const h = r.bounds.h;
       S.ceil = r.scene.children.filter((m) => m.isMesh && Math.abs(m.position.y - (h + 0.05)) < 0.01 && Math.abs(m.scale.y - 0.1) < 0.001);
+      S.ceil = S.ceil.concat(r.scene.children.filter((m) => m.isMesh && m.material === r.lampMat));   // светильники висят на потолке: без него они парят в воздухе
     },
     // враг этой сцены (помечен: чужих обитателей комнат мира не трогаем — ими управляет сам мир)
     en(S, type, x, z, o) { const e = S.r.enemy(type, x, z, o); e.mine = true; return e; },

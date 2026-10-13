@@ -15,6 +15,7 @@
       AK.purge(S);
       const h = r.bounds.h;
       S.ceil = r.scene.children.filter((m) => m.isMesh && Math.abs(m.position.y - (h + 0.05)) < 0.01 && Math.abs(m.scale.y - 0.1) < 0.001);
+      S.ceil = S.ceil.concat(r.scene.children.filter((m) => m.isMesh && m.material === r.lampMat));   // светильники висят на потолке: без него они парят в воздухе
     },
     // враг этой сцены (помечен: чужих обитателей комнат мира не трогаем — ими управляет сам мир)
     en(S, type, x, z, o) { const e = S.r.enemy(type, x, z, o); e.mine = true; return e; },
@@ -110,7 +111,7 @@
     { id: 'crane_plinths', beats: 8, pre: 0.3,
       start(S) {
         const r = S.r; AK.purge(S); AK.ceil(S, false); r.setAmbient(0.85); r.p.x = 0; r.p.z = 6.5;
-        r.pads.forEach((q) => { q.box.material = r.mat(0x2a2a2a); }); this.cam(S, 0, 0);
+        r.pads.forEach((q) => { q.box.material = r.mat(0x7a7a7a); }); this.cam(S, 0, 0);
       },
       tick(S, t, dt, A) {
         const r = S.r; r.p.x = 0; r.p.z = 6.5; r.p.moving = 0;
@@ -124,9 +125,9 @@
       } },
     // 3. наезд на 024 между постаментами: голова склоняется набок
     { id: 'push_024', beats: 6, pre: 0.3,
-      start(S) { const r = S.r; AK.purge(S); r.p.x = 0; r.p.z = 6.5; r.s.watch = true; r.tilt(r.s, 0.0); this.cam(S, 0, 0); },
-      tick(S, t, dt, A) { const r = S.r; r.p.x = 0.75; r.p.z = 1.5; r.p.moving = 0; if (!A.t && t >= 0.8) { A.t = true; r.tilt(r.s, 0.5); } },
-      end(S) { S.r.tilt(S.r.s, 0); },
+      start(S) { const r = S.r; AK.purge(S); r.p.x = 0.75; r.p.z = 1.5; r.s.watch = true; this.cam(S, 0, 0); },
+      tick(S, t, dt, A) { const r = S.r; r.p.x = 0.75; r.p.z = 1.5; r.p.moving = 0; if (!A.t && t >= 1.0) { A.t = true; r.arm(r.s, true); } },
+      end(S) { S.r.arm(S.r.s, false); },
       cam(S, k, t) {
         const u = AK.u(S, k, 0.5);
         AK.cam(S, t, [0.8 - 0.1 * u, 1.45 - 0.15 * u, 2.2 - 4.3 * u], [0.0, 1.5, -6.0], 58 - 9 * u, { amp: 0.006 });
@@ -134,23 +135,27 @@
     // 4. FP: идём к ряду, свидетели поворачивают головы за нами; взгляд скользит по цифрам
     { id: 'walk_numbers', beats: 6, pre: 0.3,
       start(S) {
-        const r = S.r; AK.fpStart(S, 0.8, 6.2, 0.0); r.setAmbient(0.7); r.others.forEach((n) => { n.watch = true; }); r.s.watch = true;
-        S.A.tgt = [[-3.0, 1.2, -3.0], [0.0, 1.2, -3.0], [3.0, 1.2, -3.0]];
+        const r = S.r; AK.fpStart(S, 0.75, 5.6, 0.0); r.setAmbient(0.7); r.others.forEach((n) => { n.watch = true; }); r.s.watch = true;
+        S.A.tgt = [[-3.0, 1.2, -3.0], [3.0, 1.2, -3.0]];
       },
       tick(S, t, dt, A) {
-        const q = A.tgt, i = Math.min(2, Math.floor(t / 0.95));
-        S.fp.walkTo(0.4, 0.5, false);
-        S.fp.lookAt(q[i][0] + Math.sin(t * 1.0) * 0.2, 1.1, q[i][2], dt, 0.5, 1.6);
+        const q = A.tgt, r = S.r;
+        S.fp.walkTo(0.75, -3.0, t > 0.9);
+        if (t < 0.9) S.fp.lookAt(q[0][0], 1.1, q[0][2], dt, 0.45, 1.6);
+        else if (t < 1.5) S.fp.lookAt(q[1][0], 1.1, q[1][2], dt, 0.45, 1.8);
+        else S.fp.lookAt(0.0, 1.5, -6.0, dt, 0.4, 1.8);
+        if (!A.a && t >= 1.6) { A.a = true; r.arm(r.s, true); }
       },
+      end(S) { S.r.arm(S.r.s, false); },
       cam(S) { AK.ensureFP(S); } },
     // 5. низкий ракурс снизу вверх: силуэт 024 выше цифры 4, сзади свет ламп
-    { id: 'low_024', beats: 4, pre: 0.2,
+    { id: 'low_024', beats: 4, pre: 0.5,
       start(S) { const r = S.r; AK.purge(S); r.p.x = 0; r.p.z = 6.5; r.s.watch = true; r.arm(r.s, true); this.cam(S, 0, 0); },
       tick(S) { S.r.p.x = 0; S.r.p.z = 6.5; S.r.p.moving = 0; },
       end(S) { S.r.arm(S.r.s, false); },
       cam(S, k, t) {
         const u = AK.u(S, k, 0.55);
-        AK.cam(S, t, [-2.4 + 1.6 * u, 0.22, -1.2 - 0.6 * u], [0.1, 1.55, -6.0], 64 - 6 * u, { amp: 0.006, roll: 0.03 * (1 - u) });
+        AK.cam(S, t, [-0.75 + 0.1 * u, 0.22 + 0.1 * u, -0.1 - 4.3 * u], [0.0, 1.5 + 0.1 * u, -6.0], 66 + 4 * u, { amp: 0.005, roll: 0.03 * (1 - u) });
       } }
   ], 0.4);
 
