@@ -45,7 +45,7 @@
     '.tw-box em { font-style: normal; color: var(--red, #ef4b45); }',
     '.tw-fade { opacity: 0; transition: opacity .6s ease; } .tw-fade.on { opacity: 1; }',
     '.tw-corner { right: max(16px, env(safe-area-inset-right)); top: 150px; }',
-    '.tw-left { left: max(20px, env(safe-area-inset-left)); top: 22%; }',
+    '.tw-left { left: max(20px, env(safe-area-inset-left)); top: 30%; }',
     '.tw-mid { left: 50%; top: 34%; transform: translateX(-50%); text-align: center; }',
     '.tw-big { font: 900 clamp(26px, 6vw, 64px)/1 var(--display, monospace); letter-spacing: .14em; color: #fff; text-shadow: 0 0 18px rgba(0,0,0,.9); }',
     '.tw-red { color: var(--red, #ef4b45); }',
@@ -122,30 +122,38 @@
     hint(text, sec) { this.r.hint(text, sec || 3.6); }
     say(who, text, hold) { return this.r.say(who, text, hold); }
     bonus(n, why) { const r = this.r; r.twBonus = (r.twBonus || 0) + n; r.toast('+' + n + ' CR  ' + (why || ''), 2.4); }
-    // текстовая табличка в мире; текст переводится на текущий язык (o.bill — всегда лицом к камере)
+    // текстовая табличка в мире; текст переводится на текущий язык (o.bill — всегда лицом к камере, o.lines — максимум строк, по умолчанию 1)
     label(text, x, y, z, o) {
       o = o || {};
-      const T3 = window.THREE;
-      const c = document.createElement('canvas'); c.width = 512; c.height = 128;
+      const T3 = window.THREE, L = o.lines || 1, w = o.w || 2.4;
+      const c = document.createElement('canvas'); c.width = 512; c.height = 128 * L;
       const tex = new T3.CanvasTexture(c);
-      const m = new T3.Mesh(new T3.PlaneGeometry((o.w || 2.4), (o.w || 2.4) / 4), new T3.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, fog: false }));
+      const m = new T3.Mesh(new T3.PlaneGeometry(w, w / 4 * L), new T3.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, fog: false }));
       m.position.set(x, y, z); if (o.yaw !== undefined) m.rotation.y = o.yaw;
       m.renderOrder = 6;
-      m.userData.tw = { canvas: c, tex, o, text: '' };
+      m.userData.tw = { canvas: c, tex, o, L, text: '' };
       this.relabel(m, text);
       this.add(m, o.keep);
       if (o.bill) (this.bills || (this.bills = [])).push(m);
       return m;
     }
     relabel(m, text) {
-      const d = m.userData.tw, c = d.canvas, o = d.o, g = c.getContext('2d'), s = tr(text);
+      const d = m.userData.tw, c = d.canvas, o = d.o, L = d.L, g = c.getContext('2d'), s = tr(text), H = 128 * L;
       d.text = text;
-      g.clearRect(0, 0, 512, 128);
-      if (o.bg !== false) { g.fillStyle = o.bg || 'rgba(0,0,0,.62)'; g.fillRect(0, 22, 512, 84); }
+      g.clearRect(0, 0, 512, H);
+      if (o.bg !== false) { g.fillStyle = o.bg || 'rgba(0,0,0,.62)'; g.fillRect(0, 22, 512, H - 44); }
       g.fillStyle = o.color || '#fff'; g.textAlign = 'center'; g.textBaseline = 'middle';
-      let fs = o.size || 46; g.font = 'bold ' + fs + 'px "Courier New", monospace';
-      while (g.measureText(s).width > 484 && fs > 14) { fs -= 2; g.font = 'bold ' + fs + 'px "Courier New", monospace'; }
-      g.fillText(s, 256, 66);
+      let fs = o.size || 46, lines = [s];
+      for (;;) {
+        g.font = 'bold ' + fs + 'px "Courier New", monospace';
+        lines = []; let cur = '';
+        s.split(' ').forEach((wd) => { const t = cur ? cur + ' ' + wd : wd; if (cur && g.measureText(t).width > 484) { lines.push(cur); cur = wd; } else cur = t; });
+        lines.push(cur);
+        if ((lines.length <= L && fs * 1.15 * lines.length <= H - 40) || fs <= 14) break;
+        fs -= 2;
+      }
+      const lh = fs * 1.15, y0 = H / 2 - lh * (lines.length - 1) / 2 + 2;
+      lines.forEach((ln, i) => g.fillText(ln, 256, y0 + i * lh));
       d.tex.needsUpdate = true;
     }
     // HTML-текст в виде «печатающегося» терминала: строки появляются по одной
