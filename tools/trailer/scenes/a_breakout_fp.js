@@ -11,6 +11,7 @@
     // сценарий миссии (play) замораживаем: съёмкой управляет сцена; свет возвращаем (мигание не доигрывается)
     init(S, o) {
       const r = S.r; o = o || {};
+      r.combat();                                       // враги, трассы, кровь — для любой миссии
       r.tw = []; r.waiters = [];
       r.lightsLevel(o.light === undefined ? 1 : o.light);
       AK.purge(S);

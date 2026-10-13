@@ -10,6 +10,7 @@
     // сценарий миссии (play) замораживаем: съёмкой управляет сцена; свет возвращаем (мигание не доигрывается)
     init(S, o) {
       const r = S.r; o = o || {};
+      r.combat();                                       // враги, трассы, кровь — для любой миссии
       r.tw = []; r.waiters = [];
       r.lightsLevel(o.light === undefined ? 1 : o.light);
       AK.purge(S);
@@ -104,9 +105,9 @@
     { id: 'crane_hall', beats: 8, pre: 0.9,
       start(S) {
         const r = S.r; AK.purge(S); r.openNow(r.d1); AK.ceil(S, false);
-        S.A.h = AK.hero(S, 3.1, 21.4, Math.PI);
+        S.A.h = AK.hero(S, 0.9, 21.0, Math.PI);
         AK.en(S, 'grunt', -1.2, 5.0, { yaw: 0, pers: 'pro' }); AK.en(S, 'grunt', 1.4, 2.6, { yaw: 0, pers: 'pro' }); AK.en(S, 'rusher', 0.0, 0.0, { yaw: 0, pers: 'zealot' });
-        hidePlayer(S, 3.1, 21.4); this.cam(S, 0, 0);
+        hidePlayer(S, 0.9, 21.0); this.cam(S, 0, 0);
       },
       tick(S, t, dt, A) {
         const r = S.r; hidePlayer(S, A.h.x, A.h.z);
@@ -121,7 +122,7 @@
       },
       cam(S, k, t) {
         const u = AK.u(S, k, 0.55);
-        AK.cam(S, t, [6.9 + 2.8 * u, 1.75 + 10.2 * u, 27.2 + 4.3 * u], [0.6 - 1.1 * u, 1.3 - 0.9 * u, 12.5 + 1.5 * u], 64 - 8 * u, { roll: 0.02 * (1 - u) });
+        AK.cam(S, t, [-2.4 - 5.6 * u, 1.35 + 10.4 * u, 25.2 + 6.3 * u], [0.0 + 0.6 * u, 1.3 - 1.0 * u, 12.5 + 2.0 * u], 66 - 12 * u, { roll: 0.02 * (1 - u) });
       } },
     // 2. дверь-плита поднимается, за ней в коридоре стоит силуэт против света
     { id: 'door_rise', beats: 6, pre: 0.2,
@@ -133,21 +134,21 @@
       tick(S, t, dt, A) { if (!A.o && t >= 0.2) { A.o = true; S.r.openDoor(S.r.d3, 1.5); } hidePlayer(S, 0, 30); },
       cam(S, k, t) {
         const u = AK.u(S, k, 0.4);
-        AK.cam(S, t, [0.0 + 0.5 * u, 0.5 + 0.55 * u, -22.5 - 5.3 * u], [0.0, 1.55 - 0.1 * u, -34.5 - 2 * u], 63 + 8 * u, { amp: 0.008 });
+        AK.cam(S, t, [1.5 - 0.7 * u, 0.5 + 0.55 * u, -22.5 - 5.3 * u], [-0.1, 1.55 - 0.1 * u, -34.5 - 2 * u], 63 + 8 * u, { amp: 0.008 });
       } },
     // 3. погоня переборки: герой бежит по коридору, за ним ползёт полосатая стена; камера идёт впереди и смотрит назад
     { id: 'bulkhead_chase', beats: 6, pre: 0.7,
       start(S) {
         const r = S.r; AK.purge(S); AK.ceil(S, true); r.openNow(r.d3);
         S.A.h = AK.hero(S, 0.0, -33.0, Math.PI, null);
-        S.A.b = r.bulkhead(-30.6, -3.4, 3.4, 4.0);
+        S.A.b = r.bulkhead(-26.5, -3.4, 3.4, 4.5);
         hidePlayer(S, 0, -88); this.cam(S, 0, 0);
       },
       tick(S, t, dt, A) { hidePlayer(S, 0, -88); AK.go(A.h, 0.0, -90, 4.7); },
       end(S) { S.A.b && S.A.b.stop(); },
       cam(S, k, t) {
         const h = S.A.h, u = AK.u(S, k, 0.4);
-        AK.cam(S, t, [1.15 - 2.0 * u, 0.62 + 0.5 * u, h.z - 6.2 - 1.8 * u], [h.x * 0.6, 1.25, h.z + 2.2], 74 - 10 * u, { amp: 0.014 });
+        AK.cam(S, t, [2.0 - 3.4 * u, 2.5 - 0.6 * u, h.z - 5.2 - 1.6 * u], [h.x * 0.5, 0.9, h.z + 1.6], 72 - 10 * u, { amp: 0.014 });
       } },
     // 4. бочка: герой стреляет, охрана рядом с ней взлетает; камера далеко, после взрыва несколько долей на дым
     { id: 'barrel_blast', beats: 6, pre: 0.9,
@@ -179,13 +180,13 @@
     { id: 'hero_corridor', beats: 6, pre: 0.2,
       start(S) {
         const r = S.r; AK.purge(S); AK.ceil(S, true); r.openNow(r.d3);
-        S.A.h = AK.hero(S, 0.0, -86.5, 0.0, null);
+        S.A.h = AK.hero(S, 0.0, -90.3, 0.0, null);
         hidePlayer(S, 0, -88); this.cam(S, 0, 0);
       },
-      tick(S, t, dt, A) { hidePlayer(S, 0, -60); AK.go(A.h, 0.0, -50, 1.9); },
+      tick(S, t, dt, A) { hidePlayer(S, 0, -60); AK.go(A.h, 0.0, -50, 3.0); },
       cam(S, k, t) {
         const u = AK.u(S, k, 0.55);
-        AK.cam(S, t, [0.25 - 0.3 * u, 0.32 + 0.12 * u, -66.0 - 3.2 * u], [0.0, 1.35, -88.0], 62 - 12 * u, { amp: 0.008, roll: 0.01 });
+        AK.cam(S, t, [0.25 - 0.3 * u, 0.32 + 0.12 * u, -64.0 - 7.5 * u], [0.0, 1.4, -90.0], 62 - 10 * u, { amp: 0.008, roll: 0.01 });
       } }
   ], 0.4);
 
