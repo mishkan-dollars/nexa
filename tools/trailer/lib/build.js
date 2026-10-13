@@ -15,8 +15,9 @@ const cmd = process.argv[2] || 'plan';
 const arg = (n, d) => { const i = process.argv.indexOf('--' + n); return i >= 0 ? process.argv[i + 1] : d; };
 const W = Number(arg('w', 1920)), H = Number(arg('h', 1080)), FPS = Number(arg('fps', 60)), JOBS = Number(arg('jobs', 2));
 const ONLY = arg('only', '') ? arg('only').split(',') : null;
-const OUTDIR = path.join(ROOT, 'tools', 'trailer', 'out');
-const { sb, music } = TL.load();
+const OUTDIR = path.resolve(ROOT, arg('outdir', 'tools/trailer/out'));   // --outdir tools/trailer/out_test — пробная сборка в стороне от рабочей
+const SBP = arg('sb', null), PRV = arg('pr', null);
+const { sb, music } = TL.load(SBP ? path.resolve(SBP) : undefined);
 const lay = TL.layout(Object.assign({}, sb, { fps: FPS }), music);
 
 function plan() {
@@ -53,12 +54,12 @@ async function render() {
     while (queue.length) {
       const sc = queue.shift(), file = path.join('tools', 'trailer', 'scenes', sc + '.js');
       console.log('=== render', sc);
-      const r = await run(['tools/trailer/lib/render-scene.js', '--scene', file, '--name', sc, '--out', 'tools/trailer/out/clips', '--w', String(W), '--h', String(H), '--fps', String(FPS), '--quality', 'HIGH', '--crf', arg('crf', '14'), '--place', path.join('tools', 'trailer', 'out', 'place', sc + '.json')]);
+      const r = await run(['tools/trailer/lib/render-scene.js', '--scene', file, '--name', sc, '--out', path.join(OUTDIR, 'clips'), '--w', String(W), '--h', String(H), '--fps', String(FPS), '--quality', 'HIGH', '--crf', arg('crf', '14')].concat(PRV ? ['--pr', PRV] : []).concat(SBP ? ['--sb', SBP] : []).concat([ '--place', path.join(OUTDIR, 'place', sc + '.json')]));
       results.push({ sc, code: r.code });
     }
   };
   await Promise.all(Array.from({ length: Math.max(1, JOBS) }, worker));
-  if (!ONLY || ONLY.includes('cards')) { console.log('=== cards'); await run(['tools/trailer/lib/render-cards.js', '--w', String(W), '--h', String(H), '--fps', String(FPS)]); }
+  if (!ONLY || ONLY.includes('cards')) { console.log('=== cards'); await run(['tools/trailer/lib/render-cards.js', '--w', String(W), '--h', String(H), '--fps', String(FPS), '--out', path.join(OUTDIR, 'cards')].concat(SBP ? ['--sb', SBP] : [])); }
   console.log(JSON.stringify(results));
 }
 

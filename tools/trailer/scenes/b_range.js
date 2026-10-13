@@ -189,7 +189,7 @@
     },
     cam(S, k, t) {
       const u = lin2(k), h = sh(S, t, 0.02, 3);
-      look(S, [lerp(-3.4, -2.2, u) + h[0], lerp(1.4, 8.4, S.smooth(k)) + h[1], lerp(14.2, 19.2, u)], [0.6, lerp(0.9, -0.2, k), lerp(-8, -11, k)], lerp(60, 52, k), lerp(0.06, -0.04, k));
+      look(S, [lerp(-1.9, -0.9, u) + h[0], lerp(1.4, 8.4, S.smooth(k)) + h[1], lerp(14.2, 19.2, u)], [0.6, lerp(0.9, -0.2, k), lerp(-8, -11, k)], lerp(60, 52, k), lerp(0.06, -0.04, k));
     }
   });
 

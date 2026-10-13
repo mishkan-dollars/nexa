@@ -14,7 +14,7 @@ const beatTime = (music, b) => music.offset + b * music.beat;
 
 // возвращает [{...seg, f0, f1, frames}] — полуинтервал кадров [f0, f1)
 function layout(sb, music) {
-  const fps = sb.fps || 30, total = Math.floor(music.duration * fps), segs = sb.timeline;
+  const fps = sb.fps || 30, total = Math.floor((sb.endBeat ? beatTime(music, sb.endBeat) : music.duration) * fps), segs = sb.timeline;
   const out = segs.map((s, i) => {
     const f0 = i === 0 ? 0 : Math.round(beatTime(music, s.beat) * fps);
     const f1 = i === segs.length - 1 ? total : Math.round(beatTime(music, s.beat + s.beats) * fps);

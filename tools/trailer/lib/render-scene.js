@@ -14,7 +14,7 @@ const { openGame, ROOT } = require('./browser');
 const arg = (n, d) => { const i = process.argv.indexOf('--' + n); return i >= 0 ? process.argv[i + 1] : d; };
 const SCENE = arg('scene'), NAME = arg('name'), OUT = path.resolve(arg('out', path.join(ROOT, 'tools', 'trailer', 'out', 'clips')));
 const W = Number(arg('w', 1920)), H = Number(arg('h', 1080)), Q = arg('quality', 'HIGH'), CRF = arg('crf', '14'), FPS = Number(arg('fps', 30));
-const CUTS = arg('cuts', '') ? arg('cuts').split(',') : null, PR = arg('pr', null), PLACE = arg('place', null);
+const CUTS = arg('cuts', '') ? arg('cuts').split(',') : null, PR = arg('pr', null), PLACE = arg('place', null), SBP = arg('sb', null);
 if (!SCENE || !NAME) { console.error('usage: render-scene.js --scene file.js --name sceneName --out dir'); process.exit(2); }
 
 const music = JSON.parse(fs.readFileSync(path.join(ROOT, 'tools', 'trailer', 'music', 'beats.json'), 'utf8'));
@@ -41,7 +41,7 @@ const startEncoder = (id) => {
     if (!e.ff.stdin.write(buf)) await new Promise((res) => e.ff.stdin.once('drain', res));
     e.frames += 1;
   });
-  const sbFile = path.join(ROOT, 'tools', 'trailer', 'storyboard.json');
+  const sbFile = SBP ? path.resolve(SBP) : path.join(ROOT, 'tools', 'trailer', 'storyboard.json');
   if (place && fs.existsSync(sbFile)) { const sb = JSON.parse(fs.readFileSync(sbFile, 'utf8')); if (sb.post) await page.evaluate((p) => window.Trl.setPost(p), sb.post); }
   await page.addScriptTag({ path: path.resolve(SCENE) });
   const t0 = Date.now();

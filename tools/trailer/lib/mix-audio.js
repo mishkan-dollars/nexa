@@ -14,7 +14,8 @@ const TL = require('./timeline');
 const ROOT = TL.ROOT, SR = 48000;
 const arg = (n, d) => { const i = process.argv.indexOf('--' + n); return i >= 0 ? process.argv[i + 1] : d; };
 const SFX = Number(arg('sfx', 0.9)), MUSIC = Number(arg('music', 1.0)), FPS = Number(arg('fps', 60));
-const { sb, music } = TL.load();
+const SBP = arg('sb', null), OUTDIR = path.resolve(ROOT, arg('outdir', 'tools/trailer/out'));
+const { sb, music } = TL.load(SBP ? path.resolve(SBP) : undefined);
 const lay = TL.layout(Object.assign({}, sb, { fps: FPS }), music);
 
 const decode = (file, ch) => {
@@ -82,7 +83,7 @@ const GAIN = { pistol: 0.5, glock: 0.5, ak: 0.45, shotgun: 0.7, epistol: 0.16, e
 let nEv = 0;
 const lastShot = {};
 lay.segs.filter((s) => s.type === 'cut').forEach((s) => {
-  const man = path.join(ROOT, 'tools', 'trailer', 'out', 'clips', s.scene + '.json');
+  const man = path.join(OUTDIR, 'clips', s.scene + '.json');
   if (!fs.existsSync(man)) return;
   const c = JSON.parse(fs.readFileSync(man, 'utf8')).cuts[s.cut];
   if (!c || !c.events) return;
@@ -112,7 +113,7 @@ for (let i = 0; i < total; i += 1) {
   const sat = (v) => { v *= lim; const a = Math.abs(v); return a <= 0.8 ? v : Math.sign(v) * (0.8 + 0.2 * Math.tanh((a - 0.8) / 0.2)); };
   view[i * 2] = sat(L[i]); view[i * 2 + 1] = sat(R[i]);
 }
-const dir = path.join(ROOT, 'tools', 'trailer', 'out', 'audio'); fs.mkdirSync(dir, { recursive: true });
+const dir = path.join(OUTDIR, 'audio'); fs.mkdirSync(dir, { recursive: true });
 const raw = path.join(dir, 'mix.f32'), wav = path.join(dir, 'mix.wav');
 fs.writeFileSync(raw, out);
 const r = spawnSync('ffmpeg', ['-y', '-v', 'error', '-f', 'f32le', '-ar', String(SR), '-ac', '2', '-i', raw, '-c:a', 'pcm_s16le', wav]);
