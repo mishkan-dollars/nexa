@@ -1,0 +1,22 @@
+<!doctype html><html><head><meta charset="utf-8"><base href="/"><title>splash audio test</title>
+<style>body{background:#000;color:#9cf;font:12px monospace;margin:0}</style></head><body>
+<pre id="out" style="position:fixed;left:8px;top:8px;z-index:200000;margin:0;color:#9cf"></pre>
+<script>
+// СИНТЕТИЧЕСКИЕ файлы звука и тихий вывод (никаких реальных звуков): проверка цепочки bodycam / neon / voice, панорамы и затухания
+var prev = { m: localStorage.getItem('masterVolume'), s: localStorage.getItem('sfxEnabled') };
+localStorage.setItem('masterVolume', '0.55'); localStorage.setItem('sfxEnabled', 'true');
+function wav(sec, fn) { var sr = 22050, n = sr * sec | 0, b = new ArrayBuffer(44 + n * 2), v = new DataView(b);
+  function w(o, s) { for (var i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); }
+  w(0, 'RIFF'); v.setUint32(4, 36 + n * 2, true); w(8, 'WAVEfmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true); v.setUint32(24, sr, true); v.setUint32(28, sr * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true); w(36, 'data'); v.setUint32(40, n * 2, true);
+  for (var i = 0; i < n; i++) v.setInt16(44 + i * 2, Math.max(-1, Math.min(1, fn(i / sr))) * 32000, true); return b; }
+var files = { 'assets/bodycam.wav': wav(5, function (t) { return 0.4 * Math.sin(t * 2 * Math.PI * 80); }), 'assets/neon.wav': wav(3, function (t) { return 0.5 * Math.sin(t * 2 * Math.PI * 140) * Math.exp(-t * 0.5); }), 'assets/voice.wav': wav(1.6, function (t) { return 0.6 * Math.sin(t * 2 * Math.PI * 330); }) };
+var of = window.fetch; window.fetch = function (u) { var k = String(u).replace(/^.*?(assets\/)/, '$1'); if (files[k]) return Promise.resolve(new Response(files[k].slice(0), { status: 200 })); if (/assets\/(bodycam|neon|voice)\./.test(k)) return Promise.resolve(new Response('', { status: 404 })); return of.apply(this, arguments); };
+var oc = AudioNode.prototype.connect; AudioNode.prototype.connect = function (d) { if (d instanceof AudioDestinationNode) { var c = this.context; d = c.__sink || (c.__sink = c.createMediaStreamDestination()); } return oc.apply(this, [d].concat([].slice.call(arguments, 1))); };
+window.LOG = [];
+if (/gate=1/.test(location.search)) { window.__susp = true; Object.defineProperty(AudioContext.prototype, 'state', { get: function () { return window.__susp ? 'suspended' : 'running'; } }); var orr = AudioContext.prototype.resume; AudioContext.prototype.resume = function () { window.__susp = false; return orr.call(this); }; }
+</script>
+<script src="js/splash3d.js"></script><script src="js/splash.js"></script>
+<script>
+Splash.play().then(function () { window.DONE = true; localStorage.setItem('masterVolume', prev.m || '0'); localStorage.setItem('sfxEnabled', prev.s || 'false'); });
+var iv = setInterval(function () { var g = Splash._audio; if (!g) return; var t = g.ctx.currentTime - g.t0; var d = new Float32Array(g.analyser.fftSize); g.analyser.getFloatTimeDomainData(d); var r = 0; for (var i = 0; i < d.length; i++) r += d[i] * d[i]; LOG.push([+t.toFixed(3), +(g.pan ? g.pan.pan.value : 9).toFixed(3), +g.fade.gain.value.toFixed(3), +Math.sqrt(r / d.length).toFixed(4), Object.keys(g.bufs).filter(function (k) { return g.bufs[k]; }).join('+')]); if (window.DONE) clearInterval(iv); }, 60);
+</script></body></html>

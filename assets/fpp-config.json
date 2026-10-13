@@ -1,0 +1,21 @@
+{
+  "webcam_fov": 75,
+  "render_target_resolution_x": 1280,
+  "render_target_resolution_y": 720,
+  "webcam_fps_limit": 60,
+  "recording_overlay_enabled": true,
+  "audio_ref_distance": 1.0,
+  "audio_max_distance": 25.0,
+  "audio_rolloff_factor": 1.5,
+  "audio_inner_cone_angle": 180,
+  "computer_interaction_key": "E",
+  "desktop_theme_id": "dark_nexus",
+  "search_engine_default_url": "https://google.com",
+  "browser_home_url": "https://www.google.com/webhp?igu=1",
+  "browser_search_url": "https://www.google.com/search?igu=1&q={q}",
+  "webcam_feed_fps": 24,
+  "webcam_render_distance": 16,
+  "audio_loud_ref_scale": 8,
+  "audio_occlusion": true,
+  "audio_hrtf_voices": 8
+}

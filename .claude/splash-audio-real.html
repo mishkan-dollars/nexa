@@ -1,0 +1,17 @@
+<!doctype html><html><head><meta charset="utf-8"><base href="/"><title>splash audio test</title>
+<style>body{background:#000;color:#9cf;font:12px monospace;margin:0}</style></head><body>
+<pre id="out" style="position:fixed;left:8px;top:8px;z-index:200000;margin:0;color:#9cf"></pre>
+<script>
+// РЕАЛЬНЫЕ файлы assets/, но вывод заменён на MediaStreamDestination (в колонки ничего не идёт): проверка цепочки, панорамы и затухания
+var prev = { m: localStorage.getItem('masterVolume'), s: localStorage.getItem('sfxEnabled') };
+localStorage.setItem('masterVolume', '0.55'); localStorage.setItem('sfxEnabled', 'true');
+// реальные файлы из assets/ (без подмены fetch)
+var oc = AudioNode.prototype.connect; AudioNode.prototype.connect = function (d) { if (d instanceof AudioDestinationNode) { var c = this.context; d = c.__sink || (c.__sink = c.createMediaStreamDestination()); } return oc.apply(this, [d].concat([].slice.call(arguments, 1))); };
+window.LOG = [];
+if (/gate=1/.test(location.search)) { window.__susp = true; Object.defineProperty(AudioContext.prototype, 'state', { get: function () { return window.__susp ? 'suspended' : 'running'; } }); var orr = AudioContext.prototype.resume; AudioContext.prototype.resume = function () { window.__susp = false; return orr.call(this); }; }
+</script>
+<script src="js/splash3d.js"></script><script src="js/splash.js"></script>
+<script>
+Splash.play().then(function () { window.DONE = true; localStorage.setItem('masterVolume', prev.m || '0'); localStorage.setItem('sfxEnabled', prev.s || 'false'); });
+var iv = setInterval(function () { var g = Splash._audio; if (!g) return; var t = g.ctx.currentTime - g.t0; var d = new Float32Array(g.analyser.fftSize); g.analyser.getFloatTimeDomainData(d); var r = 0; for (var i = 0; i < d.length; i++) r += d[i] * d[i]; LOG.push([+t.toFixed(3), +(g.pan ? g.pan.pan.value : 9).toFixed(3), +g.fade.gain.value.toFixed(3), +Math.sqrt(r / d.length).toFixed(4), Object.keys(g.bufs).filter(function (k) { return g.bufs[k]; }).join('+')]); if (window.DONE) clearInterval(iv); }, 60);
+</script></body></html>

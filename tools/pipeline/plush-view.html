@@ -1,0 +1,19 @@
+<!doctype html><meta charset="utf-8"><title>plush</title>
+<style>body{margin:0;background:#111;color:#9f9;font:12px monospace}canvas{position:fixed;inset:0;width:100%;height:100%}</style>
+<canvas id="c"></canvas>
+<script src="/assets/lib/three.min.js"></script><script src="/assets/lib/GLTFLoader.js"></script>
+<script>
+// dev-only: просмотр игрушки. ?f=plush_black&rot=0..  (вращается)
+const q = new URLSearchParams(location.search), f = q.get('f') || 'plush_black';
+const cvs = document.getElementById('c'), R = new THREE.WebGLRenderer({ canvas: cvs, antialias: true });
+const W = innerWidth || 800, H = innerHeight || 450; R.setSize(W, H, false);
+const sc = new THREE.Scene(); sc.background = new THREE.Color(0x8a8a8a);
+sc.add(new THREE.AmbientLight(0xffffff, 1.6)); const dl = new THREE.DirectionalLight(0xffffff, 0.8); dl.position.set(1, 2, 3); sc.add(dl);
+const cam = new THREE.PerspectiveCamera(35, W / H, 0.01, 10); cam.position.set(0, 0.05, 0.9);
+new THREE.GLTFLoader().load('/assets/models/toys/' + f + '.glb', (g) => {
+  const grp = new THREE.Group(); grp.add(g.scene); sc.add(grp); window.G = grp;
+  g.scene.traverse((o) => { if (o.isMesh) console.log(o.name, o.material.name, o.material.alphaTest, o.material.color.getHexString(), !!o.material.map, o.geometry.attributes.position.count); });
+  grp.rotation.y = (+q.get('rot') || 0) * Math.PI / 180;
+  const loop = () => { if (!q.get('rot')) grp.rotation.y += 0.01; R.render(sc, cam); requestAnimationFrame(loop); }; loop();
+}, undefined, (e) => console.error('load fail', e));
+</script>

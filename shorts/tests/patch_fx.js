@@ -1,0 +1,12 @@
+const fs = require('fs');
+let s = fs.readFileSync('tools/shorts/scn.js', 'utf8');
+const rep = (a, b) => { if (!s.includes(a)) throw new Error('nf: ' + a.slice(0, 60)); s = s.replace(a, b); };
+rep("  S.enter = (name, x, z, yaw) => { S.r.clearEnemies(); S.W.enter(", "  // сброс следов взрывов/крови между шотами (дым, огонь, осколки, кольца, копоть, лужи)\n  S.resetFx = () => {\n    const r = S.r, X = r.xf, B = r.bl;\n    if (X) {\n      [].concat(X.fire, X.smoke, X.deb, X.rings, X.decals).forEach((o) => { if (o && o.u) { o.u.on = false; o.visible = false; if (o.material) o.material.opacity = 0; } });\n      if (X.flash) { X.flash.visible = false; X.flash.material.opacity = 0; }\n      X.burn.length = 0; X.corp.length = 0; X.act = false; X.con = 0; X.shk = 0; X.sw = null; X.last = null; if (X.fl) X.fl.age = 9; if (X.light) X.light.intensity = 0;\n      if (X.emb) { X.emb.live = 0; for (let i = 0; i < X.emb.n; i += 1) X.emb.pos[i * 3 + 1] = -100; X.emb.geo.attributes.position.needsUpdate = true; X.emb.age.fill(0); }\n    }\n    if (B) { B.parts.forEach((p) => { p.life = 0; p.m.visible = false; }); B.decals.forEach((d) => { d.m.visible = false; }); }\n  };\n  S.enter = (name, x, z, yaw) => { S.resetFx(); S.r.clearEnemies(); S.W.enter(");
+fs.writeFileSync('tools/shorts/scn.js', s);
+let t = fs.readFileSync('tools/shorts/s2.js', 'utf8');
+const rp = (a, b) => { if (!t.includes(a)) throw new Error('nf2: ' + a.slice(0, 60)); t = t.replace(a, b); };
+rp("a: [0, 1.6, -35], b: [0, 1.7, -40], la: [0, 1.3, -46], lb: [0, 1.4, -47], fov: 60,", "a: [0, 3.2, -33], b: [0, 3.0, -37], la: [0, 0.8, -45], lb: [0, 0.8, -45], fov: 62,");
+rp("a: [-9, 1.8, -36], b: [9, 1.8, -36], la: [-8, 1.1, -44], lb: [8, 1.1, -44], fov: 64,", "a: [-7, 2.6, -36], b: [7, 2.6, -36], la: [-9, 0.9, -44], lb: [9, 0.9, -44], fov: 64,");
+rp("if (p.vis && p.x > 40 && p.x < 1040 && p.y > 200 && p.y < 1700) Cap.tag(", "if (p.vis && p.x > 60 && p.x < 1020 && p.y > 720 && p.y < 1700) Cap.tag(");
+fs.writeFileSync('tools/shorts/s2.js', t);
+console.log('ok');

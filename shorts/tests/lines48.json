@@ -1,0 +1,428 @@
+[
+ [
+  "f48act1.js:132",
+  "VOICE",
+  "Sleep tight, 083.",
+  "2.2"
+ ],
+ [
+  "f48act1.js:302",
+  "DIC",
+  "Wake up, 083.",
+  "1.4"
+ ],
+ [
+  "f48act1.js:305",
+  "DIC",
+  "This is me – Dictor.",
+  "2.2"
+ ],
+ [
+  "f48act1.js:305",
+  "DIC",
+  "You are probably wondering where you are. You are exactly where you need to be.",
+  "3.6"
+ ],
+ [
+  "f48act1.js:308",
+  "DIC",
+  "Out there is a complex. NEXA Industries. Three floors, one vault, and more guards than you can count.",
+  "4.6"
+ ],
+ [
+  "f48act1.js:312",
+  "DIC",
+  "Everything they ever did is written down in that vault. Every name. Every price.",
+  "4.2"
+ ],
+ [
+  "f48act1.js:312",
+  "DIC",
+  "So tonight we walk in through the front door.",
+  "3.2"
+ ],
+ [
+  "f48act1.js:316",
+  "DIC",
+  "We make that whole place afraid. Every hall. Every room. Every person inside.",
+  "5.2"
+ ],
+ [
+  "f48act1.js:320",
+  "DIC",
+  "And you are going to need something heavier than a pistol.",
+  "3.4"
+ ],
+ [
+  "f48act1.js:324",
+  "DIC",
+  "Forty kilos. In the suit it weighs nothing. Almost nothing.",
+  "4.4"
+ ],
+ [
+  "f48act1.js:331",
+  "DIC",
+  "Take it. It is yours.",
+  "2.2"
+ ],
+ [
+  "f48act1.js:335",
+  "DIC",
+  "Now sleep. We have a long drive ahead.",
+  "3.0"
+ ],
+ [
+  "f48act1.js:339",
+  "DIC",
+  "Put him back to sleep.",
+  "2.2"
+ ],
+ [
+  "f48act2.js:55",
+  "DIC",
+  "Welcome to NEXA Industries, 083.",
+  "2.6"
+ ],
+ [
+  "f48act2.js:58",
+  "DIC",
+  "Three floors above us. One vault. And more guards than you can count.",
+  "4.6"
+ ],
+ [
+  "f48act2.js:61",
+  "DIC",
+  "Staff door, north wall. Two guards. One walks the containers, one holds the door.",
+  "4.8"
+ ],
+ [
+  "f48act2.js:61",
+  "DIC",
+  "No guns. Hands only. Quietly.",
+  "2.2"
+ ],
+ [
+  "f48act2.js:64",
+  "DIC",
+  "Break their necks. The moment someone shouts, we are finished.",
+  "3.8"
+ ],
+ [
+  "f48act2.js:82",
+  "DICTOR",
+  "Cover blown. Finish them!",
+  "2.4"
+ ],
+ [
+  "f48act2.js:114",
+  "DICTOR",
+  "Clean. Inside.",
+  "2.0"
+ ],
+ [
+  "f48act2.js:182",
+  "DICTOR",
+  "Level B0. The armoury is on the left. Go.",
+  "3.0"
+ ],
+ [
+  "f48act2.js:207",
+  "DIC",
+  "Heavy assault suits. Eight hundred kilos of armour and hydraulics between the three of us.",
+  "5.0"
+ ],
+ [
+  "f48act2.js:211",
+  "DIC",
+  "Walk slow. It will feel like wading through water. Nothing gets through that plating.",
+  "4.8"
+ ],
+ [
+  "f48act2.js:214",
+  "DIC",
+  "Remember!",
+  "1.8"
+ ],
+ [
+  "f48act2.js:214",
+  "DIC",
+  "Not a word of Russian.",
+  "3.0"
+ ],
+ [
+  "f48act2.js:247",
+  "DIC",
+  "When these doors open, there is no way back.",
+  "3.6"
+ ],
+ [
+  "f48act2.js:255",
+  "DIC",
+  "Ten counters. Hundreds of civilians. Keep walking and keep firing.",
+  "4.2"
+ ],
+ [
+  "f48act3.js:55",
+  "DIC",
+  "Floor one. Ten counters. Three hundred witnesses.",
+  "3.8"
+ ],
+ [
+  "f48act4.js:282",
+  "DIC",
+  "Level two. Vault and archive.",
+  "3.0"
+ ],
+ [
+  "f48act4.js:284",
+  "DIC",
+  "Security sealed every wing.",
+  "2.6"
+ ],
+ [
+  "f48act4.js:284",
+  "DIC",
+  "A shutter releases when its wing is clear.",
+  "3.4"
+ ],
+ [
+  "f48act4.js:284",
+  "DIC",
+  "So clear it.",
+  "1.8"
+ ],
+ [
+  "f48act4.js:365",
+  "DICTOR",
+  "The gate is sealed. We blow it.",
+  "3.0"
+ ],
+ [
+  "f48act4.js:411",
+  "DICTOR",
+  "Blast doors. Forty centimetres of steel.",
+  "3.2"
+ ],
+ [
+  "f48act4.js:416",
+  "DICTOR",
+  "Charge is set. Everybody back!",
+  "2.4"
+ ],
+ [
+  "f48act4.js:441",
+  "DICTOR",
+  "Vault is open. Two minutes. Take everything.",
+  "3.4"
+ ],
+ [
+  "f48act4.js:489",
+  "DICTOR",
+  "Lockdown! We are out of time!",
+  "2.0"
+ ],
+ [
+  "f48act4.js:526",
+  "DICTOR",
+  "Keep moving. Every bar counts.",
+  "2.6"
+ ],
+ [
+  "f48act4.js:527",
+  "DICTOR",
+  "One minute!",
+  "1.8"
+ ],
+ [
+  "f48act4.js:528",
+  "DICTOR",
+  "Twenty seconds. Grab what you can reach!",
+  "2.4"
+ ],
+ [
+  "f48act4.js:537",
+  "DICTOR",
+  "That is all of it. Now go!",
+  "2.4"
+ ],
+ [
+  "f48act4.js:625",
+  "FACILITY SYSTEM",
+  "Warning. Lethal gas release on level two. All personnel evacuate.",
+  "4.2"
+ ],
+ [
+  "f48act4.js:629",
+  "DIC",
+  "Gas! They are venting the whole floor!",
+  "2.6"
+ ],
+ [
+  "f48act4.js:629",
+  "DIC",
+  "South. The stairs. Run!",
+  "2.4"
+ ],
+ [
+  "f48act4.js:686",
+  "DICTOR",
+  "It is moving. Stay ahead of it!",
+  "2.6"
+ ],
+ [
+  "f48act4.js:687",
+  "DICTOR",
+  "Gas is right behind us! Keep running!",
+  "2.6"
+ ],
+ [
+  "f48act4.js:688",
+  "DICTOR",
+  "Cut through them. Do not stop to fight.",
+  "2.8"
+ ],
+ [
+  "f48act4.js:689",
+  "DICTOR",
+  "The stairs! Straight ahead!",
+  "2.2"
+ ],
+ [
+  "f48act5.js:262",
+  "DIC",
+  "Sublevel four. The man we came for is down there.",
+  "3.8"
+ ],
+ [
+  "f48act5.js:268",
+  "DIC",
+  "Last ride, gentlemen.",
+  "2.4"
+ ],
+ [
+  "f48act5.js:298",
+  "DIC",
+  "B4.",
+  "1.4"
+ ],
+ [
+  "f48act5.js:300",
+  "DIC",
+  "Security. Of course.",
+  "2.2"
+ ],
+ [
+  "f48act5.js:302",
+  "DIC",
+  "Six locks. One door. Walk through everything in your way.",
+  "4.4"
+ ],
+ [
+  "f48act6.js:318",
+  "DIC",
+  "Hey. Hey! Look at me.",
+  "2.6"
+ ],
+ [
+  "f48act6b.js:124",
+  "DIC",
+  "Wait.",
+  "0.9"
+ ],
+ [
+  "f48act6b.js:124",
+  "DIC",
+  "Where is he?",
+  "1.5"
+ ],
+ [
+  "f48act6b.js:124",
+  "DIC",
+  "Where is the one who did this to you?",
+  "2.6"
+ ],
+ [
+  "f48act6b.js:340",
+  "DIC",
+  "Wake up!",
+  "1.3"
+ ],
+ [
+  "f48act6b.js:340",
+  "DIC",
+  "WAKE UP!",
+  "1.2"
+ ],
+ [
+  "f48act6b.js:487",
+  "DIC",
+  "That bastard let animal gas in on us.",
+  "2.3"
+ ],
+ [
+  "f48act6b.js:487",
+  "DIC",
+  "We were all knocked out cold.",
+  "2.0"
+ ],
+ [
+  "f48act6b.js:506",
+  "DIC",
+  "Get up.",
+  "1.2"
+ ],
+ [
+  "f48act6b.js:506",
+  "DIC",
+  "GET UP!",
+  "1.4"
+ ],
+ [
+  "f48act7.js:373",
+  "DIC",
+  "There he is.",
+  "1.6"
+ ],
+ [
+  "f48act7.js:524",
+  "DIC",
+  "Your call, 083.",
+  "2.2"
+ ],
+ [
+  "f48act7.js:642",
+  "DIC",
+  "Pick it up, 083.",
+  "1.4"
+ ],
+ [
+  "f48act7.js:644",
+  "DIC",
+  "Then I will.",
+  "1.0"
+ ],
+ [
+  "f48act8.js:229",
+  "DIC",
+  "Everything NEXA gave us stays here.",
+  "2.8"
+ ],
+ [
+  "f48act8.js:238",
+  "DIC",
+  "No suits. No names. Nothing left to follow.",
+  "3.0"
+ ],
+ [
+  "f48act8.js:240",
+  "DIC",
+  "Six charges. Three floors. One button.",
+  "2.6"
+ ],
+ [
+  "f48act8.js:565",
+  "DIC",
+  "Do it, 083.",
+  "1.8"
+ ]
+]

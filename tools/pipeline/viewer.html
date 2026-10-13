@@ -1,0 +1,45 @@
+<!doctype html><meta charset="utf-8"><title>props viewer</title>
+<style>body{margin:0;background:#111;color:#ccc;font:12px monospace}#c{position:fixed;inset:0;width:100%;height:100%}#l{position:fixed;inset:0;pointer-events:none}.t{position:absolute;color:#9f9;text-shadow:0 0 3px #000}</style>
+<canvas id="c"></canvas><div id="l"></div>
+<script src="/assets/lib/three.min.js"></script><script src="/assets/lib/GLTFLoader.js"></script>
+<script>
+(async()=>{
+const idx=await fetch('/assets/models/props/index.json?'+Date.now()).then(r=>r.json());
+const q=new URLSearchParams(location.search), only=q.get('only')?q.get('only').split(','):Object.keys(idx);
+const names=only.filter(n=>idx[n]);
+const cvs=document.getElementById('c'), R=new THREE.WebGLRenderer({canvas:cvs,antialias:true});
+R.setPixelRatio(1);R.setSize(innerWidth,innerHeight,false);
+const COLS=+(q.get('cols')||8), ROWS=Math.ceil(names.length/COLS), cw=innerWidth/COLS, ch=innerHeight/ROWS;
+const scene=new THREE.Scene();scene.background=new THREE.Color(0x1a1a1a);
+scene.add(new THREE.AmbientLight(0xffffff,0.7));const dl=new THREE.DirectionalLight(0xffffff,0.8);dl.position.set(2,4,3);scene.add(dl);
+const grid=new THREE.GridHelper(4,8,0x444444,0x333333);scene.add(grid);
+const L=new THREE.GLTFLoader();
+const items=[];
+const lab=document.getElementById('l');
+await Promise.all(names.map((n,i)=>new Promise(res=>{
+  L.load('/assets/models/props/'+n+'.glb',g=>{
+    g.scene.traverse(o=>{if(o.isMesh){const m=o.material;o.material=new THREE.MeshLambertMaterial({color:m.color,map:m.map,transparent:m.transparent,opacity:m.opacity,side:THREE.DoubleSide});}});
+    const s=idx[n].size,mx=Math.max(...s);const grp=new THREE.Group();grp.add(g.scene);
+    items.push({n,grp,mx,s,i});res();},undefined,()=>{console.log('fail',n);res();});
+})));
+const d=document.createElement('div');
+items.forEach(it=>{const t=document.createElement('div');t.className='t';t.textContent=it.n+' '+it.s.join('x');lab.appendChild(t);it.t=t;});
+const cam=new THREE.PerspectiveCamera(40,cw/ch,0.01,50);
+function frame(t){
+ R.setScissorTest(true);R.setClearColor(0x1a1a1a);R.clear();
+ items.forEach(it=>{
+  const cx=(it.i%COLS)*cw,cy=innerHeight-(Math.floor(it.i/COLS)+1)*ch;
+  R.setViewport(cx,cy,cw,ch);R.setScissor(cx,cy,cw,ch);
+  scene.children.filter(c=>c.userData.m).forEach(c=>scene.remove(c));
+  it.grp.userData.m=1;scene.add(it.grp);
+  it.grp.rotation.y=q.get('front')?0:t/2500;
+  const r=Math.max(it.mx,0.1)*1.9;if(q.get('front'))cam.position.set(0,it.s[1]*0.6,r*1.1);else cam.position.set(r*0.6,r*0.55,r*1.0);cam.lookAt(0,it.s[1]/2,0);cam.aspect=cw/ch;cam.updateProjectionMatrix();
+  grid.scale.setScalar(Math.max(it.mx,0.2)/2);
+  R.render(scene,cam);scene.remove(it.grp);
+  it.t.style.left=(cx+4)+'px';it.t.style.top=(Math.floor(it.i/COLS)*ch+2)+'px';
+ });
+ requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+})();
+</script>

@@ -1,0 +1,32 @@
+<!doctype html><meta charset="utf-8"><title>orient</title>
+<style>body{margin:0;background:#111;color:#9f9;font:12px monospace}canvas{position:fixed;inset:0;width:100%;height:100%}#l{position:fixed;inset:0;pointer-events:none}.t{position:absolute;text-shadow:0 0 3px #000}</style>
+<canvas id="c"></canvas><div id="l"></div>
+<script src="/assets/lib/three.min.js"></script><script src="/assets/lib/GLTFLoader.js"></script>
+<script>
+// dev-only: ориентация моделей. Камера смотрит с +Z (игровой «перед» при yaw 0). ?only=a,b&yaw=0&cols=4 ; yaw в градусах
+(async () => {
+  const idx = await fetch('/assets/models/props/index.json?' + Date.now()).then((r) => r.json());
+  const q = new URLSearchParams(location.search), names = (q.get('only') ? q.get('only').split(',') : Object.keys(idx)).filter((n) => idx[n]);
+  const yaw = (+q.get('yaw') || 0) * Math.PI / 180, COLS = +(q.get('cols') || 4), ROWS = Math.ceil(names.length / COLS);
+  const cvs = document.getElementById('c'), R = new THREE.WebGLRenderer({ canvas: cvs, antialias: true });
+  R.setPixelRatio(1); R.setSize(innerWidth, innerHeight, false); R.setScissorTest(true);
+  const cw = innerWidth / COLS, ch = innerHeight / ROWS, lab = document.getElementById('l');
+  const L = new THREE.GLTFLoader();
+  await Promise.all(names.map((n, i) => new Promise((res) => {
+    L.load('/assets/models/props/' + n + '.glb', (g) => {
+      g.scene.traverse((o) => { if (o.isMesh) { const m = o.material; o.material = new THREE.MeshLambertMaterial({ color: m.color, map: m.map, side: THREE.DoubleSide }); } });
+      const s = idx[n].size, mx = Math.max(...s), sc = new THREE.Scene(); sc.background = new THREE.Color(0x222222);
+      sc.add(new THREE.AmbientLight(0xffffff, 0.75)); const dl = new THREE.DirectionalLight(0xffffff, 0.7); dl.position.set(1, 3, 4); sc.add(dl);
+      const grp = new THREE.Group(); grp.add(g.scene); grp.rotation.y = yaw; sc.add(grp);
+      const grid = new THREE.GridHelper(mx * 2, 8, 0x555555, 0x333333); sc.add(grid);
+      const mk = new THREE.Mesh(new THREE.BoxGeometry(mx * 0.06, mx * 0.06, mx * 0.06), new THREE.MeshBasicMaterial({ color: 0xff0000 })); mk.position.set(0, 0, mx * 0.75); sc.add(mk); // красный маркер = +Z (перед)
+      const cam = new THREE.PerspectiveCamera(35, cw / ch, 0.01, 50); const d = mx * 3.1;
+      cam.position.set(mx * 0.35, s[1] * 0.5 + mx * 0.9, d); cam.lookAt(0, s[1] * 0.4, 0);
+      const x = (i % COLS) * cw, y = innerHeight - (Math.floor(i / COLS) + 1) * ch;
+      R.setViewport(x, y, cw, ch); R.setScissor(x, y, cw, ch); R.render(sc, cam);
+      const t = document.createElement('div'); t.className = 't'; t.style.left = (x + 4) + 'px'; t.style.top = (innerHeight - y - ch + 2) + 'px'; t.textContent = n + ' yaw ' + (yaw * 180 / Math.PI); lab.appendChild(t);
+      res();
+    }, undefined, () => res());
+  })));
+})();
+</script>

@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NEXA — бот играет</title>
+<style>
+  :root { color-scheme: dark; --bg: #050505; --fg: #e8e8e8; --dim: #8a8a8a; --red: #ef4b45; --line: #2a2a2a; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); font: 13px/1.3 "Courier New", monospace; }
+  #bar { position: fixed; inset: 0 0 auto 0; height: 44px; display: flex; align-items: center; gap: 10px; padding: 0 12px; border-bottom: 1px solid var(--line); background: #0b0b0b; z-index: 3; }
+  #bar b { color: var(--red); letter-spacing: 2px; }
+  #st { flex: 1; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  button { font: inherit; color: var(--fg); background: #151515; border: 1px solid #444; padding: 5px 10px; cursor: pointer; }
+  button:hover { border-color: var(--red); }
+  iframe { position: fixed; top: 44px; left: 0; width: 100%; height: calc(100% - 44px); border: 0; background: #000; }
+  #go { position: fixed; inset: 44px 0 0 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; background: rgba(0,0,0,.92); z-index: 2; text-align: center; padding: 16px; }
+  #go h1 { margin: 0; font-size: 20px; letter-spacing: 3px; font-weight: 400; }
+  #go input { font: inherit; color: var(--fg); background: #101010; border: 1px solid #444; padding: 6px 8px; width: min(360px, 90vw); text-align: center; }
+  #go p { color: var(--dim); margin: 0; max-width: 520px; }
+</style>
+</head>
+<body>
+<div id="bar">
+  <b>NEXA BOT</b><span id="st">ожидание запуска</span>
+  <button id="pause" hidden>ПАУЗА БОТА</button>
+  <button id="next" hidden>СЛЕДУЮЩАЯ ▶</button>
+</div>
+<div id="go">
+  <h1>БОТ ИГРАЕТ ЗА ВАС</h1>
+  <p>Через бота проходят миссии в реальном времени: он ходит, стреляет, взламывает, подбирает патроны. Звук включится после нажатия кнопки. Бот бессмертен (чтобы дойти до конца).</p>
+  <label>Миссии через запятую <input id="ids" value="17"></label>
+  <button id="start">СТАРТ</button>
+</div>
+<iframe id="f" title="game"></iframe>
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id), f = $('f'), st = $('st');
+  const q = new URLSearchParams(location.search);
+  if (q.get('ids')) $('ids').value = q.get('ids');
+  let list = [], idx = 0, token = 0, botSrc = '';
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const say = (t) => { st.textContent = t; };
+
+  async function loadGame() {
+    return new Promise((res) => { f.onload = () => res(); f.src = '/index.html?nopreload=1&t=' + Date.now(); });
+  }
+  async function playOne(id, my) {
+    say('миссия ' + id + ': загрузка…');
+    await loadGame();
+    const w = f.contentWindow;
+    for (let i = 0; i < 100 && !(w.Missions && w.Missions.start); i += 1) await sleep(100);
+    if (!w.Missions) { say('не загрузился Missions'); return false; }
+    w.__B2LIVE = true;
+    w.eval(botSrc);
+    const r = await w.__B2.boot(id, { live: true, noGhost: true, god: true });
+    if (r === 'start refused') { say('миссия ' + id + ': старт отклонён'); return false; }
+    $('pause').hidden = false; $('next').hidden = false;
+    const t0 = performance.now();
+    while (my === token) {
+      const B = w.__B2, rr = w.__r, oe = w.document.querySelector('.m-obj');
+      if (B.done) { say('миссия ' + id + ': ПРОЙДЕНА (' + Math.round((performance.now() - t0) / 1000) + ' с)'); await sleep(3500); return true; }
+      if (B.exited) { say('миссия ' + id + ': выход'); return false; }
+      const txt = oe ? oe.textContent.replace('OBJECTIVE', '').trim() : '';
+      say('миссия ' + id + ' · ' + Math.round((performance.now() - t0) / 1000) + ' с · ' + (B.pause ? 'ПАУЗА · ' : '') + (txt || '…') + (rr && rr.hp !== undefined ? ' · HP ' + Math.round(rr.hp) : ''));
+      await sleep(400);
+    }
+    return false;
+  }
+  async function runList() {
+    const my = ++token;
+    botSrc = await fetch('/.claude/bot2.js?' + Date.now()).then((r) => r.text());
+    while (idx < list.length && my === token) {
+      const ok = await playOne(list[idx], my);
+      if (my !== token) return;
+      if (!ok) { say('миссия ' + list[idx] + ' не завершена — пропускаю'); await sleep(2000); }
+      idx += 1;
+    }
+    if (my === token) say('готово: все выбранные миссии сыграны');
+  }
+  $('start').onclick = () => {
+    list = $('ids').value.split(/[ ,]+/).map(Number).filter((n) => n >= 1 && n <= 47);
+    if (!list.length) return;
+    idx = 0; $('go').style.display = 'none'; runList();
+  };
+  $('pause').onclick = () => { const B = f.contentWindow.__B2; if (B) { B.pause = !B.pause; $('pause').textContent = B.pause ? 'ПРОДОЛЖИТЬ' : 'ПАУЗА БОТА'; } };
+  $('next').onclick = () => { token += 1; idx += 1; const my = token; (async () => { if (idx >= list.length) { say('конец списка'); return; } botSrc = botSrc || await fetch('/.claude/bot2.js').then((r) => r.text()); runList(); })(); };
+})();
+</script>
+</body>
+</html>

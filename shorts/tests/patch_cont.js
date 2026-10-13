@@ -1,0 +1,10 @@
+const fs = require('fs');
+let s = fs.readFileSync('tools/shorts/scn.js', 'utf8');
+const rep = (a, b) => { if (!s.includes(a)) throw new Error('nf: ' + a.slice(0, 60)); s = s.replace(a, b); };
+rep("    let cur = -1;\n    const ev = (o.events", "    let cur = -1, prevReg = null;\n    const ev = (o.events");
+rep("      if (s.reg) R = S.enter(s.reg, 0, 0, 0);\n      if (!s.lobby) S.clear();", "      if (s.reg && !(s.cont && prevReg === s.reg)) { R = S.enter(s.reg, 0, 0, 0); if (!s.lobby) S.clear(); } else if (s.reg) R = S.W.R[s.reg];\n      prevReg = s.reg || prevReg;");
+fs.writeFileSync('tools/shorts/scn.js', s);
+let t = fs.readFileSync('tools/shorts/s2.js', 'utf8');
+t = t.split("fov: 64, speed: 0.8, setup: () => {} }").join("fov: 64, speed: 0.8, cont: true }").split("fov: 60, speed: 0.8, setup: () => {} }").join("fov: 60, speed: 0.8, cont: true }");
+fs.writeFileSync('tools/shorts/s2.js', t);
+console.log('ok');
