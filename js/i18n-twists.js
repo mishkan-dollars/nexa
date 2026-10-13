@@ -135,4 +135,30 @@
     "RECORDING 10 S — WALK A ROUTE": ["ЗАПИСЬ 10 С — ПРОЙДИ МАРШРУТ","AUFNAHME 10 S — GEH EINE ROUTE"],
     "GHOST DEPLOYED — GUARDS WILL GO TO LOOK AT IT": ["ПРИЗРАК ЗАПУЩЕН — ОХРАНА ПОЙДЁТ НА НЕГО СМОТРЕТЬ","GEIST AUSGESETZT — DIE WÄCHTER SCHAUEN NACH IHM"]
   });
+  I18N.add('en', {
+    "THROW THE BREAKER": ["ВКЛЮЧИТЬ РУБИЛЬНИК","SCHALTER UMLEGEN"],
+    "FLOOR LIVE IN 1 S — CLEAR THE FLOOR": ["ПОЛ ПОД ТОКОМ ЧЕРЕЗ 1 С — СОЙДИ С НЕГО","BODEN UNTER STROM IN 1 S — VERLASS IHN"],
+    "BREAKERS BY THE WALL ELECTRIFY THE FLOOR — LURE THEM IN, STAY OFF IT YOURSELF": ["РУБИЛЬНИКИ У СТЕНЫ ПУСКАЮТ ТОК В ПОЛ — ЗАМАНИ ИХ, САМ НЕ СТОЙ НА НЁМ","SCHALTER AN DER WAND SETZEN DEN BODEN UNTER STROM — LOCKE SIE HIN, STEH SELBST NICHT DRAUF"],
+    "HIGH": ["HIGH","HIGH"],
+    "LOW": ["LOW","LOW"],
+    "BEFORE THE ROUND: STAND ON HIGH (MORE ENEMIES, TRIPLE CREDITS) OR ON LOW": ["ПЕРЕД РАУНДОМ: ВСТАНЬ НА HIGH (БОЛЬШЕ ВРАГОВ, КРЕДИТЫ ×3) ИЛИ НА LOW","VOR DER RUNDE: STELL DICH AUF HIGH (MEHR GEGNER, DREIFACHE CREDITS) ODER AUF LOW"],
+    "HIGH BET — THREE EXTRA ENEMIES": ["СТАВКА HIGH — ТРОЕ ЛИШНИХ ВРАГОВ","HIGH-WETTE — DREI ZUSÄTZLICHE GEGNER"],
+    "LOW BET — SAFE PLAY": ["СТАВКА LOW — ИГРА НА ВЕРНОЕ","LOW-WETTE — SICHERES SPIEL"],
+    "HIGH BET WON": ["СТАВКА HIGH СЫГРАЛА","HIGH-WETTE GEWONNEN"],
+    "LOW BET WON": ["СТАВКА LOW СЫГРАЛА","LOW-WETTE GEWONNEN"],
+    "CLEAN HANDS": ["ЧИСТЫЕ РУКИ","SAUBERE HÄNDE"],
+    "CIVILIAN HIT — CLEAN HANDS BONUS LOST": ["ЗАДЕТ МИРНЫЙ — БОНУС «ЧИСТЫЕ РУКИ» ПОТЕРЯН","ZIVILIST GETROFFEN — BONUS „SAUBERE HÄNDE“ VERLOREN"],
+    "ANOTHER HOSTAGE — WHITE VEST": ["ЕЩЁ ОДИН ЗАЛОЖНИК — БЕЛЫЙ ЖИЛЕТ","NOCH EINE GEISEL — WEISSE WESTE"],
+    "A RESIDENT HIDES INSIDE — DO NOT SHOOT": ["ВНУТРИ ПРЯЧЕТСЯ ЖИЛЕЦ — НЕ СТРЕЛЯТЬ","DRINNEN VERSTECKT SICH EIN BEWOHNER — NICHT SCHIESSEN"],
+    "TRIPWIRE CHARGE ON THE DOOR FRAME — BACK OFF!": ["РАСТЯЖКА С ЗАРЯДОМ НА КОСЯКЕ — ОТОЙДИ!","STOLPERDRAHT-LADUNG AM TÜRRAHMEN — ZURÜCK!"],
+    "MONITORS SHOW YOU WITH A 3 S DELAY — CROSS THE FRAMES FAST OR SHOOT THE MONITOR": ["МОНИТОРЫ ПОКАЗЫВАЮТ ТЕБЯ С ЗАДЕРЖКОЙ 3 С — ПРОБЕГАЙ КАДР БЫСТРО ИЛИ РАССТРЕЛЯЙ МОНИТОР","MONITORE ZEIGEN DICH MIT 3 S VERZÖGERUNG — DURCHQUERE DIE BILDER SCHNELL ODER ZERSCHIESS DEN MONITOR"],
+    "MONITOR DESTROYED": ["МОНИТОР УНИЧТОЖЕН","MONITOR ZERSTÖRT"],
+    "NO SIGNAL": ["НЕТ СИГНАЛА","KEIN SIGNAL"],
+    "REC  -3 S": ["ЗАП  -3 С","REC  -3 S"],
+    "SPOTTED ON THE MONITOR": ["ЗАМЕТИЛИ НА МОНИТОРЕ","AUF DEM MONITOR ENTDECKT"]
+  });
+  I18N.add('ru', {
+    "ЗРИТЕЛИ ДЕЛАЮТ СТАВКИ. HIGH ИЛИ LOW?": ["THE AUDIENCE IS PLACING BETS. HIGH OR LOW?","DAS PUBLIKUM SETZT. HIGH ODER LOW?"],
+    "ЗРИТЕЛИ ПОСТАВИЛИ НА HIGH!": ["THE AUDIENCE BET ON HIGH!","DAS PUBLIKUM HAT AUF HIGH GESETZT!"]
+  });
 }());

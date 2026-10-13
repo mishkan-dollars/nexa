@@ -1436,7 +1436,7 @@ body.in-online .terminal { animation: none !important; transform: none !importan
   .ol-stage { inset: 56px 0 calc(var(--car-h) + 222px) 0; }
   .ol-quest { display: none; } .ol-hint { display: none; }
   .ol-bl { left: 8px; right: 8px; width: auto; bottom: calc(var(--car-h) + 8px); }
-  .ol-br { bottom: calc(var(--car-h) + 130px); }
+  .ol-br { bottom: calc(var(--car-h) + 175px); transform: scale(.75); transform-origin: right bottom; }
   .ol-plat.p0 { top: 82%; width: 40%; } .ol-plat.p1 { left: 18%; top: 62%; width: 26%; } .ol-plat.p2 { left: 82%; top: 60%; width: 26%; }
   .ol-fig.f0 { bottom: 14%; height: 80%; } .ol-fig.f1 { left: 82%; bottom: 36%; height: 48%; } .ol-tag.t0 { top: 14%; } .ol-tag.t1 { left: 76%; top: 30%; }
   .ol-invite { left: 78%; top: 44%; padding: 4px 10px; font-size: 15px; }
