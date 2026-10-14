@@ -11,6 +11,7 @@
   if (!C || !C.Run || !NN) return;
   const Run = C.Run, P = Run.prototype, MISSIONS = C.MISSIONS, PF = window.NexaProfile;
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const BEAR = ['draw', 'hold', 'approach', 'shake', 'out', 'toss', 'hug', 'hugHold', 'pocket', 'stow'], GADI = { frag: 2, flash: 3, c4: 4 };
   const q = (v, k) => Math.round(v * k) / k;
   const wrap = (a) => ((a + Math.PI) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2) - Math.PI;
   const GUN = { glock: 'pistol', ak: 'rifle', shotgun: 'shotgun', sniper: 'rifle', lmg: 'lmg' };
@@ -119,7 +120,7 @@
       this.run = run; this.spec = spec; this.mode = spec.mode === 'mission' ? 'mission' : 'sandbox';
       this.host = spec.role !== 'guest'; this.slot = spec.role === 'guest' ? (NN.slot || 2) : 1; this.solo = !!spec.solo;
       if (!this.solo) run.noPause = true;   // в онлайне паузы нет (мир идёт у друзей): Esc/кнопка/потеря фокуса не ставят игру на паузу
-      this.story = this.mode === 'mission'; this.shared = true; this.pseq = 0; this.snapFull = 0; this.eReq = 0; this.dropCap = null;
+      this.story = this.mode === 'mission'; this.shared = true; this.pseq = 0; this.kset = {}; this.cinN = 0; this.act = ''; this.snapFull = 0; this.eReq = 0; this.dropCap = null;
       this.remotes = new Map(); this.readySet = new Set();
       this.ready = false; this.offs = []; this.sendT = 0; this.snapT = 0; this.hudT = 0; this.lastSend = 0;
       this.stage = 0; this.stages = {};
@@ -164,7 +165,7 @@
       const m = this.remotes.get(slot), alone = !NN.players.some((q) => q.slot !== slot);
       if (!m) { if (say && alone) this.partnerGone('FRIEND LEFT THE MATCH'); return; }
       this.stopRemoteEmote(m);
-      if (m.av) { m.av.n.g.visible = false; }
+      if (m.av) { m.av.n.g.visible = false; if (m.av.item) { m.av.n.spine.remove(m.av.item.pv); if (m.av.item.toy) m.av.item.toy.dispose(); m.av.item = null; m.av.itemId = 0; } }
       if (m.tag) m.tag.remove(); if (m.who) m.who.remove();
       this.remotes.delete(slot); this.readySet.delete(slot);
       this.byId.forEach((e) => { if (e.puppet && !e.dead && e.owner === slot) { e.dead = true; e.alive = false; e.n.free = true; e.n.g.visible = false; } });
@@ -282,10 +283,30 @@
         case 'emote': { const m = this.rmFor(from); if (m) this.startRemoteEmote(m, String(p.id || '').slice(0, 20)); break; }
         case 'emoteoff': { const m = this.remotes.get(from); if (m) this.stopRemoteEmote(m); break; }
         case 'bar': this.stages[from] = Math.max(this.stages[from] | 0, p.s | 0); break;
+        case 'barn': (this.kset[from] || (this.kset[from] = new Set())).add(String(p.kn || '').slice(0, 32)); break;
+        case 'cskip': if (!this.host && this.run.inCinema) { this.hostSkip = true; this.run.cineSkip = true; } break;
         case 'eresync': if (this.host && this.ready) this.resendEnemies(); break;
         case 'leave': this.removeRemote(from, true); break;
         default: break;
       }
+    }
+    async barrierKey(key, ms) {
+      if (this.solo || this.disposed) return;
+      NN.sendAction({ type: 'cev', k: 'barn', kn: key });
+      const t0 = Date.now(); let shown = 0;
+      while (!this.disposed && !this.gone && !this.solo && NN.connected && Date.now() - t0 < (ms || 60000)) {
+        const slots = NN.players.map((x) => x.slot).filter((x) => x !== this.slot), waiting = slots.filter((x) => !(this.kset[x] && this.kset[x].has(key)));
+        if (!waiting.length) return;
+        if (Date.now() - shown > 1500) { shown = Date.now(); this.run.toast('WAITING FOR PLAYERS ' + (slots.length - waiting.length + 1) + '/' + (slots.length + 1), 1.6); NN.sendAction({ type: 'cev', k: 'barn', kn: key }); }
+        await new Promise((res) => setTimeout(res, 150));
+      }
+    }
+    cineSync() {
+      const r = this.run;
+      if (this.solo || this.mode !== 'mission') return;
+      if (!r.inCinema) { this.cskipSent = false; this.hostSkip = false; return; }
+      if (this.host) { if (r.cineSkip && !this.cskipSent) { this.cskipSent = true; NN.sendAction({ type: 'cev', k: 'cskip' }); } }
+      else if (r.cineSkip && !this.hostSkip) r.cineSkip = false;
     }
     async barrier() {
       this.stage += 1; NN.sendAction({ type: 'cev', k: 'bar', s: this.stage });
@@ -325,10 +346,10 @@
       if (!R.got || this.gone) { g.visible = false; if (tg) tg.hidden = true; return; }
       const em = m.emo;
       if (!A.shown) { g.position.x = R.x; g.position.z = R.z; n.lx = R.x; n.lz = R.z; A.shown = true; }
-      const k = 1 - Math.exp(-dt * 13);
-      g.position.x += (R.x - g.position.x) * k; g.position.z += (R.z - g.position.z) * k;
+      const sm = this.sample(R, performance.now() - clamp((R.gap || 40) * 1.2 + 25, 50, 80)) || R;
+      g.position.x = sm.x; g.position.z = sm.z;
       if (Math.hypot(R.x - g.position.x, R.z - g.position.z) > 6) { g.position.x = R.x; g.position.z = R.z; n.lx = R.x; n.lz = R.z; }   // телепорт (рестарт у чекпоинта)
-      n.yaw = R.yaw + Math.PI;
+      n.yaw = sm.yaw + Math.PI;
       // смерть / воскрешение
       if (R.dead && !A.dead) { A.dead = true; r.actorKill(n, false, null); }
       else if (!R.dead && A.dead) { A.dead = false; r.actorReset(n); A.kind = undefined; g.position.y = 0; }
@@ -340,6 +361,7 @@
         A.muz = Math.max(0, A.muz - dt);
         if (n.flashM) n.flashM.visible = A.muz > 0;
       }
+      this.itemModel(m); this.itemPose(m, dt);
       g.visible = !em && !(R.hide);
       if (em) this.updateEmote(m, dt);
       // ник над головой
@@ -392,17 +414,94 @@
       this.sendT += dt;
       const L = this.lastPos;
       const x = q(p.x, 50), z = q(p.z, 50), a = q(p.yaw, 50), c = r.pm && r.pm.crouch ? 1 : 0, w = r.wp ? r.wp.id : '', h = r.cb ? Math.round(clamp(r.hp / (r.maxHp || 100), 0, 1) * 100) : 100, d = r.dead ? 1 : 0, aim = q(r.aimK || 0, 4);
-      const same = x === L.x && z === L.z && a === L.a && c === L.c && w === L.w && h === L.h && d === L.d && aim === L.q;
-      if (this.sendT < (document.hidden ? 1 : same ? 0.5 : 0.066)) return;      // ≤ 15 пакетов/с; в покое — 2 раза в секунду; в скрытой вкладке — раз в секунду
-      this.sendT = 0;
-      L.x = x; L.z = z; L.a = a; L.c = c; L.w = w; L.h = h; L.d = d; L.q = aim;
-      NN.sendAction({ type: 'pos', x, z, a, c, w, h, d, q: aim });
+      const it = this.itemState(), same = x === L.x && z === L.z && a === L.a && c === L.c && w === L.w && h === L.h && d === L.d && aim === L.q && it[0] === L.it && it[1] === L.ia && !it[1];
+      const gap = document.hidden ? 1 : same ? (L.mv ? 0.03 : 0.5) : this.nearGap();
+      if (this.sendT < gap) return;      // рядом до 60 пакетов/с, далеко реже; в покое — 2/с; в скрытой вкладке — 1/с
+      this.sendT = 0; L.mv = !same;
+      L.x = x; L.z = z; L.a = a; L.c = c; L.w = w; L.h = h; L.d = d; L.q = aim; L.it = it[0]; L.ia = it[1];
+      NN.sendAction({ type: 'pos', x, z, a, c, w, h, d, q: aim, it: it[0], ia: it[1], ip: it[2] });
+    }
+    itemState() {
+      const r = this.run, ty = r.ty;
+      if (ty && r.toyId && ty.s !== 'none' && ty.vis) {
+        const ia = BEAR.indexOf(ty.s) + 1;
+        if (ia > 0) return [1, ia, ty.dur > 0 && isFinite(ty.dur) ? Math.round(clamp(ty.t / ty.dur, 0, 1) * 255) : 0];
+      }
+      const g = this.gt;
+      if (g && r.time - g.t < 0.7 && r.time >= g.t) return [GADI[g.id] || 2, g.id === 'c4' ? 21 : 20, Math.round(clamp((r.time - g.t) / 0.7, 0, 1) * 255)];
+      return [0, 0, 0];
+    }
+    itemModel(m) {
+      const R = m.rem, A = m.av, n = A.n, r = this.run, T = THREE;
+      if (A.itemId === R.it) return;
+      if (A.item) { n.spine.remove(A.item.pv); if (A.item.toy) A.item.toy.dispose(); A.item = null; }
+      A.itemId = R.it;
+      if (!R.it) return;
+      const pv = new T.Group(); pv.visible = false; n.spine.add(pv);
+      const it = A.item = { pv, id: R.it, k: 0 };
+      if (R.it === 1) {
+        const W = window.Toys, id = 'black_bear';
+        const build = () => { if (A.item !== it || !W.tpl(id)) return; const t = it.toy = W.make(id); if (!t) return; const sc = 0.34 / (Math.max.apply(null, t.size || [1]) || 1); t.group.scale.setScalar(sc); pv.add(t.group); it.ready = true; };
+        if (W.tpl(id)) build(); else W.load(id).then(build, () => {});
+      } else {
+        const col = R.it === 2 ? 0x2a2a2a : R.it === 3 ? 0xe0e0e0 : 0xb0a060;
+        const mesh = it.mesh = new T.Mesh(R.it === 4 ? new T.BoxGeometry(0.16, 0.05, 0.1) : new T.SphereGeometry(0.075, 8, 6), new T.MeshBasicMaterial({ color: col }));
+        pv.add(mesh); it.ready = true; it.own = true;
+      }
+    }
+    itemPose(m, dt) {
+      const R = m.rem, A = m.av, it = A.item; if (!it) return;
+      const pv = it.pv, ph = (R.ip | 0) / 255, ia = R.ia | 0, tt = this.run.time;
+      let x = 0.3, y = 0.05, z = 0.38, rx = 0, rz = 0, vis = ia > 0 && it.ready && !A.dead && !m.emo;
+      if (R.it === 1) {
+        const s = BEAR[ia - 1];
+        if (s === 'draw') { y = -0.55 + 0.6 * ph; z = 0.2 + 0.18 * ph; }
+        else if (s === 'approach') { x = 0.3 - 0.2 * ph; z = 0.38 + 0.12 * ph; y = 0.05 + 0.1 * ph; }
+        else if (s === 'shake') { x = 0.1; z = 0.5; y = 0.15 + Math.sin(tt * 37) * 0.07; rz = Math.sin(tt * 37) * 0.3; }
+        else if (s === 'out') { x = 0.1 + 0.2 * ph; z = 0.5 - 0.12 * ph; y = 0.15 - 0.1 * ph; }
+        else if (s === 'toss') { x = 0.3 - 0.3 * ph; y = 0.05 + Math.sin(ph * Math.PI) * 0.5; z = 0.38; }
+        else if (s === 'hug' || s === 'hugHold') { x = 0; y = 0.15; z = 0.24; }
+        else if (s === 'pocket' || s === 'stow') { y = 0.05 - 0.6 * ph; z = 0.38 - 0.18 * ph; }
+      } else if (ia === 20) { const a = Math.sin(ph * Math.PI); y = 0.05 + 0.35 * a; z = 0.2 + 0.5 * ph; x = 0.3; vis = vis && ph < 0.85; }
+      else if (ia === 21) { y = 0.05 - 0.3 * Math.sin(ph * Math.PI); z = 0.4; }
+      const k = 1 - Math.exp(-dt * 20);
+      pv.position.x += (x - pv.position.x) * k; pv.position.y += (y - pv.position.y) * k; pv.position.z += (z - pv.position.z) * k;
+      pv.rotation.x += (rx - pv.rotation.x) * k; pv.rotation.z += (rz - pv.rotation.z) * k;
+      const want = vis ? 1 : 0; it.k += (want - it.k) * (1 - Math.exp(-dt * 14));
+      pv.visible = it.k > 0.05; pv.scale.setScalar(Math.max(0.01, it.k));
+    }
+    nearGap() {
+      const p = this.run.p; let d = 1e9;
+      this.remotes.forEach((m) => { if (m.rem.got) { const e = Math.hypot(m.rem.x - p.x, m.rem.z - p.z); if (e < d) d = e; } });
+      return d < 25 ? 0.0155 : d < 60 ? 0.033 : 0.066;
+    }
+    sample(R, rt) {
+      const b = R.buf, n = b.length; if (!n) return null;
+      if (rt <= b[0].t) return b[0];
+      const L = b[n - 1];
+      if (rt >= L.t) {
+        if (n < 2) return L;
+        const P = b[n - 2], dt = L.t - P.t || 1, e = Math.min(rt - L.t, 100), k = e / dt;
+        if (Math.hypot(L.x - P.x, L.z - P.z) > 6) return L;
+        return { x: L.x + (L.x - P.x) * k, z: L.z + (L.z - P.z) * k, yaw: L.yaw };
+      }
+      let i = n - 2; while (i > 0 && b[i].t > rt) i -= 1;
+      const A = b[i], B = b[i + 1], k = (rt - A.t) / ((B.t - A.t) || 1);
+      let dy = B.yaw - A.yaw; dy -= Math.round(dy / 6.283185307) * 6.283185307;
+      return { x: A.x + (B.x - A.x) * k, z: A.z + (B.z - A.z) * k, yaw: A.yaw + dy * k };
     }
     onPos(p) {
       const m = this.rmFor(p.from); if (!m) return;
       const R = m.rem;
       R.x = num(p.x); R.z = num(p.z); R.yaw = num(p.a); R.crouch = !!p.c; R.w = typeof p.w === 'string' ? p.w.slice(0, 12) : ''; R.hp = clamp(num(p.h, 100), 0, 100); R.dead = !!p.d; R.aim = clamp(num(p.q), 0, 1);
-      R.p.x = R.x; R.p.z = R.z; R.p.yaw = R.yaw; R.p.moving = 0.5; R.got = true; R.lastT = performance.now();
+      R.it = p.it | 0; R.ia = p.ia | 0; R.ip = p.ip | 0;
+      R.p.x = R.x; R.p.z = R.z; R.p.yaw = R.yaw; R.p.moving = 0.5; R.got = true;
+      const t = R.lastT ? performance.now() : 0, now = performance.now();
+      if (t) { const g = now - t; R.gap = R.gap ? R.gap * 0.9 + Math.min(g, 400) * 0.1 : g; }
+      R.lastT = now;
+      const b = R.buf || (R.buf = []), l = b[b.length - 1];
+      if (l && Math.hypot(R.x - l.x, R.z - l.z) > 6) b.length = 0;
+      b.push({ t: now, x: R.x, z: R.z, yaw: R.yaw }); if (b.length > 12) b.shift();
       if (!m.av && this.ready) this.buildAvatar(m);
     }
 
@@ -631,6 +730,7 @@
       this.sendSnap(dt);
       this.puppets(dt);
       if (this.story && !this.host) this.expireProv();
+      this.cineSync();
       this.updateAvatars(dt);
       // свои эмоции: сообщаем остальным о начале и конце танца
       const es = r.em && r.em.ses;
@@ -666,8 +766,24 @@
 
   // ------------------------------------------------------------------ подмена методов Run (минимальные обёртки, логика боя не тронута)
   const start0 = window.Missions.start;
+  let actsWrapped = false;
+  const wrapActs = () => {
+    const F = C.f48; if (actsWrapped || !F || !F.PH) return; actsWrapped = true;
+    (F.ORDER || []).forEach((name) => {
+      const o = F.PH[name]; if (typeof o !== 'function') return;
+      F.PH[name] = async function (r) {
+        await null;
+        const co = r && r.__co, on = co && co.mode === 'mission' && !co.solo;
+        if (on) { co.cinN = 0; co.act = name; await co.barrierKey('s:' + name, 45000); }
+        const v = await o.apply(this, arguments);
+        if (on && !r.disposed) await co.barrierKey('a:' + name, 60000);
+        return v;
+      };
+    });
+  };
   window.Missions.start = function (taskId, opts) {
     const spec = opts && opts.coop;
+    if (spec && !spec.solo && String(taskId) === '48') wrapActs();
     const run = start0.call(this, taskId, opts);
     if (run && spec && !spec.solo) { const co = new Session(run, spec); run.__co = co; cur = co; }
     return run;
@@ -702,6 +818,8 @@
     }
     return res;
   });
+  wrap1('throwGadget', function (o, a) { const co = this.__co; if (co) co.gt = { id: a[0], t: this.time }; return o.apply(this, a); });
+  wrap1('plantC4', function (o, a) { const co = this.__co; if (co) co.gt = { id: 'c4', t: this.time }; return o.apply(this, a); });
   wrap1('explode', function (o, a) {
     const co = this.__co;
     if (co && !co.solo && NN.connected) NN.sendAction({ type: 'boom', x: q(a[0], 10), y: q(a[1], 10), z: q(a[2], 10), r: q(a[3] || 4, 10), k: a[5] });
@@ -734,6 +852,11 @@
     return o.apply(this, a);
   });
   wrap1('phase', function (o, a) { const co = this.__co, p = o.apply(this, a); return co && co.mode === 'mission' && !co.solo ? p.then((v) => co.barrier().then(() => v)) : p; });
+  wrap1('cinematic', function (o, a) {
+    const co = this.__co;
+    if (co && co.mode === 'mission' && !co.solo && String(this.taskId) === '48' && !this.inCinema && !this.cineInsert) return co.barrierKey('c:' + co.act + ':' + (++co.cinN), 20000).then(() => o.apply(this, a));
+    return o.apply(this, a);
+  });
   wrap1('dispose', function (o, a) { const co = this.__co; if (co) { try { co.dispose(); } catch (e) { /* ok */ } } return o.apply(this, a); });
 
   window.NexaCoop = {

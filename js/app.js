@@ -556,7 +556,7 @@
   function startCoop(spec) {
     if (missionActive || !window.Missions) return false;
     var id = spec.mode === 'mission' ? spec.mission : spec.mode === 'br' ? 'brbox' : 'coopbox';
-    if (id !== 'coopbox' && id !== 'brbox' && (id < 1 || id > 47 || !Missions._core.MISSIONS[id])) return false;
+    if (id !== 'coopbox' && id !== 'brbox' && (id < 1 || id > 48 || !Missions._core.MISSIONS[id])) return false;
     missionActive = true;
     if (window.Lobby3D) Lobby3D.sync(false);
     audio.stopMusic();

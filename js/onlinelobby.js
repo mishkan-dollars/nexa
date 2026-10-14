@@ -25,7 +25,7 @@
   const sfx = (k) => { try { ctx.audio && ctx.audio.playSfx(k); } catch (e) { /* звук не критичен */ } };
   const missionsMap = () => (window.Missions && Missions._core && Missions._core.MISSIONS) || {};
   const missionTitle = (id) => { const m = missionsMap()[id]; return m && m.title ? m.title : 'MISSION'; };
-  const validMission = (id) => { id = id | 0; return id >= 1 && id <= 47 && !!missionsMap()[id]; };
+  const validMission = (id) => { id = id | 0; return id >= 1 && id <= 48 && !!missionsMap()[id]; };
   const mySlot = () => (NN.connected ? NN.slot || 1 : 1);
   // список игроков для платформ: [я, остальные по слотам]
   function party() {

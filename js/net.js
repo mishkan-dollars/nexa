@@ -22,8 +22,26 @@
   const FAST = { pos: 1, ping: 1, pong: 1, snap: 1, aim: 1 };            // типы пакетов по ненадёжному каналу 'act' (остальные — по 'rel')
   const RELAY = { pos: 1, shot: 1, cev: 1, boom: 1, aim: 1 };            // гость -> Хост -> все остальные
   const DIRECT = { 'profile?': 1, profile: 1 };                          // адресные (поле to = слот получателя)
+  const POS_MIN = 21;
+  function encPos(p, from) {
+    const w = typeof p.w === 'string' ? p.w.slice(0, 12) : '', b = new ArrayBuffer(POS_MIN + w.length), v = new DataView(b);
+    let a = +p.a || 0; a -= Math.round(a / 6.283185307) * 6.283185307;
+    v.setUint8(0, 1); v.setUint8(1, from & 255); v.setUint16(2, Math.round(performance.now()) & 65535, true);
+    v.setInt32(4, Math.round((+p.x || 0) * 50), true); v.setInt32(8, Math.round((+p.z || 0) * 50), true); v.setInt16(12, Math.round(a * 5000), true);
+    v.setUint8(14, (p.c ? 1 : 0) | (p.d ? 2 : 0)); v.setUint8(15, Math.max(0, Math.min(100, Math.round(+p.h))) || 0); v.setUint8(16, Math.round(Math.max(0, Math.min(1, +p.q || 0)) * 255)); v.setUint8(17, p.it & 255); v.setUint8(18, p.ia & 255); v.setUint8(19, p.ip & 255); v.setUint8(20, w.length);
+    for (let i = 0; i < w.length; i += 1) v.setUint8(POS_MIN + i, w.charCodeAt(i) & 127);
+    return b;
+  }
+  function decPos(b) {
+    if (!(b instanceof ArrayBuffer) || b.byteLength < POS_MIN || b.byteLength > 40) return null;
+    const v = new DataView(b); if (v.getUint8(0) !== 1) return null;
+    const n = v.getUint8(20); if (b.byteLength < POS_MIN + n || n > 12) return null;
+    let w = ''; for (let i = 0; i < n; i += 1) w += String.fromCharCode(v.getUint8(POS_MIN + i));
+    const f = v.getUint8(14);
+    return { type: 'pos', fb: v.getUint8(1), t16: v.getUint16(2, true), x: v.getInt32(4, true) / 50, z: v.getInt32(8, true) / 50, a: v.getInt16(12, true) / 5000, c: f & 1, d: (f >> 1) & 1, h: v.getUint8(15), q: v.getUint8(16) / 255, it: v.getUint8(17), ia: v.getUint8(18), ip: v.getUint8(19), w };
+  }
   const MAX_ACT = 8 * 1024, MAX_REL = 96 * 1024, CHAT_MAX = 200;
-  const cfg = { forceMs: 2500, connectMs: 20000, guestWaitMs: 180000, silentMs: 7000, pingMs: 2000, iceServers: ICE_SERVERS, maxPlayers: MAX_PLAYERS };
+  const cfg = { forceMs: 2500, connectMs: 20000, guestWaitMs: 180000, silentMs: 7000, pingMs: 1000, iceServers: ICE_SERVERS, maxPlayers: MAX_PLAYERS };
   try { if (localStorage.getItem('nexaIce') === 'none') cfg.iceServers = []; } catch (e) { /* без хранилища */ }   // тесты/сети без STUN: только локальные кандидаты
 
   // ------------------------------------------------------------------ сообщения (английские исходники; переводы — js/i18n-net.js)
@@ -259,6 +277,7 @@
       pc.addEventListener('negotiationneeded', () => negotiate(L));
       pc.addEventListener('track', (e) => onTrack(L, e));
       act = pc.createDataChannel('act', { negotiated: true, id: 1, ordered: false, maxRetransmits: 0 });
+      act.binaryType = 'arraybuffer';
       rel = pc.createDataChannel('rel', { negotiated: true, id: 2, ordered: true });
     }
     [act, rel].forEach((ch) => {
@@ -284,6 +303,7 @@
   }
   function childUp(L, raw, fast) {
     const c = R.links[0];
+    if (raw instanceof ArrayBuffer) { const q = decPos(raw); if (!q) return; q.n = ++seq; q.ts = Date.now(); delete q.fb; delete q.t16; raw = JSON.stringify(q); }
     if (typeof raw !== 'string' || raw.length > (fast ? MAX_ACT : MAX_REL) || !c || !c.opened) return;
     sendLink(c, { type: 'rl', c: L.id, d: raw, f: fast ? 1 : 0 }, fast);
   }
@@ -654,11 +674,12 @@
     const fast = fastOpt !== undefined ? !!fastOpt : !!FAST[data.type];
     const ch = fast ? L.act : L.rel;
     if (!ch || ch.readyState !== 'open') return false;
-    if (fast && ch.bufferedAmount > 64 * 1024) return false;
+    const bin = typeof raw === 'object' && raw !== null;
+    if (fast && ch.bufferedAmount > (bin ? 4096 : 64 * 1024)) return false;
     let s = raw;
     if (!s) { const pkt = Object.assign({}, data); pkt.n = ++seq; pkt.ts = Date.now(); try { s = JSON.stringify(pkt); } catch (e) { return false; } }
     try { ch.send(s); } catch (e) { return false; }
-    L.tx += 1; L.txB += s.length;
+    L.tx += 1; L.txB += bin ? s.byteLength : s.length;
     return true;
   }
   let seq = 0;
@@ -667,21 +688,48 @@
     if (!data || typeof data.type !== 'string') return false;
     const fast = opts && opts.fast !== undefined ? !!opts.fast : !!FAST[data.type];
     let ok = false;
+    const isPos = data.type === 'pos' && typeof data.x === 'number';
     if (R.role === 'host') {
       const to = opts && opts.to;
-      let s = '';
+      let s = '', bin = null;
       R.links.forEach((l) => {
         if (!l.ready || !l.opened || (to && l.slot !== to)) return;
+        if (isPos && !l.virtual && !l.local) { if (!bin) bin = encPos(data, 1); if (sendLink(l, null, true, bin)) ok = true; return; }
         if (!s) { const pkt = Object.assign({}, data); pkt.n = ++seq; pkt.ts = Date.now(); try { s = JSON.stringify(pkt); } catch (e) { s = '!'; } }
         if (s !== '!' && sendLink(l, null, fast, s)) ok = true;                 // сериализуем один раз на всех получателей
       });
     } else if (R.role === 'guest') {
       const l = R.links[0];
-      if (l && l.ready && l.opened) { const d = opts && opts.to ? Object.assign({}, data, { to: opts.to | 0 }) : data; ok = sendLink(l, d, fast); }
+      if (isPos && l && l.ready && l.opened && !l.local) ok = sendLink(l, null, true, encPos(data, 0));
+      else if (l && l.ready && l.opened) { const d = opts && opts.to ? Object.assign({}, data, { to: opts.to | 0 }) : data; ok = sendLink(l, d, fast); }
     }
     return ok;
   }
+  function onBinary(L, raw) {
+    const t = now();
+    if (t - L.rate.t > 1000) { L.rate.t = t; L.rate.n = 0; }
+    if (++L.rate.n > 400) return;
+    const p = decPos(raw); if (!p) return;
+    p.from = L.gr === 'host' ? L.slot : (p.fb >= 1 && p.fb <= cfg.maxPlayers ? p.fb : 1);
+    const k = 'pos:' + p.from, last = L.lastT && L.lastT[k];
+    if (last !== undefined) { const dd = (p.t16 - last) & 65535; if (dd === 0 || dd >= 32768) return; }
+    (L.lastT || (L.lastT = {}))[k] = p.t16;
+    L.lastRx = t; L.rx += 1; L.rxB += raw.byteLength;
+    if (L.state === 'lost') { L.state = 'open'; refreshState(); }
+    if (L.gr === 'host') {
+      let cp = null, js = null;
+      R.links.forEach((l) => {
+        if (l === L || !l.opened || !l.ready) return;
+        if (l.virtual || l.local) { if (!js) { const q = Object.assign({}, p); q.from = L.slot; q.n = ++seq; q.ts = Date.now(); delete q.fb; delete q.t16; js = JSON.stringify(q); } sendLink(l, null, true, js); return; }
+        if (!cp) { cp = raw.slice(0); new Uint8Array(cp)[1] = L.slot; }
+        sendLink(l, null, true, cp);
+      });
+    }
+    p.now = t;
+    emit('pos', p);
+  }
   function onMessage(L, raw, fast) {
+    if (raw instanceof ArrayBuffer) { onBinary(L, raw); return; }
     if (typeof raw !== 'string' || raw.length > (fast ? MAX_ACT : MAX_REL)) return;
     const t = now();
     if (t - L.rate.t > 1000) { L.rate.t = t; L.rate.n = 0; }
