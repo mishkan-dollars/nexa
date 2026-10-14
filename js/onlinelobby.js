@@ -74,7 +74,7 @@
   }
 
   function shell() {
-    const tabs = [['play', 'PLAY'], ['mode', 'MODE'], ['public', 'PUBLIC'], ['trade', 'TRADES'], ['profile', 'PROFILE'], ['connect', 'CONNECTION']];
+    const tabs = [['play', 'PLAY'], ['mode', 'MODE'], ['public', 'PUBLIC'], ['trade', 'TRADES'], ['abil', 'ABILITIES'], ['profile', 'PROFILE'], ['connect', 'CONNECTION']];
     return '<div class="ol" id="ol" data-i18n="net" data-tab="play" data-state="idle">' +
       '<div class="ol-bg" aria-hidden="true"><i class="ol-moon"></i><i class="ol-haze"></i></div>' +
       '<div class="ol-stage" id="ol-stage"><div class="ol-floor"></div>' +
@@ -151,6 +151,12 @@
       '<p class="cn-priv">You can send KP only to players who are in your room right now. Every transfer is confirmed first; the host checks it and a duplicate or negative amount is rejected.</p>' +
       '<p class="v-note" id="tr-note"></p><div class="pb-list" id="tr-list" role="list"></div>' +
     '</div></section>' +
+    // -------- ABILITIES: магазин способностей за KP
+    '<section class="ol-pane ol-sheet" data-pane="abil"><div class="sh-in">' +
+      '<div class="pb-top"><h3>ABILITIES</h3><div class="tr-bal"><small>YOUR BALANCE</small><b id="ab-bal" translate="no">0</b><em>KP</em></div></div>' +
+      '<p class="cn-priv">Buy and upgrade abilities, then put up to three into your slots. In online matches the host checks recharge times of abilities that affect enemies.</p>' +
+      '<p class="v-note" id="ab-note"></p><div class="ab-slots" id="ab-slots"></div><div class="pb-list ab-list" id="ab-list" role="list"></div>' +
+    '</div></section>' +
     // -------- PROFILE
     '<section class="ol-pane ol-sheet" data-pane="profile"><div class="sh-in">' +
       '<div class="pf-head"><span id="pf-av"></span><div class="pf-id"><label for="pf-name">NICKNAME</label><div class="pf-nm"><input type="text" id="pf-name" maxlength="16" spellcheck="false" autocomplete="off" aria-label="Nickname"><button type="button" class="ol-btn" data-act="name">SAVE</button></div><p class="v-note" id="pf-note"></p></div>' +
@@ -210,6 +216,7 @@
   function updKP() {
     const e = $('#ol-kp b'); if (e) e.textContent = String(kp());
     const b = $('#tr-bal'); if (b) b.textContent = String(kp());
+    const ab = $('#ab-bal'); if (ab) ab.textContent = String(kp());
   }
   function modeText() {
     if (L.mode === 'br') return ['BATTLE ROYALE', '', ''];
@@ -515,12 +522,13 @@
     if (L.tab === 'profile') updProfile(true);
     if (L.tab === 'mode') renderMode();
     if (L.tab === 'trade') renderTrade();
+    if (L.tab === 'abil') renderAbil();
     if (L.tab === 'public') enterPublic();
     layoutTags();
   }
   function setTab(t) {
     if (t === 'chat') { L.tab = 'play'; updTab(); chatToggle(true); return; }
-    if (['play', 'mode', 'public', 'trade', 'profile', 'connect'].indexOf(t) < 0) t = 'play';
+    if (['play', 'mode', 'public', 'trade', 'abil', 'profile', 'connect'].indexOf(t) < 0) t = 'play';
     L.tab = t; updTab();
   }
 
@@ -667,6 +675,28 @@
       const av = mkp('span'); av.innerHTML = PF.avatar(q.name, q.color, 26); const nm = mkp('em', '', q.name + ' · ' + q.level); nm.setAttribute('translate', 'no'); a.appendChild(av); a.appendChild(nm); row.appendChild(a);
       const inp = mkp('input'); inp.type = 'number'; inp.min = '1'; inp.max = '1000000'; inp.step = '1'; inp.id = 'tr-amt-' + q.slot; inp.setAttribute('aria-label', 'Amount'); inp.value = '10'; row.appendChild(inp);
       const b = mkp('button', 'ol-btn', 'SEND'); b.type = 'button'; b.dataset.act = 'trade'; b.dataset.slot = String(q.slot); row.appendChild(b);
+      box.appendChild(row);
+    });
+  }
+  function renderAbil() {
+    const box = $('#ab-list'), sl = $('#ab-slots'); if (!box || !window.Toys || !Toys.ab) return;
+    updKP(); box.textContent = ''; sl.textContent = '';
+    const AB = Toys.ab, eq = AB.equipped(), byId = {}; AB.defs.forEach((d) => { byId[d.id] = d; });
+    eq.forEach((id, i) => {
+      const s = mkp('div', 'ab-slot' + (id ? ' on' : ''));
+      s.appendChild(mkp('small', '', 'SLOT ' + (i + 1))); s.appendChild(mkp('b', '', id ? byId[id].name : 'EMPTY'));
+      if (id) { const x = mkp('button', 'ol-btn', 'CLEAR'); x.type = 'button'; x.dataset.act = 'ab-eq'; x.dataset.slot = String(i); x.dataset.v = ''; s.appendChild(x); }
+      sl.appendChild(s);
+    });
+    AB.defs.forEach((d) => {
+      const lv = AB.level(d.id), max = d.price.length, row = mkp('div', 'pb-row ab-row' + (lv ? ' own' : '')); row.setAttribute('role', 'listitem');
+      const t = mkp('div', 'ab-t'); t.appendChild(mkp('b', '', d.name)); t.appendChild(mkp('em', '', d.info));
+      const cur = lv ? 'LEVEL ' + lv + '/' + max + ' · RECHARGE ' + d.cd[lv - 1] + ' S' : 'NOT OWNED';
+      t.appendChild(mkp('small', '', cur)); row.appendChild(t);
+      const np = AB.nextPrice(d.id), b = mkp('button', 'ol-btn' + (np && np <= kp() ? ' big' : ''), np ? (lv ? 'UPGRADE ' : 'BUY ') + np + ' KP' : 'MAX'); b.type = 'button';
+      if (np) { b.dataset.act = 'ab-buy'; b.dataset.v = d.id; if (np > kp()) b.classList.add('lack'); } else b.disabled = true;
+      row.appendChild(b);
+      if (lv) { const g = mkp('div', 'ab-eqs'); [0, 1, 2].forEach((i) => { const e = mkp('button', 'ol-btn' + (eq[i] === d.id ? ' on' : ''), String(i + 1)); e.type = 'button'; e.dataset.act = 'ab-eq'; e.dataset.slot = String(i); e.dataset.v = d.id; e.setAttribute('aria-pressed', eq[i] === d.id ? 'true' : 'false'); g.appendChild(e); }); row.appendChild(g); }
       box.appendChild(row);
     });
   }
@@ -1164,6 +1194,8 @@
       case 'br-ready': brReady(); break;
       case 'br-cancel': brCancel(); break;
       case 'trade': openTrade(Number(a.dataset.slot)); break;
+      case 'ab-buy': { const r = Toys.ab.buy(v); const nt = $('#ab-note'); if (nt) { nt.className = 'v-note' + (r.ok ? '' : ' bad'); nt.textContent = r.ok ? '' : r.err; } if (r.ok) sfx('mouse'); updKP(); renderAbil(); break; }
+      case 'ab-eq': Toys.ab.equip(Number(a.dataset.slot), v || null); renderAbil(); break;
       case 'trade-yes': tradeConfirm(); break;
       case 'trade-no': { const el = $('#ol-trade'); if (el) el.hidden = true; L.tradeAsk = null; break; }
       case 'settings': { const b = document.getElementById('open-settings'); if (b) b.click(); break; }

@@ -56,7 +56,10 @@
     { id: 'leanR', def: ['KeyX'] },
     { id: 'gadget', def: ['KeyG'] },
     { id: 'gadgetNext', def: ['KeyH'] },
-    { id: 'boom', def: ['KeyB'] }
+    { id: 'boom', def: ['KeyB'] },
+    { id: 'ab1', def: ['KeyT'] },
+    { id: 'ab2', def: ['KeyY'] },
+    { id: 'ab3', def: ['KeyU'] }
   ];
   // кнопки геймпада (логический индекс стандартной раскладки → действие по умолчанию)
   const PAD_ACTIONS = [

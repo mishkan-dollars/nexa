@@ -15,6 +15,20 @@
     id: 'black_bear', model: 'plush_black', code: 'PL-01', name: 'BLACK BEAR', price: 250, ability: 'EMBRACE', duration: 120, cooldown: 300,
     lines: ['LMB: HUG THE TOY', 'RESTORES ALL INTEGRITY', 'WIDER FIELD OF VIEW', 'DARK BARS AT THE SCREEN EDGES', '+100 AMMO FOR EVERY WEAPON', 'EFFECT 2:00 / COOLDOWN 5:00']
   }];
+  const ABIL = [
+    { id: 'dash', name: 'DASH', price: [3000, 8000, 20000], cd: [12, 10, 8], v: [5, 6.5, 8], info: 'BURST FORWARD' },
+    { id: 'slow', name: 'TIME SLOW', price: [5000, 15000, 40000], cd: [40, 35, 30], v: [2, 3, 4], info: 'SLOWS TIME (OFFLINE ONLY)' },
+    { id: 'shield', name: 'ABSORBER', price: [6000, 18000, 50000], cd: [45, 40, 35], v: [40, 70, 110], info: 'ABSORBS DAMAGE FOR 8 S' },
+    { id: 'heal', name: 'SELF REPAIR', price: [4000, 12000, 30000], cd: [40, 35, 30], v: [40, 70, 100], info: 'RESTORES INTEGRITY OVER 4 S' },
+    { id: 'sight', name: 'WALL SCAN', price: [8000, 22000, 60000], cd: [50, 45, 40], v: [6, 9, 12], info: 'MARKS ENEMIES THROUGH WALLS' },
+    { id: 'magnet', name: 'MAGNET', price: [3000, 9000, 25000], cd: [30, 28, 25], v: [8, 14, 22], info: 'PULLS DROPS TO YOU' },
+    { id: 'fire', name: 'FIRE STRIKE', price: [15000, 40000, 110000], cd: [35, 30, 25], v: [30, 50, 75], info: 'BLAST WHERE YOU AIM' },
+    { id: 'shock', name: 'SHOCK WAVE', price: [12000, 35000, 90000], cd: [40, 36, 32], v: [2, 3, 4], info: 'STUNS ENEMIES AROUND YOU' },
+    { id: 'reload', name: 'INSTANT RELOAD', price: [5000, 14000, 35000], cd: [25, 20, 15], v: [1, 1, 1], info: 'FILLS EVERY MAGAZINE' },
+    { id: 'over', name: 'OVERDRIVE', price: [20000, 60000, 200000], cd: [60, 55, 50], v: [1.3, 1.5, 1.8], info: 'MORE DAMAGE FOR 6 S' }
+  ];
+  const ABD = {};
+  ABIL.forEach((d) => { ABD[d.id] = d; });
   const DEF = {};
   CATALOG.forEach((d) => { DEF[d.id] = d; });
   // эмоции (kind 'emote') — не игрушки: в CATALOG (плюш) не входят, покупаются здесь и играются из колеса эмоций (js/emote.js, зажать B). Слот игрушки не занимают
@@ -83,6 +97,12 @@
       wheel: wheel,
       hud: { life: !!(d.hud && d.hud.life), gear: !!(d.hud && d.hud.gear) },
       paid: Array.isArray(d.paid) ? d.paid.filter((x) => Number.isInteger(x) && x >= 1 && x <= 48).slice(0, 60) : [],
+      ab: (() => {
+        const lv = {}, a = d.ab && typeof d.ab === 'object' ? d.ab : {};
+        ABIL.forEach((x) => { const n = a.lv && Number.isInteger(a.lv[x.id]) ? a.lv[x.id] : 0; if (n > 0) lv[x.id] = Math.min(n, x.price.length); });
+        const eq = [0, 1, 2].map((i) => { const id = Array.isArray(a.eq) ? a.eq[i] : null; return id && lv[id] ? id : null; });
+        return { lv, eq: eq.map((id, i) => (id && eq.indexOf(id) === i ? id : null)) };
+      })(),
       rl: Array.isArray(d.rl) ? d.rl.filter((x) => x && isFinite(x.t) && isFinite(x.n)).slice(-40) : []
     };
     let cv = 0; const ck = (Math.random() * 4294967296) >>> 0;
@@ -106,7 +126,7 @@
   }
   function save() {
     try {
-      const d = JSON.stringify({ owned: S.owned, loadout: S.loadout, wheel: S.wheel, hud: S.hud, paid: S.paid, rl: S.rl });
+      const d = JSON.stringify({ owned: S.owned, loadout: S.loadout, wheel: S.wheel, hud: S.hud, paid: S.paid, rl: S.rl, ab: S.ab });
       const q = DEV.q + 1, p = lastRec ? lastRec.h : '', c = ((S.credits ^ MASK) >>> 0).toString(36);
       const r = { v: 2, q, p, c, d, h: recHash(q, p, c, d) };
       const js = JSON.stringify(r);
@@ -544,7 +564,27 @@
         debit(n) { n = Math.floor(n); if (!isFinite(n) || n < 1 || n > 1000000 || S.credits < n) return false; S.credits -= n; save(); return true; }
       };
     },
-    get tampered() { return tampered; }, sha: sha256,
+    get tampered() { return tampered; },
+    ab: {
+      defs: ABIL.map((d) => Object.freeze(Object.assign({}, d, { price: d.price.slice(), cd: d.cd.slice(), v: d.v.slice() }))),
+      level: (id) => (S.ab.lv[id] | 0),
+      equipped: () => S.ab.eq.slice(),
+      nextPrice(id) { const d = ABD[id], n = S.ab.lv[id] | 0; return d && n < d.price.length ? d.price[n] : 0; },
+      buy(id) {
+        const d = ABD[id], n = d ? S.ab.lv[id] | 0 : -1;
+        if (!d || n >= d.price.length) return { ok: false, err: 'MAX LEVEL' };
+        if (S.credits < d.price[n]) return { ok: false, err: 'NOT ENOUGH KP' };
+        S.credits -= d.price[n]; S.ab.lv[id] = n + 1;
+        if (n === 0) { const i = S.ab.eq.indexOf(null); if (i >= 0) S.ab.eq[i] = id; }
+        save(); return { ok: true, lv: n + 1 };
+      },
+      equip(slot, id) {
+        slot |= 0; if (slot < 0 || slot > 2) return false;
+        if (id && !S.ab.lv[id]) return false;
+        const i = id ? S.ab.eq.indexOf(id) : -1; if (i >= 0) S.ab.eq[i] = null;
+        S.ab.eq[slot] = id || null; save(); return true;
+      }
+    }, sha: sha256,
     owned: (id) => S.owned.indexOf(id) >= 0,
     loadout() { return S.loadout && S.owned.indexOf(S.loadout) >= 0 ? S.loadout : null; },
     hud: {

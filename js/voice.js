@@ -32,6 +32,7 @@
   };
   const urlOf = (code) => 'assets/' + ((data.dirs && data.dirs[code]) || 'voice') + '/' + code + '.mp3';
   const warmed = new Set();
+  const LOUD = 2.2;
   const vol = (run) => {
     const A = (run.opts && run.opts.audio) || {};
     return A.sfxEnabled === false ? 0 : Math.min(1, num(A.sfxVolume, 1) * num(A.masterVolume, 0.55) * 1.8);
@@ -48,11 +49,12 @@
     // голос из-под мешка: срезан верх (две ступени ФНЧ) и самый низ, тише обычного
     muffle: (ctx) => ({ nodes: [bq(ctx, 'highpass', 90, 0.7), bq(ctx, 'lowpass', 760, 0.6), bq(ctx, 'lowpass', 1150, 0.5)], k: 0.9 }),
     // системное оповещение: «громкоговоритель» — узкая полоса, прищепка на середине, мягкая перегрузка
+    plain: () => ({ nodes: [], k: 1 }),
     radio: (ctx) => ({ nodes: [bq(ctx, 'highpass', 420, 0.8), bq(ctx, 'peaking', 1500, 1.0, 5), bq(ctx, 'lowpass', 3300, 0.7), softClip(ctx, 2.2)], k: 0.85 })
   };
   // возвращает { gain, nodes, k } или null (нет WebAudio / file:// — там элемент через MediaElementSource обнуляется; играет без обработки)
   const route = (run, el, kind) => {
-    const snd = run.snd, ctx = snd && snd.ctx, make = FX[kind];
+    const snd = run.snd, ctx = snd && snd.ctx, make = FX[kind] || FX.plain;
     if (!ctx || !make || location.protocol === 'file:') return null;
     let src = null;
     try {
@@ -61,9 +63,10 @@
       g.gain.value = 0;
       let node = src;
       fx.nodes.forEach((n) => { node.connect(n); node = n; });
-      node.connect(g); g.connect(snd.dest || ctx.destination);
+      const lim = ctx.createDynamicsCompressor(); lim.threshold.value = -14; lim.knee.value = 8; lim.ratio.value = 6; lim.attack.value = 0.003; lim.release.value = 0.2;
+      node.connect(g); g.connect(lim); lim.connect(snd.dest || ctx.destination);
       if (ctx.state === 'suspended') ctx.resume().catch(() => {});
-      return { src, gain: g, nodes: fx.nodes.concat([g]), k: fx.k };
+      return { src, gain: g, nodes: fx.nodes.concat([g, lim]), k: fx.k };
     } catch (e) {
       if (src) { try { src.disconnect(); src.connect(snd.dest || ctx.destination); } catch (e2) {} }   // элемент уже привязан к контексту: без обработки, но слышно (громкость — el.volume)
       return null;
@@ -72,7 +75,7 @@
   // громкость: у обычной реплики — el.volume; у обработанной громкость элемента 1 (volume/muted применяются ДО узла), громкость ведёт GainNode
   const setVol = (run, el) => {
     const v = vol(run), r = el.__fx;
-    if (r) { r.gain.gain.value = Math.min(1, v * r.k); } else el.volume = v;
+    if (r) { r.gain.gain.value = Math.min(3, v * r.k * LOUD); } else el.volume = v;
   };
   const drop = (el) => {
     const r = el && el.__fx; if (!r) return;
@@ -138,7 +141,7 @@
       if (!v) return null;
       const el = new Audio(urlOf(v.code));
       const fx = data.fx && data.fx[v.code];
-      el.__fx = fx ? route(run, el, fx) : null;
+      el.__fx = route(run, el, fx || 'plain');
       run.voiceEl = el; run.voiceUntil = (run.time || 0) + v.dur; run.voiceCode = v.code;
       setVol(run, el);
       duckStart(run);

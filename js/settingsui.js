@@ -133,7 +133,7 @@
   const KB_LABELS = {
     forward: 'MOVE FORWARD', back: 'MOVE BACK', left: 'MOVE LEFT', right: 'MOVE RIGHT', run: 'RUN', use: 'INTERACT / USE', reload: 'RELOAD', swap: 'NEXT WEAPON',
     slot1: 'WEAPON SLOT 1', slot2: 'WEAPON SLOT 2', slot3: 'WEAPON SLOT 3', crouch: 'CROUCH / SLIDE', fists: 'FISTS', kick: 'KICK', leanL: 'LEAN LEFT', leanR: 'LEAN RIGHT',
-    gadget: 'USE GADGET', gadgetNext: 'NEXT GADGET', boom: 'DETONATE / EMOTE WHEEL'
+    gadget: 'USE GADGET', gadgetNext: 'NEXT GADGET', boom: 'DETONATE / EMOTE WHEEL', ab1: 'ABILITY 1', ab2: 'ABILITY 2', ab3: 'ABILITY 3'
   };
   const kbRoot = $('#set-kb');
   let cap = null;     // { id, slot, btn }

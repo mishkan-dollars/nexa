@@ -77,6 +77,7 @@
     'LEAN LEFT': ['НАКЛОН ВЛЕВО', 'NACH LINKS LEHNEN'],
     'LEAN RIGHT': ['НАКЛОН ВПРАВО', 'NACH RECHTS LEHNEN'],
     'USE GADGET': ['ИСПОЛЬЗОВАТЬ ГАДЖЕТ', 'GADGET BENUTZEN'],
+    'ABILITY 1': ['СПОСОБНОСТЬ 1', 'FÄHIGKEIT 1'], 'ABILITY 2': ['СПОСОБНОСТЬ 2', 'FÄHIGKEIT 2'], 'ABILITY 3': ['СПОСОБНОСТЬ 3', 'FÄHIGKEIT 3'],
     'NEXT GADGET': ['СЛЕДУЮЩИЙ ГАДЖЕТ', 'NÄCHSTES GADGET'],
     'DETONATE / EMOTE WHEEL': ['ПОДРЫВ / КОЛЕСО ЭМОЦИЙ', 'ZÜNDEN / EMOTE-RAD'],
     'Click a key box, then press the new key. Backspace clears a box, Esc cancels. Two keys per action are possible. Mouse buttons: left fires, right aims.': ['Нажмите на ячейку клавиши, затем новую клавишу. Backspace очищает ячейку, Esc отменяет. На действие можно назначить две клавиши. Мышь: левая стреляет, правая целится.', 'Klicke auf ein Tastenfeld und drücke dann die neue Taste. Rücktaste leert das Feld, Esc bricht ab. Pro Aktion sind zwei Tasten möglich. Maus: links schießt, rechts zielt.'],
