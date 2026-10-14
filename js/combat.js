@@ -961,6 +961,7 @@
   // phase(): участок миссии с чекпоинтом. fn выполняется заново после каждой смерти; всё созданное внутри очищается.
   // skip — необязательное описание «пропуска сектора» как в GTA 5: после 2 провалов подряд игрок может пропустить участок.
   //   { pos: [x, z, yaw], weapons: ['ak'], set: (r) => ... } — куда телепортировать, что выдать и что выставить так, как оставил бы успешный проход.
+  const onlineNow = () => !!((window.NN && window.NN.connected) || (window.NexaCoop && window.NexaCoop.active));
   Run.prototype.phase = async function (name, fn, skip) {
     let fails = 0;
     const snap = {
@@ -978,7 +979,7 @@
       this.deathRes = null;
       if (ok) return;
       fails += 1;
-      if (await this.recover(snap, skip && fails >= 2 ? { fails, skip } : null) === 'skip') return;
+      if (await this.recover(snap, skip && fails >= 2 && !onlineNow() ? { fails, skip } : null) === 'skip' && !onlineNow()) return;
     }
   };
 
@@ -986,6 +987,7 @@
   Run.prototype.openNow = function (d) { if (!d) return; if (d.userData.col) d.userData.col.off = true; d.position.y = (d.userData.h || 2.5) + 2.5; };
   // состояние «участок пройден»: общие хвосты фазы + то, что описано в skip
   Run.prototype.applySkip = function (sk) {
+    if (onlineNow()) return;
     if (this.bulk) this.bulk.stop();
     Object.keys(this.beacons || {}).forEach((k) => { this.beacons[k].visible = false; });
     this.banner && this.banner(null); this.meter(null); this.waypoint(null);
@@ -999,6 +1001,7 @@
       const box = this.qs('.m-opts'), pad = !!this.padObj;
       this.qs('.m-retry').textContent = this.touch ? '[RETRY]' : pad ? '[A] RETRY' : '[ENTER] RETRY';
       this.qs('.m-skipsec').textContent = this.touch ? '[SKIP SECTOR]' : pad ? '[Y] SKIP SECTOR' : '[K] SKIP SECTOR';
+      this.qs('.m-skipsec').style.display = onlineNow() ? 'none' : '';
       box.hidden = false;
       this.choice = { res, t0: Date.now() };
       if (!this.touch && document.pointerLockElement) { try { document.exitPointerLock(); } catch (e) {} } // чтобы можно было кликнуть мышью
@@ -1006,6 +1009,7 @@
   };
   Run.prototype.choose = function (v) {
     const c = this.choice;
+    if (v === 'skip' && onlineNow()) v = 'retry';
     if (!c || Date.now() - c.t0 < 600) return; // защита от случайного нажатия сразу после смерти
     this.choice = null;
     this.qs('.m-opts').hidden = true;
