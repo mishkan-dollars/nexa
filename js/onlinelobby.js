@@ -14,6 +14,7 @@
   const L = { tab: 'play', mode: 'sandbox', mission: 1, ready: false, readyMap: {}, readyList: [], cd: 0, cdT: 0, cdSpec: null, unread: 0, t0: 0, pick: false, notes: {}, joinFromUrl: false, lastStats: 0, copied: 0,
     pubSession: false, joinUi: null, roomLink: '', dances: {}, cards: {}, srvSeen: false };
   const BR = { on: false, host: false, t0: 0, state: '', findT: 0 };
+  const TRADES_ENABLED = false;   // переводы KP между игроками отключены: баланс хранится у клиента, без серверного баланса их можно дюпать (откат копии хранилища, изменённый клиент)
   const TRD = { sent: {}, seen: new Set(), hseen: new Set(), route: {} };
   const VAULT = window.Toys && Toys.vault ? Toys.vault() : null;
   const SIG = { key: {}, mine: '', led: {} };
@@ -73,7 +74,7 @@
   }
 
   function shell() {
-    const tabs = [['play', 'PLAY'], ['public', 'PUBLIC'], ['trade', 'TRADES'], ['social', 'SOCIAL'], ['profile', 'PROFILE'], ['connect', 'CONNECTION']];
+    const tabs = [['play', 'PLAY'], ['public', 'PUBLIC'], ['trade', 'TRADES'], ['social', 'SOCIAL'], ['profile', 'PROFILE'], ['connect', 'CONNECTION']].filter((x) => TRADES_ENABLED || x[0] !== 'trade');
     return '<div class="ol" id="ol" data-i18n="net" data-tab="play" data-state="idle">' +
       '<div class="ol-bg" aria-hidden="true"><i class="ol-moon"></i><i class="ol-haze"></i></div>' +
       '<div class="ol-stage" id="ol-stage"><div class="ol-floor"></div>' +
@@ -515,7 +516,7 @@
   }
   function setTab(t) {
     if (t === 'chat') { L.tab = 'play'; updTab(); chatToggle(true); return; }
-    if (['play', 'public', 'trade', 'social', 'profile', 'connect'].indexOf(t) < 0) t = 'play';
+    if (['play', 'public', 'trade', 'social', 'profile', 'connect'].indexOf(t) < 0 || (t === 'trade' && !TRADES_ENABLED)) t = 'play';
     L.tab = t; updTab();
   }
 
@@ -651,7 +652,7 @@
   }
   function tradeConfirm() {
     const a = L.tradeAsk, el = $('#ol-trade'); if (el) el.hidden = true; L.tradeAsk = null;
-    if (!a || !window.Toys) return;
+    if (!TRADES_ENABLED || !a || !window.Toys) return;
     const q = NN.players.find((x) => x.slot === a.slot);
     if (!NN.connected || !q) { toast(NN.text('TRADE_GONE'), 'bad'); return; }
     if (!validAmt(a.amt) || a.amt > kp()) { toast(NN.text('TRADE_FUNDS'), 'bad'); return; }
@@ -664,6 +665,7 @@
   }
   function trResult(src, tid, ok, amt) { if (src === 1) onTrf({ tid, ok, amt }); else NN.sendAction({ type: 'trf', tid, ok: ok ? 1 : 0, amt, sg: sg(SIG.key[src], ['trf', tid, ok ? 1 : 0, amt]) }, { to: src }); }
   function trRoute(src, dst, amt, tid) {                       // только хост
+    if (!TRADES_ENABLED) { trResult(src, tid, false, 0); return; }
     const key = src + ':' + tid;
     if (TRD.hseen.has(key)) return;
     TRD.hseen.add(key); if (TRD.hseen.size > 500) TRD.hseen.clear();
@@ -686,23 +688,25 @@
     NN.on('trq', (p) => {
       if (!NN.isHost) return;
       const src = p.from | 0;
+      if (!TRADES_ENABLED) { if (validTid(p.tid)) trResult(src, p.tid, false, 0); return; }
       if (!sgOk(SIG.key[src], ['trq', p.dst, p.amt, p.tid, p.t, p.bal], p.sg) || !tOk(p.t) || !validAmt(p.amt)) return;
       if (!TRD.hseen.has(src + ':' + p.tid) && !ledgerOk(src, p.amt, p.bal)) { TRD.hseen.add(src + ':' + p.tid); trResult(src, p.tid, false, 0); return; }
       trRoute(src, p.dst | 0, p.amt, p.tid);
     });
     NN.on('trd', (p) => {
-      if ((p.from | 0) !== 1 || NN.isHost || !validTid(p.tid) || !validAmt(p.amt) || TRD.seen.has(p.tid)) return;
+      if (!TRADES_ENABLED || (p.from | 0) !== 1 || NN.isHost || !validTid(p.tid) || !validAmt(p.amt) || TRD.seen.has(p.tid)) return;
       if (!sgOk(SIG.mine, ['trd', p.src | 0, p.amt, p.tid, p.t], p.sg) || !tOk(p.t)) return;
       TRD.seen.add(p.tid); if (TRD.seen.size > 500) TRD.seen.clear();
       if (VAULT && VAULT.credit(p.amt)) { toastFrom(p.src | 0, p.amt); updKP(); }
       NN.sendAction({ type: 'tra', src: p.src | 0, tid: p.tid, amt: p.amt, sg: sg(SIG.mine, ['tra', p.src | 0, p.tid, p.amt]) });
     });
     NN.on('tra', (p) => {
+      if (!TRADES_ENABLED) return;
       if (!NN.isHost) return;
       const r = TRD.route[p.tid]; if (!r || r.dst !== (p.from | 0) || !sgOk(SIG.key[r.dst], ['tra', p.src | 0, p.tid, p.amt], p.sg)) return;
       delete TRD.route[p.tid]; const le = SIG.led[r.dst]; if (le) le.recv += r.amt; trResult(r.src, p.tid, true, r.amt);
     });
-    NN.on('trf', (p) => { if ((p.from | 0) === 1 && !NN.isHost && sgOk(SIG.mine, ['trf', p.tid, p.ok ? 1 : 0, p.amt], p.sg)) onTrf(p); });
+    NN.on('trf', (p) => { if (TRADES_ENABLED && (p.from | 0) === 1 && !NN.isHost && sgOk(SIG.mine, ['trf', p.tid, p.ok ? 1 : 0, p.amt], p.sg)) onTrf(p); });
     NN.on('net:left', (p) => { if (!NN.isHost) return; delete SIG.key[p.slot]; delete SIG.led[p.slot]; Object.keys(TRD.route).forEach((t) => { const r = TRD.route[t]; if (r.dst === p.slot) { delete TRD.route[t]; trResult(r.src, t, false, 0); } }); });
   }
 
@@ -1128,8 +1132,8 @@
       case 'gfx': try { Missions.setQuality(v); } catch (er) { /* ok */ } openPick(); break;
       case 'br-ready': brReady(); break;
       case 'br-cancel': brCancel(); break;
-      case 'trade': openTrade(Number(a.dataset.slot)); break;
-      case 'trade-yes': tradeConfirm(); break;
+      case 'trade': if (!TRADES_ENABLED) break; openTrade(Number(a.dataset.slot)); break;
+      case 'trade-yes': if (!TRADES_ENABLED) break; tradeConfirm(); break;
       case 'trade-no': { const el = $('#ol-trade'); if (el) el.hidden = true; L.tradeAsk = null; break; }
       case 'settings': { const b = document.getElementById('open-settings'); if (b) b.click(); break; }
       case 'pick': openPick(); break;
