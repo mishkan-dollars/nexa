@@ -464,6 +464,7 @@
     CATALOG, EMOTES, def: (id) => DEF[id], REWARD_FIRST,
     emoteWheel: () => S.wheel.slice(), audio: () => ctx.audio,
     get credits() { return S.credits; },
+    addCredits(n) { n = Math.floor(n); if (!isFinite(n) || n === 0 || S.credits + n < 0 || n > 1e7) return false; S.credits += n; save(); return true; },
     owned: (id) => S.owned.indexOf(id) >= 0,
     loadout() { return S.loadout && S.owned.indexOf(S.loadout) >= 0 ? S.loadout : null; },
     hud: {

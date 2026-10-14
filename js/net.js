@@ -18,7 +18,7 @@
   const VERSION = 1;
   const TELEGRAM = 'https://t.me/nexaindustries';
   const ICE_SERVERS = [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }];
-  const MAX_PLAYERS = 6, MAX_VOICE = 4;                                   // см. ONLINE.md: 6 проверено по расчёту трафика Хоста; константу можно поднять до 8 на свой риск
+  const MAX_PLAYERS = 6, MAX_BR = 10, MAX_VOICE = 4;                                   // см. ONLINE.md: 6 проверено по расчёту трафика Хоста; константу можно поднять до 8 на свой риск
   const FAST = { pos: 1, ping: 1, pong: 1, snap: 1, aim: 1 };            // типы пакетов по ненадёжному каналу 'act' (остальные — по 'rel')
   const RELAY = { pos: 1, shot: 1, cev: 1, boom: 1, aim: 1 };            // гость -> Хост -> все остальные
   const DIRECT = { 'profile?': 1, profile: 1 };                          // адресные (поле to = слот получателя)
@@ -170,10 +170,12 @@
     const m = /^a=candidate:\S+ \d+ (\S+) \d+ (\S+) \d+ typ (\w+)/i.exec(line);
     return m ? { proto: m[1].toLowerCase(), addr: m[2], typ: m[3].toLowerCase() } : null;
   }
+  // публичный (глобальный) IPv6 host-кандидат не фильтруем: он работает без NAT; link-local fe80 и ULA fc/fd — не публичные
+  const globalV6 = (c) => c.typ === 'host' && c.addr.indexOf(':') > 0 && !/^(fe[89ab]|f[cd])/i.test(c.addr) && !/\.local$/i.test(c.addr);
   function shrinkSdp(sdp, keepLocal) {
     const lines = sdp.split(/\r?\n/).filter(Boolean);
     const wantLocal = keepLocal || localMode();
-    const pub = lines.filter((l) => { const c = candParts(l); return c && c.proto === 'udp' && (c.typ === 'srflx' || c.typ === 'relay'); }).length;
+    const pub = lines.filter((l) => { const c = candParts(l); return c && c.proto === 'udp' && (c.typ === 'srflx' || c.typ === 'relay' || globalV6(c)); }).length;
     const useLocal = wantLocal || pub === 0;
     let kept = 0;
     const out = [];
@@ -182,7 +184,7 @@
       if (l.indexOf('a=candidate:') === 0) {
         const c = candParts(l);
         if (!c || c.proto !== 'udp') return;
-        if (c.typ === 'srflx' || c.typ === 'relay' || (useLocal && c.typ === 'host')) { kept += 1; out.push(l); }
+        if (c.typ === 'srflx' || c.typ === 'relay' || globalV6(c) || (useLocal && c.typ === 'host')) { kept += 1; out.push(l); }
         return;
       }
       if (/^c=IN IP[46] /.test(l)) { out.push('c=IN IP4 0.0.0.0'); return; }
@@ -640,7 +642,7 @@
       case 'sdp': onSdp(L, p); return;
       case 'bye': L.peerBye = true; linkGone(L, 'PEER_LEFT'); return;
       case 'hello': onHello(L, p); return;
-      case 'welcome': if (L.gr === 'guest') { R.mySlot = Math.max(2, Math.min(cfg.maxPlayers, p.slot | 0 || 2)); emit('net:welcome', { slot: R.mySlot }); } return;
+      case 'welcome': if (L.gr === 'guest') { cfg.maxPlayers = Math.max(2, Math.min(MAX_BR, p.max | 0 || MAX_PLAYERS)); R.mySlot = Math.max(2, Math.min(cfg.maxPlayers, p.slot | 0 || 2)); emit('net:welcome', { slot: R.mySlot }); } return;
       case 'roster': if (L.gr === 'guest') onRoster(p); return;
       case 'vcap': if (L.gr === 'guest') { voiceDisable(); V.err = 'VOICE_FULL'; voiceEvt(); } return;
       case 'chat': onChat(L, p); return;
@@ -940,14 +942,14 @@
     R.links.slice().forEach((l) => { l.attached = false; destroyLink(l); });
     R.links = []; manual = null;
     voiceStop();
-    R.role = null; R.mySlot = 0; R.players = []; R.speak = {};
+    R.role = null; R.mySlot = 0; R.players = []; R.speak = {}; cfg.maxPlayers = MAX_PLAYERS;
     if (had || state !== 'idle') { R.sticky = 'idle'; if (!silent) refreshState(); else state = 'idle'; }
   }
   const close = closeAll;
   window.addEventListener('pagehide', () => { R.links.forEach((l) => { if (l.ready) sendLink(l, { type: 'bye' }); }); });
 
   window.NexaNet = {
-    VERSION, TELEGRAM, ICE_SERVERS, MSG, config: cfg, FAST, MAX_PLAYERS, MAX_VOICE, RELAY, DIRECT, PID: MYPID,
+    VERSION, TELEGRAM, ICE_SERVERS, MSG, config: cfg, FAST, MAX_PLAYERS, MAX_BR, MAX_VOICE, setMax(n) { if (R.role !== 'guest') cfg.maxPlayers = Math.max(2, Math.min(MAX_BR, n | 0 || MAX_PLAYERS)); }, RELAY, DIRECT, PID: MYPID,
     supported: () => typeof RTCPeerConnection === 'function',
     canDeflate,
     get state() { return state; }, get role() { return R.role; }, get slot() { return slot(); }, get peer() { return others()[0] || null; }, get players() { return others(); },

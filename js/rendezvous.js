@@ -505,8 +505,8 @@
     if (!id) return { ok: false, err: 'ROOM_NAME_BAD' };
     if (!serversOn()) return { ok: false, err: 'SERVERS_OFF' };
     if (typeof RTCPeerConnection !== 'function') return { ok: false, err: 'UNSUPPORTED' };
-    NN.begin('host'); monitor.start();
-    Object.assign(H, { id, pub: !!opts.pub, title: String(opts.title || '').slice(0, 24), mode: opts.mode === 'mission' ? 'mission' : 'sandbox', mission: Math.max(1, Math.min(47, opts.mission | 0 || 1)) });
+    NN.begin('host'); NN.setMax(opts.max || NN.MAX_PLAYERS); monitor.start();
+    Object.assign(H, { id, pub: !!opts.pub, title: String(opts.title || '').slice(0, 24), mode: opts.mode === 'mission' ? 'mission' : opts.mode === 'br' ? 'br' : 'sandbox', mission: Math.max(1, Math.min(47, opts.mission | 0 || 1)) });
     H.startedAt = now();
     const r = hostR = new Rendezvous('room/' + id, {
       mode: 'answerer',
@@ -534,7 +534,8 @@
   function stopHost() { if (hostR) { hostR.stop(); hostR = null; } Gossip.advertise(null); H.id = ''; H.pub = false; }
   function adOf() {
     const me = NN.localInfo();
-    return { rid: H.id, title: H.title || me.name, host: me.name, lv: me.level, col: me.color, mode: H.mode, mission: H.mission, n: Math.min(MAXP, NN.count || 1), max: MAXP };
+    const max = NN.config.maxPlayers;
+    return { rid: H.id, title: H.title || me.name, host: me.name, lv: me.level, col: me.color, mode: H.mode, mission: H.mission, n: Math.min(max, NN.count || 1), max };
   }
 
   // ---- Гость: подключение к комнате по ссылке/имени/публичной. Гость предлагает offer'ы; хост отвечает.
@@ -616,10 +617,10 @@
   function cleanAd(a) {
     if (!a || typeof a !== 'object') return null;
     const rid = roomName(a.rid); if (!rid) return null;
-    const mode = a.mode === 'mission' ? 'mission' : 'sandbox';
+    const mode = a.mode === 'mission' ? 'mission' : a.mode === 'br' ? 'br' : 'sandbox';
     const mission = mode === 'mission' ? (a.mission | 0) : 0;
     if (mode === 'mission' && (mission < 1 || mission > 47)) return null;     // миссия 48 и выше недоступна
-    const max = Math.max(2, Math.min(8, a.max | 0 || MAXP)), n = Math.max(1, Math.min(max, a.n | 0 || 1));
+    const max = Math.max(2, Math.min(10, a.max | 0 || MAXP)), n = Math.max(1, Math.min(max, a.n | 0 || 1));
     let age = Number(a.age); if (!isFinite(age)) age = 0; age = Math.max(0, Math.min(120, age));
     const title = cleanText(a.title, 24) || 'ROOM';
     const host = NN.util.cleanName(a.host, 'PLAYER');
@@ -750,7 +751,7 @@
     G.timer = setInterval(() => {
       gcAds();
       G.peers.slice().forEach((p) => { if (!p.open && now() - p.born > 40000) closePeer(p); });
-      if (G.mine) { G.mine.n = Math.min(MAXP, NN.count || 1); }
+      if (G.mine) { G.mine.n = Math.min(NN.config.maxPlayers, NN.count || 1); G.mine.max = NN.config.maxPlayers; }
       broadcast({ t: 'rooms', rooms: adsOut(20) });
       emit('rooms', listRooms());
     }, 15000);

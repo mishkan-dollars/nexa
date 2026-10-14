@@ -32,7 +32,7 @@
       const co = r.__co, off = co ? (co.slot - 1) * 1.6 - 1.6 : 0;   // игроки в ряд у входа, слот 1 слева
       r.spawn(co ? off : 0, 17, 0);
     },
-    async play(r) {
+    async play(r, br) {
       const co = r.__co, cb = r.cb, W = C.WEAPONS;
       r.god = false;
       ['glock', 'ak', 'shotgun', 'sniper'].forEach((id) => { if (W[id]) r.giveWeapon(id, { equip: id === 'glock' }); });
@@ -44,6 +44,8 @@
       // враги и волны ведёт Хост (в соло — тоже мы)
       const auth = !co || co.host;
       const S = { wave: 0, queue: [], cd: 3, kills: 0, running: false, hostile: true, t: 0 };
+      const botsN = br ? clamp(((co && co.spec.bots) | 0) || 20, 0, 99) : 0;
+      if (br) { S.wave = 1; S.running = true; S.cd = 0; S.queue = Array.from({ length: botsN }, (_, i) => (i % 7 === 6 ? 'heavy' : i % 3 === 2 ? 'rusher' : 'grunt')); S.sp = 0; }
       if (co) co.wave = S;
       const foes = () => cb.enemies.filter((e) => e.tag === 'sbE' && !e.dead);
       const spawn = (type) => {
@@ -62,6 +64,15 @@
           if (co && !co.peerReady && !co.solo && S.t < 25) { S.t += dt; return; }   // ждём, пока друг загрузится
           S.t += dt;
           const alive = foes().length;
+          if (br) {
+            if (S.done) return;
+            S.sp -= dt;
+            if (S.queue.length && alive < cap() && S.sp <= 0) { spawn(S.queue.shift()); S.sp = 1.2; }
+            if (!S.queue.length && alive === 0) { S.done = true; if (co) co.sendWave({ wave: 1, running: false, kills: S.kills }); r.toast('VICTORY', 3); r.sfx('succesfully'); }
+            if ((S.t * 2 | 0) !== S.lt) { S.lt = S.t * 2 | 0; r.objective('BATTLE ROYALE — BOTS LEFT ' + (alive + S.queue.length)); }
+            S.t += dt;
+            return;
+          }
           if (!S.running) {
             S.cd -= dt;
             if (S.cd <= 0) {
@@ -95,10 +106,11 @@
       if (box) { const h = box.querySelector('.eyebrow'); if (h) h.textContent = 'CO-OP SANDBOX PAUSED'; }
       if (abort) abort.textContent = '[LEAVE CO-OP SANDBOX]';
       await r.fade(0, 0.8);
-      r.objective('CO-OP SANDBOX — SURVIVE THE WAVES');
-      await r.phase('coopbox', () => new Promise(() => {}));
+      r.objective(br ? 'BATTLE ROYALE — LAST ONE STANDING' : 'CO-OP SANDBOX — SURVIVE THE WAVES');
+      await r.phase(br ? 'brbox' : 'coopbox', () => new Promise(() => {}));
     }
   };
+  MISSIONS.brbox = { title: 'BATTLE ROYALE', build: (r) => MISSIONS.coopbox.build(r), play: (r) => MISSIONS.coopbox.play(r, true) };
 
   // ------------------------------------------------------------------ сессия
   // Комната из нескольких игроков: у каждого напарника своя запись Remote (слот 1..N): состояние, аватар, эмоция, плашка. Хост — авторитет (враги, волны), ретранслирует остальным.
@@ -110,6 +122,7 @@
       this.shared = this.mode === 'sandbox';
       this.remotes = new Map(); this.readySet = new Set();
       this.ready = false; this.offs = []; this.sendT = 0; this.snapT = 0; this.hudT = 0; this.lastSend = 0;
+      this.stage = 0; this.stages = {};
       this.byId = new Map(); this.nid = 0; this.dmgBy = 1; this.chatOpen = false; this.lastEm = null; this.cap = null;
       this.hitRate = { t: 0, n: 0 }; this.rng0 = null; this.wave = null; this.pq = []; this.gone = false; this.lastSnapRx = 0; this.lastPos = { x: 1e9, z: 1e9, a: 1e9, c: 0, w: '', h: -1, d: 0, q: 0 };
       this.seedOn();
@@ -268,8 +281,19 @@
         case 'ready': this.readySet.add(from); this.rmFor(from); if (this.host && this.ready) this.resendEnemies(); break;
         case 'emote': { const m = this.rmFor(from); if (m) this.startRemoteEmote(m, String(p.id || '').slice(0, 20)); break; }
         case 'emoteoff': { const m = this.remotes.get(from); if (m) this.stopRemoteEmote(m); break; }
+        case 'bar': this.stages[from] = Math.max(this.stages[from] | 0, p.s | 0); break;
         case 'leave': this.removeRemote(from, true); break;
         default: break;
+      }
+    }
+    async barrier() {
+      this.stage += 1; NN.sendAction({ type: 'cev', k: 'bar', s: this.stage });
+      const t0 = Date.now(); let shown = 0;
+      while (!this.disposed && !this.gone && !this.solo && NN.connected && Date.now() - t0 < 90000) {
+        const slots = NN.players.map((q) => q.slot), waiting = slots.filter((x) => (this.stages[x] | 0) < this.stage);
+        if (!waiting.length) return;
+        if (Date.now() - shown > 1500) { shown = Date.now(); this.run.toast('WAITING FOR PLAYERS ' + (slots.length - waiting.length + 1) + '/' + (slots.length + 1), 1.6); }
+        await new Promise((res) => setTimeout(res, 250));
       }
     }
     partnerGone(text) {
@@ -646,6 +670,7 @@
   });
   // общая песочница: смерть игрока не должна стирать врагов у обоих — clearEnemies в coopbox пропускаем (волны ведёт Хост)
   wrap1('clearEnemies', function (o, a) { const co = this.__co; if (co && co.shared && co.ready && !this.disposed) return undefined; return o.apply(this, a); });
+  wrap1('phase', function (o, a) { const co = this.__co, p = o.apply(this, a); return co && co.mode === 'mission' && !co.solo ? p.then((v) => co.barrier().then(() => v)) : p; });
   wrap1('dispose', function (o, a) { const co = this.__co; if (co) { try { co.dispose(); } catch (e) { /* ok */ } } return o.apply(this, a); });
 
   window.NexaCoop = {

@@ -555,8 +555,8 @@
   // Онлайн (coop.js): тот же режим запускается у обоих игроков; прогресс сюжета не трогаем, по выходу — обратно в онлайн-лобби
   function startCoop(spec) {
     if (missionActive || !window.Missions) return false;
-    var id = spec.mode === 'mission' ? spec.mission : 'coopbox';
-    if (id !== 'coopbox' && (id < 1 || id > 47 || !Missions._core.MISSIONS[id])) return false;
+    var id = spec.mode === 'mission' ? spec.mission : spec.mode === 'br' ? 'brbox' : 'coopbox';
+    if (id !== 'coopbox' && id !== 'brbox' && (id < 1 || id > 47 || !Missions._core.MISSIONS[id])) return false;
     missionActive = true;
     if (window.Lobby3D) Lobby3D.sync(false);
     audio.stopMusic();
