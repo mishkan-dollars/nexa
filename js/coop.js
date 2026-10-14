@@ -148,14 +148,15 @@
     liveRemotes() { return Array.from(this.remotes.values()).filter((m) => m.rem.got && !m.rem.dead); }
     pruneRemotes() { this.remotes.forEach((m, s) => { if (!NN.players.some((q) => q.slot === s)) this.removeRemote(s, true); }); }
     removeRemote(slot, say) {
-      const m = this.remotes.get(slot); if (!m) { if (say && this.host && !NN.players.length) this.partnerGone('FRIEND LEFT'); return; }
+      const m = this.remotes.get(slot), alone = !NN.players.some((q) => q.slot !== slot);
+      if (!m) { if (say && alone) this.partnerGone('FRIEND LEFT THE MATCH'); return; }
       this.stopRemoteEmote(m);
       if (m.av) { m.av.n.g.visible = false; }
       if (m.tag) m.tag.remove(); if (m.who) m.who.remove();
       this.remotes.delete(slot); this.readySet.delete(slot);
       this.byId.forEach((e) => { if (e.puppet && !e.dead && e.owner === slot) { e.dead = true; e.alive = false; e.n.free = true; e.n.g.visible = false; } });
       if (say) this.note(m.name + ' — ' + NN.text('PEER_LEFT'), 2.6);
-      if (!this.remotes.size && !NN.players.length) this.partnerGone('FRIEND LEFT THE MATCH');
+      if (!this.remotes.size && alone) this.partnerGone('FRIEND LEFT THE MATCH');
     }
 
     // -------------------------------------------------------------- интерфейс поверх миссии

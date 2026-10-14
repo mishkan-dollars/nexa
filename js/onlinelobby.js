@@ -1206,7 +1206,7 @@
       PLAT.forEach((pp, pi) => {
         v.set(pp[0], 2.1, pp[1]).project(ST.cam);
         const t = $('.ol-tag.t' + pi); if (!t) return;
-        t.style.left = ((v.x * 0.5 + 0.5) * ST.w).toFixed(1) + 'px'; t.style.top = ((-v.y * 0.5 + 0.5) * ST.h).toFixed(1) + 'px';
+        t.style.left = ((v.x * 0.5 + 0.5) * ST.w).toFixed(1) + 'px'; t.style.top = Math.max(92, (-v.y * 0.5 + 0.5) * ST.h) + 'px';
       });
       const pi = Math.min(party().length, MAXP - 1);
       v.set(PLAT[pi][0], 0, PLAT[pi][1]).project(ST.cam);
@@ -1218,7 +1218,7 @@
         const h = p[2] * 2.1;
         if (pl) { pl.style.left = p[0] + '%'; pl.style.top = p[1] + '%'; pl.style.width = p[2] + '%'; }
         if (f) { f.style.left = p[0] + '%'; f.style.bottom = (100 - p[1] + p[2] * 0.12) + '%'; f.style.height = h + '%'; }
-        if (t) { t.style.left = p[0] + '%'; t.style.top = clamp(p[1] - h - 1.5, 9, 90) + '%'; }
+        if (t) { t.style.left = p[0] + '%'; t.style.top = 'max(' + clamp(p[1] - h - 1.5, 9, 90) + '%, 92px)'; }
       });
       const inv = $('.ol-invite'); if (inv) { inv.style.left = FB[1][0] + '%'; inv.style.top = (FB[1][1] - 18) + '%'; }
     }

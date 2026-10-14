@@ -349,7 +349,7 @@
           this.pend.set(id, { token: r.token, t: now(), wire });
           offers.push(wire);
         }
-        msg.offers = offers;
+        msg.offers = Array.from(this.pend.values()).map((p) => p.wire);       // неотвеченные offer'ы шлём снова: хост мог появиться в рое позже
         if (this.tr && this.tr.announce(msg) > 0) this.sentFirst = true;
         else offers.forEach((o) => { const p = this.pend.get(o.offer_id); this.pend.delete(o.offer_id); try { this.o.dropToken && this.o.dropToken(p.token); } catch (e) { /* ok */ } });
       } finally { this.busy = false; }
@@ -517,7 +517,7 @@
         paired = true;
         const mine = q.peerId, host = mine < pid, a = host ? mine : pid, b = host ? pid : mine;
         const id = 'q' + toHex(a).slice(0, 8) + toHex(b).slice(0, 8);
-        stopQuick();
+        clearTimeout(q.qt); quickR = null; setTimeout(() => q.stop(), 9000);       // маяк ещё девять секунд: второй игрок мог не успеть нас увидеть
         emit('quick', { stage: 'paired', host, id });
         if (host) hostRoom({ id, pub: false, mode: opts.mission ? 'mission' : 'sandbox', mission: opts.mission || 1 }).then(() => emit('quick', { stage: 'hosting', id }));
         else joinRoom(id, { timeoutMs: 20000 });

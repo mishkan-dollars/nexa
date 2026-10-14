@@ -779,6 +779,7 @@
     V.err = null;
     if (!isOpen() || !R.links.length) { V.err = 'NOT_CONNECTED'; voiceEvt(); return { ok: false, err: 'NOT_CONNECTED' }; }
     if (V.mic) return { ok: true };
+    if (R.links.every((l) => !l.pc)) { V.err = 'VOICE_LOCAL'; voiceEvt(); return { ok: false, err: 'VOICE_LOCAL' }; }
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { V.err = 'MIC_UNSUPPORTED'; voiceEvt(); return { ok: false, err: V.err }; }
     try {
       V.stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }, video: false });
