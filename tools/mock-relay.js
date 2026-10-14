@@ -4,9 +4,13 @@
 //   node tools/mock-relay.js [порт] [--pow] [--silent]    клиент:  index.html?relay=ws://127.0.0.1:ПОРТ
 //   --pow     отвечать на каждое событие ["OK",id,false,"pow: required"] (релей, который нам не подходит — клиент должен его бросить)
 //   --silent  принимать соединение, но ничего не отвечать (проверка «молчащего» сервера)
+//   --kind=N  принимать только события kind N, остальные отвергать ["OK",id,false,"blocked: kind not allowed"]
+//   --notag   на REQ с тег-фильтром (#t) отвечать ["CLOSED",sub,"error: tag filters not supported"]
+//   --auth    сразу слать ["AUTH",challenge] и на REQ отвечать CLOSED "auth-required"
 'use strict';
 const http = require('http'), crypto = require('crypto'), path = require('path');
 const S = require(path.join(__dirname, '..', 'js', 'schnorr.js'));
+const KIND = (process.argv.find((a) => /^--kind=\d+$/.test(a)) || '').slice(7) | 0, NOTAG = process.argv.includes('--notag'), AUTHR = process.argv.includes('--auth');
 const PORT = Number(process.argv.find((a) => /^\d+$/.test(a))) || 8791, POW = process.argv.includes('--pow'), SILENT = process.argv.includes('--silent');
 const conns = new Set(), stats = { events: 0, bad: 0, delivered: 0, conns: 0, reqs: 0 };
 function frame(op, payload) {
@@ -20,13 +24,19 @@ function onMsg(c, text) {
   if (SILENT) return;
   let m; try { m = JSON.parse(text); } catch (e) { return; }
   if (!Array.isArray(m)) return;
-  if (m[0] === 'REQ' && typeof m[1] === 'string') { stats.reqs += 1; c.subs.set(m[1], m.slice(2)); send(c, ['EOSE', m[1]]); }
+  if (m[0] === 'REQ' && typeof m[1] === 'string') {
+    stats.reqs += 1;
+    if (AUTHR) { send(c, ['CLOSED', m[1], 'auth-required: please authenticate']); return; }
+    if (NOTAG && m.slice(2).some((f) => f && f['#t'])) { send(c, ['CLOSED', m[1], 'error: tag filters not supported']); return; }
+    c.subs.set(m[1], m.slice(2)); send(c, ['EOSE', m[1]]);
+  }
   else if (m[0] === 'CLOSE') c.subs.delete(m[1]);
   else if (m[0] === 'EVENT') {
     const ev = m[1];
     if (!S.checkEvent(ev)) { stats.bad += 1; send(c, ['OK', ev && ev.id, false, 'invalid: bad signature']); return; }
     stats.events += 1;
     if (POW) { send(c, ['OK', ev.id, false, 'pow: required']); return; }
+    if (KIND && ev.kind !== KIND) { stats.kindRej = (stats.kindRej || 0) + 1; send(c, ['OK', ev.id, false, 'blocked: kind not allowed']); return; }
     send(c, ['OK', ev.id, true, '']);
     conns.forEach((o) => o.subs.forEach((fs, sub) => { if (fs.some((f) => match(f, ev))) { stats.delivered += 1; send(o, ['EVENT', sub, ev]); } }));
   }
@@ -38,6 +48,7 @@ server.on('upgrade', (req, sock) => {
   sock.write('HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ' + crypto.createHash('sha1').update(key + '258EAFA5-E914-47DA-95CA-C5AB0DC85B11').digest('base64') + '\r\n\r\n');
   stats.conns += 1;
   const c = { sock, subs: new Map() }; conns.add(c);
+  if (AUTHR && !SILENT) setTimeout(() => send(c, ['AUTH', 'challenge']), 50);
   let buf = Buffer.alloc(0), frag = null;
   sock.on('data', (d) => {
     buf = Buffer.concat([buf, d]);

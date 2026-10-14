@@ -605,6 +605,8 @@
 
   // ------------------------------------------------------------------ серверы сигналинга: видимый список с состоянием каждого
   const SRV_TXT = { active: 'IN USE', online: 'ONLINE', connecting: 'CONNECTING', down: 'UNAVAILABLE', reserve: 'RESERVE', off: 'OFF', idle: 'NOT CHECKED' };
+  const WHY_TXT = { timeout: 'NO ANSWER (TIMEOUT)', error: 'CONNECTION ERROR', ws: 'CONNECTION ERROR', closed: 'CLOSED BY SERVER', silent: 'NO REPLY', nocrypto: 'CRYPTO UNAVAILABLE', pow: 'NEEDS PROOF OF WORK', paid: 'PAID OR RESTRICTED', auth: 'NEEDS LOGIN',
+    readonly: 'READ ONLY: REJECTS OUR EVENTS', rejecting: 'REJECTS OUR EVENTS', closedreq: 'REFUSED OUR REQUEST', noreq: 'OPEN, NO REPLY TO REQUEST', notice: 'SERVER NOTICE', refused: 'SERVER ERROR', probe: 'CHECK FAILED' };
   function renderServers() {
     if (!root || !RM) return;
     const list = RM.servers.list(), on = RM.servers.on, sm = RM.servers.summary();
@@ -625,7 +627,9 @@
         const ty = document.createElement('em'); ty.setAttribute('translate', 'no'); ty.textContent = s.type;
         const st = document.createElement('span'); st.textContent = SRV_TXT[s.state] || SRV_TXT.idle;
         const ms = document.createElement('small'); ms.setAttribute('translate', 'no'); ms.textContent = s.ms && (s.state === 'online' || s.state === 'active') ? s.ms + ' ms' : '';
-        li.appendChild(dot); li.appendChild(nm); li.appendChild(ty); li.appendChild(ms); li.appendChild(st); ul.appendChild(li);
+        li.appendChild(dot); li.appendChild(nm); li.appendChild(ty); li.appendChild(ms); li.appendChild(st);
+        if (s.why && WHY_TXT[s.why]) { const w = document.createElement('i'); w.className = 'srv-why'; w.textContent = WHY_TXT[s.why]; li.appendChild(w); }
+        ul.appendChild(li);
       });
       const btn = blk.querySelector('[data-act="srv-probe"]'); if (btn) btn.disabled = !on;
     });

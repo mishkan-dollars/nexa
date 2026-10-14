@@ -110,12 +110,12 @@
     const h = hl(url, type);
     h.fails += 1; h.state = 'down'; h.why = why || ''; h.checked = now();
     h.deadUntil = now() + (hard ? 30 * 60000 : Math.min(30 * 60000, deadBase() * Math.pow(2, Math.min(4, h.fails - 1))));
-    store[url] = { ok: false, ms: 0, t: now() }; saveStore();
+    store[url] = { ok: false, ms: 0, t: now(), n: why || '' }; saveStore();
     emit('servers', serverList());
   }
-  function markOk(url, type, ms) {
-    const h = hl(url, type); h.state = 'online'; h.fails = 0; h.deadUntil = 0; h.lastOk = now(); h.checked = now(); h.why = ''; if (ms >= 0) h.ms = ms;
-    store[url] = { ok: true, ms: Math.round(h.ms || 0), t: now() }; saveStore();
+  function markOk(url, type, ms, note) {
+    const h = hl(url, type); h.state = 'online'; h.fails = 0; h.deadUntil = 0; h.lastOk = now(); h.checked = now(); h.why = ''; if (ms >= 0) h.ms = ms; if (note !== undefined) h.note = note;
+    store[url] = { ok: true, ms: Math.round(h.ms || 0), t: now(), n: h.note || '' }; saveStore();
     emit('servers', serverList());
   }
   // приоритет при выборе: свежо ответившие по задержке, затем непроверенные, свежо упавшие — в конец
@@ -135,7 +135,8 @@
       else if (h.state === 'down') st = 'down';
       else if (fresh(r)) st = r.ok ? 'online' : 'down';
       if (st === 'idle' && act.has(e.url)) st = 'connecting';
-      return { url: e.url, host: hostLabel(e.url), type: e.type, state: st, fails: h.fails || 0, ms: Math.round(h.ms || (r && r.ms) || 0), checked: st === 'active' || st === 'online' || st === 'down' };
+      const why = st === 'down' ? (h.why || (r && r.n) || '') : (st === 'online' || st === 'active' ? (h.note || (r && r.ok && r.n) || '') : '');
+      return { url: e.url, host: hostLabel(e.url), type: e.type, state: st, fails: h.fails || 0, ms: Math.round(h.ms || (r && r.ms) || 0), why, checked: st === 'active' || st === 'online' || st === 'down' };
     });
   }
   // честная сводка: всё считается по фактическим проверкам и соединениям
@@ -174,38 +175,74 @@
     raw(obj) { if (this.ws && this.state === 'open') { try { this.ws.send(JSON.stringify(obj)); return true; } catch (e) { return false; } } return false; }
     close() { clearTimeout(this.timer); clearTimeout(this.silent); this.state = 'closed'; try { this.ws && this.ws.close(); } catch (e) { /* ok */ } }
   }
-  // Nostr-релей (NIP-01): REQ с фильтром по тегу темы, публикация эфемерных событий, подписанных одноразовым ключом сессии (BIP-340)
+  // Nostr-релей (NIP-01): REQ с подпиской по теме, публикация эфемерных событий, подписанных одноразовым ключом сессии (BIP-340).
+  // Релей не считается мёртвым по ошибке: если соединение открылось, отказ на наш kind -> пробуем другой эфемерный kind (2xxxx), только потом «только чтение»;
+  // отказ REQ с тегом -> повтор без тега (теги проверяем сами); rate-limit -> пауза; мёртвым без повтора — только PoW/оплата/AUTH/whitelist.
   let nostrKey = null;
   const getKey = () => nostrKey || (nostrKey = window.NexaSchnorr.newKey());
+  const kinds = () => (Array.isArray(SV.KINDS) && SV.KINDS.length ? SV.KINDS : [SV.KIND || 27777]);
+  const REJ = { pow: /pow|proof.of.work|difficulty/i, paid: /pay|paid|subscri|whitelist|allowlist|admission|invite|restricted: ?(pubkey|not)/i, auth: /auth/i, kind: /kind|blocked|not accepted|unsupported|disallow|not allowed|ephemeral|invalid: .*event/i, rate: /rate|too (fast|many)|slow down|limit|throttl/i };
   class NostrAdapter {
-    constructor(mt, e) { this.mt = mt; this.url = e.url; this.type = 'nostr'; this.state = 'connecting'; this.ws = null; this.got = false; this.q = []; this.sub = 'nx' + NN.util.rndHex(4); }
+    constructor(mt, e) { this.mt = mt; this.url = e.url; this.type = 'nostr'; this.state = 'connecting'; this.ws = null; this.got = false; this.q = []; this.sub = 'nx' + NN.util.rndHex(4); this.ki = 0; this.sent = new Map(); this.rej = 0; this.noTag = false; this.pauseUntil = 0; this.pubs = 0; this.oks = 0; }
+    req() {
+      const f = { kinds: kinds(), since: Math.floor(Date.now() / 1000) - 20, limit: 20 };
+      if (!this.noTag) f['#t'] = [this.mt.hashHex];
+      this.raw(['REQ', this.sub, f]);
+    }
     connect() {
       const mt = this.mt; let ws;
       if (!window.NexaSchnorr) { mt.fail(this, 'nocrypto', true); return; }
       try { ws = new WebSocket(this.url); } catch (e) { mt.fail(this, 'ws'); return; }
       this.ws = ws; this.t0 = now();
       this.timer = setTimeout(() => { if (this.state === 'connecting') mt.fail(this, 'timeout'); }, 7000);
-      ws.onopen = () => {
-        const f = { kinds: [SV.KIND || 27777], '#t': [this.mt.hashHex], since: Math.floor(Date.now() / 1000) - 20, limit: 20 };
-        this.raw(['REQ', this.sub, f]);
-        this.silent = setTimeout(() => { if (!this.got && this.state !== 'closed') mt.fail(this, 'silent'); }, 9000);
+      ws.onopen = () => {                                                  // соединение открылось — сервер достижим: сразу рабочий
+        clearTimeout(this.timer); this.state = 'open'; markOk(this.url, 'nostr', now() - this.t0); mt.h.status(); mt.h.open(this);
+        this.req();
+        this.silent = setTimeout(() => { if (this.state === 'open' && this.pubs > 3 && !this.oks && !this.got) mt.fail(this, 'silent'); }, 15000);   // молчит и на публикации, и на REQ
       };
       ws.onerror = () => { if (this.state === 'connecting') mt.fail(this, 'error'); };
-      ws.onclose = () => { if (this.state !== 'closed' && this.state !== 'failed') mt.fail(this, 'closed'); };
+      ws.onclose = () => { if (this.state !== 'closed' && this.state !== 'failed') mt.fail(this, this.state === 'connecting' ? 'error' : 'closed'); };
       ws.onmessage = (e) => {
         if (typeof e.data !== 'string' || e.data.length > 96 * 1024) return;
         let m; try { m = JSON.parse(e.data); } catch (er) { return; }
         if (!Array.isArray(m) || typeof m[0] !== 'string') return;
         this.got = true;
-        if (this.state === 'connecting') { clearTimeout(this.timer); this.state = 'open'; markOk(this.url, 'nostr', now() - this.t0); mt.h.status(); mt.h.open(this); this.pump(); }
-        if (m[0] === 'EVENT' && m[1] === this.sub) this.onEvent(m[2]);
-        else if (m[0] === 'OK') { if (m[2] === false) { const why = String(m[3] || ''); if (/pow|auth|restrict|paid|payment|blocked|not allowed|whitelist|invalid: .*kind/i.test(why)) mt.fail(this, 'refused:' + why.slice(0, 40), true); else this.rej = (this.rej || 0) + 1; if (this.rej > 6) mt.fail(this, 'rejecting', true); } }
-        else if (m[0] === 'NOTICE' && /pow|paid|payment|auth|rate|too many/i.test(String(m[1] || ''))) mt.fail(this, 'notice', true);
-        else if (m[0] === 'CLOSED' || m[0] === 'AUTH') mt.fail(this, m[0].toLowerCase(), true);   // нужен аккаунт/подпись личности — такие реле не используем
+        const t = m[0];
+        if (t === 'EVENT' && m[1] === this.sub) this.onEvent(m[2]);
+        else if (t === 'OK') this.onOk(m);
+        else if (t === 'NOTICE') {
+          const msg = String(m[1] || '');
+          if (REJ.pow.test(msg)) mt.fail(this, 'pow', true);
+          else if (REJ.paid.test(msg)) mt.fail(this, 'paid', true);
+          else if (REJ.rate.test(msg)) this.pauseUntil = now() + 6000;                       // лимит частоты — не смертельно
+        } else if (t === 'AUTH') mt.fail(this, 'auth', true);
+        else if (t === 'CLOSED' && m[1] === this.sub) {
+          const msg = String(m[2] || '');
+          if (REJ.auth.test(msg)) mt.fail(this, 'auth', true);
+          else if (REJ.pow.test(msg)) mt.fail(this, 'pow', true);
+          else if (REJ.paid.test(msg)) mt.fail(this, 'paid', true);
+          else if (!this.noTag) { this.noTag = true; setTimeout(() => this.req(), 300); }     // повтор без тег-фильтра
+          else if (REJ.rate.test(msg)) setTimeout(() => this.req(), 5000);
+          else mt.fail(this, 'closedreq', false);
+        }
       };
+    }
+    onOk(m) {
+      const id = m[1], ok = m[2] !== false, why = String(m[3] || ''), c = this.sent.get(id);
+      if (ok) { this.oks += 1; this.rej = 0; this.sent.delete(id); return; }
+      this.sent.delete(id);
+      const mt = this.mt;
+      if (REJ.pow.test(why)) return mt.fail(this, 'pow', true);
+      if (REJ.paid.test(why)) return mt.fail(this, 'paid', true);
+      if (REJ.auth.test(why)) return mt.fail(this, 'auth', true);
+      if (REJ.rate.test(why)) { this.pauseUntil = now() + 6000; if (c && c.retry < 1) { c.retry += 1; this.q.unshift(c.content); this.pump(); } return; }
+      this.rej += 1;
+      if (this.ki + 1 < kinds().length) { this.ki += 1; if (c) this.q.unshift(c.content); this.pump(); return; }     // другой эфемерный kind
+      if (this.rej >= 3) mt.fail(this, 'readonly', true);                       // принимает соединение, но отвергает наши события
     }
     onEvent(ev) {
       if (!ev || typeof ev !== 'object' || typeof ev.content !== 'string' || ev.content.length > 40000) return;
+      if (!Array.isArray(ev.tags) || !ev.tags.some((t) => Array.isArray(t) && t[0] === 't' && t[1] === this.mt.hashHex)) return;
       let c; try { c = JSON.parse(ev.content); } catch (e) { return; }
       if (!c || typeof c !== 'object' || typeof c.pid !== 'string' || !/^[0-9a-f]{40}$/.test(c.pid) || c.pid === this.mt.ctx.peerHex) return;
       if (typeof c.oid !== 'string' || c.oid.length > 64 || typeof c.sdp !== 'string' || c.sdp.length > 24000) return;
@@ -220,11 +257,16 @@
     }
     pump() {
       if (this.state !== 'open' || this.pumping || !this.q.length) return;
-      const last = this.lastPub || 0, wait = Math.max(0, 600 - (now() - last));         // не чаще ~1.6 событий в секунду на реле (не спамим)
+      const wait = Math.max(0, 600 - (now() - (this.lastPub || 0)), this.pauseUntil - now());         // не чаще ~1.6 событий в секунду на реле (не спамим), пауза после лимита
       this.pumping = setTimeout(() => {
         this.pumping = 0;
         const c = this.q.shift(); if (!c || this.state !== 'open') return;
-        try { const ev = NexaSchnorr.makeEvent(getKey(), SV.KIND || 27777, [['t', this.mt.hashHex]], c); this.lastPub = now(); this.raw(['EVENT', ev]); } catch (e) { /* ok */ }
+        try {
+          const ev = NexaSchnorr.makeEvent(getKey(), kinds()[this.ki] || 27777, [['t', this.mt.hashHex]], c);
+          this.lastPub = now(); this.pubs += 1;
+          this.sent.set(ev.id, { content: c, retry: 0 }); if (this.sent.size > 20) this.sent.delete(this.sent.keys().next().value);
+          this.raw(['EVENT', ev]);
+        } catch (e) { /* ok */ }
         this.pump();
       }, wait);
     }
@@ -296,18 +338,21 @@
     list.forEach((e) => { const h = hl(e.url, e.type); h.state = 'connecting'; h.deadUntil = 0; });
     emit('servers', serverList());
     let i = 0;
+    // сервер «онлайн», если WebSocket открылся (измеренная задержка); ответ на пробный REQ только уточняет примечание (требует вход / не отвечает), мёртвым не делает
     const one = (e) => new Promise((res) => {
-      let ws, done = false; const t0 = now();
-      const fin = (ok, why) => { if (done) return; done = true; try { ws && ws.close(); } catch (er) { /* ok */ } if (ok) markOk(e.url, e.type, now() - t0); else markDead(e.url, e.type, why || 'probe'); res(); };
+      let ws, done = false, opened = false, t1 = 0; const t0 = now();
+      const fin = (ok, why, note) => { if (done) return; done = true; clearTimeout(tm); try { ws && ws.close(); } catch (er) { /* ok */ } if (ok) markOk(e.url, e.type, t1 || now() - t0, note || ''); else markDead(e.url, e.type, why || 'probe'); res(); };
       try { ws = new WebSocket(e.url); } catch (er) { fin(false, 'ws'); return; }
-      const tm = setTimeout(() => fin(false, 'timeout'), 4000);
+      let tm = setTimeout(() => fin(false, 'timeout'), 4000);
       ws.onopen = () => {
-        if (e.type === 'tracker') { clearTimeout(tm); fin(true); return; }
-        try { ws.send(JSON.stringify(['REQ', 'nxp' + NN.util.rndHex(3), { kinds: [SV.KIND || 27777], '#t': ['0'.repeat(40)], limit: 1 }])); } catch (er) { fin(false, 'send'); }
+        opened = true; t1 = now() - t0; clearTimeout(tm);
+        if (e.type === 'tracker') { fin(true); return; }
+        tm = setTimeout(() => fin(true, '', 'noreq'), 2000);
+        try { ws.send(JSON.stringify(['REQ', 'nxp' + NN.util.rndHex(3), { kinds: [SV.KIND || 27777], limit: 1 }])); } catch (er) { fin(true, '', 'noreq'); }
       };
-      ws.onmessage = (ev) => { clearTimeout(tm); let m = null; try { m = JSON.parse(ev.data); } catch (er) { /* ok */ } fin(Array.isArray(m) && m[0] !== 'AUTH' && m[0] !== 'CLOSED', 'refused'); };
-      ws.onerror = () => { clearTimeout(tm); fin(false, 'error'); };
-      ws.onclose = () => { clearTimeout(tm); fin(false, 'closed'); };
+      ws.onmessage = (ev) => { let m = null; try { m = JSON.parse(ev.data); } catch (er) { /* ok */ } const t = Array.isArray(m) ? m[0] : ''; fin(true, '', t === 'AUTH' ? 'auth' : t === 'CLOSED' ? (/auth/i.test(String(m[2])) ? 'auth' : 'closedreq') : ''); };
+      ws.onerror = () => { if (!opened) fin(false, 'error'); };
+      ws.onclose = () => { if (!opened) fin(false, 'closed'); else fin(true, '', 'closed'); };
     });
     const worker = async () => { while (i < list.length) { const e = list[i]; i += 1; await one(e); } };
     probing = Promise.all(Array.from({ length: Math.min(8, list.length) }, worker)).then(() => { probing = null; MON.last = now(); emit('servers', serverList()); return serverList(); });

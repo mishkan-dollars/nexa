@@ -1526,3 +1526,4 @@ body.in-online .terminal { animation: none !important; transform: none !importan
 .srv.st-online i { background: #7fcf94; box-shadow: none; } .srv.st-online span { color: #7fcf94; }
 .srv.st-active i { background: #4ade80; box-shadow: 0 0 8px #4ade80; } .srv.st-active span { color: #4ade80; }
 .srv.st-idle i { background: #50555f; }
+.srv { grid-template-columns: 12px minmax(0, 1fr) auto auto auto; grid-auto-flow: row; } .srv .srv-why { grid-column: 2 / -1; font-style: normal; font-size: 12px; letter-spacing: .06em; color: #ffb36b; text-transform: uppercase; margin-top: -2px; }
