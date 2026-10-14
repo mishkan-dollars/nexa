@@ -30,7 +30,6 @@
     e.ts.push(now); e.sum.push([now, amt]); e.bal = bal; e.recv = 0; e.t = now;
     return true;
   }
-  L.msub = 'story';
   let root = null, tickT = 0;
   const $ = (s) => (root ? root.querySelector(s) : null);
   const $$ = (s) => (root ? Array.from(root.querySelectorAll(s)) : []);
@@ -74,7 +73,7 @@
   }
 
   function shell() {
-    const tabs = [['play', 'PLAY'], ['mode', 'MODE'], ['public', 'PUBLIC'], ['trade', 'TRADES'], ['abil', 'ABILITIES'], ['profile', 'PROFILE'], ['connect', 'CONNECTION']];
+    const tabs = [['play', 'PLAY'], ['public', 'PUBLIC'], ['trade', 'TRADES'], ['profile', 'PROFILE'], ['connect', 'CONNECTION']];
     return '<div class="ol" id="ol" data-i18n="net" data-tab="play" data-state="idle">' +
       '<div class="ol-bg" aria-hidden="true"><i class="ol-moon"></i><i class="ol-haze"></i></div>' +
       '<div class="ol-stage" id="ol-stage"><div class="ol-floor"></div>' +
@@ -139,23 +138,11 @@
       srvHTML('pub') +
       '<p class="cn-priv">Strangers in public rooms and the signaling servers can technically see your network address (WebRTC); a VPN hides it. Public chat is not moderated: you can mute or report any player.</p>' +
     '</div></section>' +
-    // -------- MODE: сюжетные / песочница / королевская битва + качество для онлайна
-    '<section class="ol-pane ol-sheet" data-pane="mode"><div class="sh-in">' +
-      '<div class="md-tabs" role="tablist"><button type="button" class="md-tab on" data-act="msub" data-v="story">1 · STORY</button><button type="button" class="md-tab" data-act="msub" data-v="sandbox">2 · SANDBOX</button><button type="button" class="md-tab" data-act="msub" data-v="br">3 · BATTLE ROYALE</button></div>' +
-      '<div class="md-body" id="md-body"></div>' +
-      '<div class="md-gfx"><label>ONLINE GRAPHICS</label><div class="pf-btns"><button type="button" class="ol-btn" data-act="gfx" data-v="HIGH">HIGH</button><button type="button" class="ol-btn" data-act="gfx" data-v="LOW">LOW</button></div><p class="v-note">LOW helps weak devices; the choice also changes the game graphics setting.</p></div>' +
-    '</div></section>' +
     // -------- TRADES: передача KP игрокам комнаты
     '<section class="ol-pane ol-sheet" data-pane="trade"><div class="sh-in">' +
       '<div class="pb-top"><h3>TRADES</h3><div class="tr-bal"><small>YOUR BALANCE</small><b id="tr-bal" translate="no">0</b><em>KP</em></div></div>' +
       '<p class="cn-priv">You can send KP only to players who are in your room right now. Every transfer is confirmed first; the host checks it and a duplicate or negative amount is rejected.</p>' +
       '<p class="v-note" id="tr-note"></p><div class="pb-list" id="tr-list" role="list"></div>' +
-    '</div></section>' +
-    // -------- ABILITIES: магазин способностей за KP
-    '<section class="ol-pane ol-sheet" data-pane="abil"><div class="sh-in">' +
-      '<div class="pb-top"><h3>ABILITIES</h3><div class="tr-bal"><small>YOUR BALANCE</small><b id="ab-bal" translate="no">0</b><em>KP</em></div></div>' +
-      '<p class="cn-priv">Abilities work only offline. Buy and equip them in the SHOP.</p>' +
-      '<p class="v-note" id="ab-note"></p><div class="ab-slots" id="ab-slots"></div><div class="pb-list ab-list" id="ab-list" role="list"></div>' +
     '</div></section>' +
     // -------- PROFILE
     '<section class="ol-pane ol-sheet" data-pane="profile"><div class="sh-in">' +
@@ -216,7 +203,6 @@
   function updKP() {
     const e = $('#ol-kp b'); if (e) e.textContent = String(kp());
     const b = $('#tr-bal'); if (b) b.textContent = String(kp());
-    const ab = $('#ab-bal'); if (ab) ab.textContent = String(kp());
   }
   function modeText() {
     if (L.mode === 'br') return ['BATTLE ROYALE', '', ''];
@@ -506,7 +492,7 @@
 
   function refreshAll() {
     if (!root) return;
-    updTop(); updPlay(); updStatus(); updVoice(); renderLog(true); updProfile(true); updTab(); renderServers(); renderPublic(); updRoom(); updEmoBtn(); renderMode(); renderTrade(); updKP();
+    updTop(); updPlay(); updStatus(); updVoice(); renderLog(true); updProfile(true); updTab(); renderServers(); renderPublic(); updRoom(); updEmoBtn(); renderTrade(); updKP();
     $('#ol-msg').disabled = false;
     const lan = $('#cn-lan'); if (lan) lan.checked = NN.lan;
     const o = NN.offerCode;
@@ -520,15 +506,13 @@
     $$('.ol-tab[data-act="tab"]').forEach((b) => { const on = b.dataset.v === L.tab; b.classList.toggle('on', on); b.setAttribute('aria-selected', on ? 'true' : 'false'); });
     if (commVisible()) { L.unread = 0; const dot = $('#ol-chatbtn .ol-dot'); if (dot) dot.hidden = true; }
     if (L.tab === 'profile') updProfile(true);
-    if (L.tab === 'mode') renderMode();
     if (L.tab === 'trade') renderTrade();
-    if (L.tab === 'abil') renderAbil();
     if (L.tab === 'public') enterPublic();
     layoutTags();
   }
   function setTab(t) {
     if (t === 'chat') { L.tab = 'play'; updTab(); chatToggle(true); return; }
-    if (['play', 'mode', 'public', 'trade', 'abil', 'profile', 'connect'].indexOf(t) < 0) t = 'play';
+    if (['play', 'public', 'trade', 'profile', 'connect'].indexOf(t) < 0) t = 'play';
     L.tab = t; updTab();
   }
 
@@ -593,45 +577,13 @@
   const brWait = () => { try { const m = /[?&]brwait=(\d{1,3})/.exec(location.search); return m ? Number(m[1]) : 60; } catch (e) { return 60; } };
   const brLeft = () => Math.ceil(brWait() - (Date.now() - BR.t0) / 1000);
   function mkp(tag, cls, txt) { const e = document.createElement(tag); if (cls) e.className = cls; if (txt !== undefined) e.textContent = txt; return e; }
-  function renderMode() {
-    const body = $('#md-body'); if (!body) return;
-    const sub = L.msub || 'story', host = isHostSide();
-    $$('.md-tab').forEach((b) => b.classList.toggle('on', b.dataset.v === sub));
-    let q = ''; try { q = Missions.getQualitySaved(); } catch (e) { q = ''; }
-    $$('[data-act="gfx"]').forEach((b) => b.classList.toggle('on', b.dataset.v === q));
-    body.textContent = '';
-    if (!host) body.appendChild(mkp('p', 'v-note', 'ONLY THE HOST CHOOSES THE MODE'));
-    if (sub === 'story') {
-      const ids = Object.keys(missionsMap()).map(Number).filter(validMission).sort((a, b) => a - b);
-      const grid = mkp('div', 'pk-grid');
-      ids.forEach((i) => {
-        const b = mkp('button', 'pk-m' + (L.mode === 'mission' && L.mission === i ? ' on' : '')); b.type = 'button'; b.dataset.act = 'mission-sel'; b.dataset.v = String(i); b.disabled = !host;
-        const n = mkp('b', '', String(i).padStart(2, '0')); n.setAttribute('translate', 'no'); const t = mkp('span', '', missionTitle(i)); t.setAttribute('translate', 'no'); b.appendChild(n); b.appendChild(t); grid.appendChild(b);
-      });
-      body.appendChild(grid);
-      body.appendChild(mkp('p', 'cn-priv', 'Story missions online: every player must reach the end of a stage before the team moves on. Enemies in story missions still run on each device.'));
-    } else if (sub === 'sandbox') {
-      const b = mkp('button', 'pk-sb' + (L.mode === 'sandbox' ? ' on' : '')); b.type = 'button'; b.dataset.act = 'mode-sel'; b.dataset.v = 'sandbox'; b.disabled = !host;
-      b.appendChild(mkp('b', '', 'CO-OP SANDBOX')); b.appendChild(mkp('small', '', 'WAVES OF ENEMIES FOR TWO')); body.appendChild(b);
-      body.appendChild(mkp('p', 'cn-priv', 'The host controls the enemies; the nearest player is their target.'));
-    } else {
-      const on = BR.on, real = NN.connected ? NN.count : 1;
-      body.appendChild(mkp('p', 'cn-p', 'Battle royale for up to 10 players. Press READY: the game looks for players; after 60 seconds empty seats are filled with bots and the battle starts.'));
-      const st = mkp('p', 'jn-st', ''); st.id = 'br-st';
-      st.textContent = !on ? 'NOT SEARCHING' : BR.state === 'joining' && !NN.connected ? 'JOINING A BATTLE LOBBY…' : BR.host ? 'WAITING FOR PLAYERS ' + real + '/10 — STARTS IN ' + Math.max(0, brLeft()) + ' S' : (L.brt >= 0 && NN.connected ? 'BATTLE LOBBY ' + real + '/10 — STARTS IN ' + Math.max(0, L.brt) + ' S' : 'LOOKING FOR A BATTLE…');
-      body.appendChild(st);
-      const bt = mkp('button', 'ol-btn big', on ? 'CANCEL' : 'READY'); bt.type = 'button'; bt.dataset.act = on ? 'br-cancel' : 'br-ready'; bt.disabled = !on && !host; body.appendChild(bt);
-      body.appendChild(mkp('p', 'cn-priv', 'Up to 10 real players per battle (direct P2P). Bots take the empty seats. Real players: the host and up to 9 guests.'));
-      if (L.mode !== 'br') { const b = mkp('button', 'ol-btn', 'SELECT BATTLE ROYALE'); b.type = 'button'; b.dataset.act = 'mode-sel'; b.dataset.v = 'br'; b.disabled = !host; body.appendChild(b); }
-    }
-  }
-  const tickBR = () => { if (L.tab === 'mode' && L.msub === 'br') renderMode(); updPlay(); };
+  const tickBR = () => { updPlay(); };
   function brReady() {
     if (!RM || BR.on) return;
     if (needConsent('br')) return;
     RM.stopHost(); RM.stopJoin(); if (NN.connected) NN.close();
     BR.on = true; BR.host = false; BR.state = 'searching'; BR.t0 = Date.now(); L.mode = 'br'; L.brt = -1;
-    updPlay(); renderMode();
+    updPlay();
     RM.gossip.start().then(() => { RM.gossip.refresh(); });
     BR.find0 = Date.now(); clearTimeout(BR.findT); BR.findT = setTimeout(brDecide, 1500);
   }
@@ -639,19 +591,19 @@
   async function brDecide() {
     if (!BR.on || !RM) return;
     const r = RM.gossip.rooms().find((x) => x.mode === 'br' && x.n < x.max);
-    if (r) { BR.state = 'joining'; startJoin(r.rid, 'join', true); renderMode(); return; }
+    if (r) { BR.state = 'joining'; startJoin(r.rid, 'join', true); return; }
     if (Date.now() - BR.find0 < brFind() * 1000) { BR.findT = setTimeout(brDecide, 1000); return; }      // сначала ищем уже открытую битву (рой находит комнаты за несколько секунд)
     BR.host = true; BR.state = 'waiting'; BR.t0 = Date.now();
     const res = await RM.hostRoom({ pub: true, title: 'BATTLE ROYALE', mode: 'br', max: NN.MAX_BR });
     if (!BR.on) { RM.stopHost(); return; }
     if (!res.ok) { BR.on = false; BR.host = false; toast(NN.text(res.err), 'bad'); } else { L.roomLink = res.link; L.pubSession = true; try { NN.voice.incoming(false); } catch (e) { /* ok */ } }
-    updPlay(); renderMode();
+    updPlay();
   }
   function brCancel() {
     BR.on = false; BR.host = false; BR.state = ''; clearTimeout(BR.findT);
     if (RM) { RM.stopHost(); RM.stopJoin(); }
     closeJoin(); if (NN.connected) NN.close();
-    updPlay(); renderMode();
+    updPlay();
   }
   function brStart() {
     const real = NN.connected ? NN.count : 1, bots = clamp(NN.MAX_BR - real, 0, NN.MAX_BR - 1);
@@ -675,22 +627,6 @@
       const av = mkp('span'); av.innerHTML = PF.avatar(q.name, q.color, 26); const nm = mkp('em', '', q.name + ' · ' + q.level); nm.setAttribute('translate', 'no'); a.appendChild(av); a.appendChild(nm); row.appendChild(a);
       const inp = mkp('input'); inp.type = 'number'; inp.min = '1'; inp.max = '1000000'; inp.step = '1'; inp.id = 'tr-amt-' + q.slot; inp.setAttribute('aria-label', 'Amount'); inp.value = '10'; row.appendChild(inp);
       const b = mkp('button', 'ol-btn', 'SEND'); b.type = 'button'; b.dataset.act = 'trade'; b.dataset.slot = String(q.slot); row.appendChild(b);
-      box.appendChild(row);
-    });
-  }
-  function renderAbil() {
-    const box = $('#ab-list'), sl = $('#ab-slots'); if (!box || !window.Toys || !Toys.ab) return;
-    updKP(); box.textContent = ''; sl.textContent = '';
-    const AB = Toys.ab, eq = AB.equipped(), byId = {}; AB.defs.forEach((d) => { byId[d.id] = d; });
-    eq.forEach((id, i) => {
-      const s = mkp('div', 'ab-slot' + (id ? ' on' : ''));
-      s.appendChild(mkp('small', '', 'SLOT ' + (i + 1))); s.appendChild(mkp('b', '', id ? byId[id].name : 'EMPTY'));
-      sl.appendChild(s);
-    });
-    AB.defs.forEach((d) => {
-      const lv = AB.level(d.id), max = d.price.length, row = mkp('div', 'pb-row ab-row' + (lv ? ' own' : '')); row.setAttribute('role', 'listitem');
-      const t = mkp('div', 'ab-t'); t.appendChild(mkp('b', '', d.name)); t.appendChild(mkp('em', '', d.info));
-      t.appendChild(mkp('small', '', lv ? 'LEVEL ' + lv + '/' + max + ' · RECHARGE ' + d.cd[lv - 1] + ' S' : 'NOT OWNED')); row.appendChild(t);
       box.appendChild(row);
     });
   }
@@ -774,17 +710,20 @@
     if (BR.on && mode !== 'br') brCancel();
     L.mode = mode === 'br' ? 'br' : mode === 'mission' && validMission(mission) ? 'mission' : 'sandbox';
     if (L.mode === 'mission') L.mission = mission | 0;
-    sendLobby(); updPlay(); renderMode(); sfx('mouse');
+    sendLobby(); updPlay(); sfx('mouse');
     if (RM && RM.hosting && RM.hosting.pub) RM.setMeta({ mode: L.mode, mission: L.mission });
   }
   function openPick() {
     if (NN.connected && !NN.isHost) return;
     const el = $('#ol-pick'); if (!el) return;
     const ids = Object.keys(missionsMap()).map(Number).filter(validMission).sort((a, b) => a - b);
+    let q = ''; try { q = Missions.getQualitySaved(); } catch (e) { q = ''; }
     el.innerHTML = '<div class="pk-box"><div class="pk-h"><h3>CHOOSE A MODE</h3><button type="button" class="ol-ic" data-act="pick-close" aria-label="Close">×</button></div>' +
       '<button type="button" class="pk-sb' + (L.mode === 'sandbox' ? ' on' : '') + '" data-act="mode" data-v="sandbox"><b>CO-OP SANDBOX</b><small>WAVES OF ENEMIES FOR TWO</small></button>' +
+      '<button type="button" class="pk-sb' + (L.mode === 'br' ? ' on' : '') + '" data-act="mode" data-v="br"><b>BATTLE ROYALE</b><small>UP TO 10 PLAYERS, BOTS FILL EMPTY SEATS</small></button>' +
       '<p class="pk-t">CO-OP MISSIONS</p><div class="pk-grid">' + ids.map((i) => '<button type="button" class="pk-m' + (L.mode === 'mission' && L.mission === i ? ' on' : '') + '" data-act="mission" data-v="' + i + '"><b translate="no">' + String(i).padStart(2, '0') + '</b><span translate="no">' + esc(missionTitle(i)) + '</span></button>').join('') + '</div>' +
-      '<p class="v-note">Enemies in story missions run separately on each device; the sandbox shares them.</p></div>';
+      '<div class="md-gfx"><label>ONLINE GRAPHICS</label><div class="pf-btns"><button type="button" class="ol-btn' + (q === 'HIGH' ? ' on' : '') + '" data-act="gfx" data-v="HIGH">HIGH</button><button type="button" class="ol-btn' + (q === 'LOW' ? ' on' : '') + '" data-act="gfx" data-v="LOW">LOW</button></div></div>' +
+      '<p class="v-note">Story missions: every player waits for the team at each stage.</p></div>';
     el.hidden = false; L.pick = true;
     const f = el.querySelector('.pk-sb'); if (f) try { f.focus({ preventScroll: true }); } catch (e) { /* ok */ }
   }
@@ -1050,8 +989,6 @@
     if (!Object.keys(DN.music).length && DN.savedMusic && ctx.audio) { try { ctx.audio.playMusic(DN.savedMusic); } catch (e) { /* ok */ } DN.savedMusic = null; }
   }
   const dispIndex = (slot) => party().findIndex((q) => q.slot === slot);
-  const STAND = new Float32Array([0, 0.902, 0, 0.016, 1.361, -0.012, 0.025, 1.55, -0.033, -0.146, 1.33, -0.011, 0.174, 1.319, -0.011, -0.2838, 1.1213, -0.1767, 0.2722, 1.0843, -0.1698,
-    -0.159, 1.102, 0.139, 0.168, 1.145, 0.148, -0.1, 0.905, 0, 0.1, 0.898, 0, -0.119, 0.463, -0.0825, 0.1113, 0.6074, 0.3435, -0.171, 0.067, -0.267, 0.217, 0.207, 0.195]);
   const IN_T = 0.8, OUT_T = 0.6;
   DN.fade = [];
   function flatSkin(g) {      // тот же тёмный цвет, что у стикмена в стойке: цвет не меняется при танце
@@ -1063,7 +1000,7 @@
     if (!ST.ready || d.fig || d.dead) return;
     const e = EC(); if (!e || dispIndex(d.slot) < 0) return;
     d.fig = e.makeFigure(THREE, { cast: false }); d.mats = flatSkin(d.fig.group); ST.scene.add(d.fig.group);
-    d.pose.set(STAND); d.first = new Float32Array(45); e.sampleDance(0, d.first, d.tr); d.ph = 'in'; d.bl = 0;
+    e.idlePose(ST.host.time, d.pose, d.tr); d.first = new Float32Array(45); e.sampleDance(0, d.first, d.tr); d.ph = 'in'; d.bl = 0;
     d.fig.update(d.pose, null);
   }
   function dropFig(x) { try { x.fig.dispose(); } catch (e) { /* ok */ } (x.mats || []).forEach((m) => { try { m.dispose(); } catch (e) { /* ok */ } }); }
@@ -1183,21 +1120,16 @@
     switch (act) {
       case 'tab': setTab(v); break;
       case 'chat-toggle': chatToggle(); break;
-      case 'msub': L.msub = v; renderMode(); break;
-      case 'gfx': try { Missions.setQuality(v); } catch (er) { /* ok */ } renderMode(); break;
+      case 'gfx': try { Missions.setQuality(v); } catch (er) { /* ok */ } openPick(); break;
       case 'br-ready': brReady(); break;
       case 'br-cancel': brCancel(); break;
       case 'trade': openTrade(Number(a.dataset.slot)); break;
-      case 'ab-buy-off': { const r = Toys.ab.buy(v); const nt = $('#ab-note'); if (nt) { nt.className = 'v-note' + (r.ok ? '' : ' bad'); nt.textContent = r.ok ? '' : r.err; } if (r.ok) sfx('mouse'); updKP(); renderAbil(); break; }
-      case 'ab-eq': Toys.ab.equip(Number(a.dataset.slot), v || null); renderAbil(); break;
       case 'trade-yes': tradeConfirm(); break;
       case 'trade-no': { const el = $('#ol-trade'); if (el) el.hidden = true; L.tradeAsk = null; break; }
       case 'settings': { const b = document.getElementById('open-settings'); if (b) b.click(); break; }
       case 'pick': openPick(); break;
       case 'pick-close': closePick(); break;
       case 'mode': setMode(v); closePick(); break;
-      case 'mode-sel': setMode(v); toast('MODE SELECTED'); break;
-      case 'mission-sel': setMode('mission', Number(v)); toast('MODE SELECTED'); break;
       case 'mission': setMode('mission', Number(v)); closePick(); break;
       case 'play': doPlay(); break;
       case 'mic': {
@@ -1486,18 +1418,20 @@
   }
   // позы: руки скрещены на груди / за спиной / вдоль тела; лёгкое дыхание; голова чуть вверх
   function pose(fi, n, t, p) {
-    const T = THREE, v = ST.v || (ST.v = [new T.Vector3(), new T.Vector3()]), H = ST.host;
-    if (POSES[fi] === 'cross') {
-      H.solveArm(n.armL, n.elbL, [-0.2, 0.46, 0], v[0].set(0.17, 0.33, 0.14), -1);
-      H.solveArm(n.armR, n.elbR, [0.2, 0.46, 0], v[1].set(-0.17, 0.3, 0.17), 1);
-    } else {
-      H.solveArm(n.armL, n.elbL, [-0.2, 0.46, 0], v[0].set(-0.215, -0.07, 0.0), -1);
-      H.solveArm(n.armR, n.elbR, [0.2, 0.46, 0], v[1].set(0.215, -0.07, 0.0), 1);
-    }
-    n.hips.rotation.set(0, 0, 0); n.hips.position.y = 0.95;                // никакой качки и расслабленности: прямая стойка
-    n.spine.rotation.set(0, 0, 0); n.spine.scale.setScalar(1 + Math.sin(t * 1.4 + fi) * 0.004);   // лёгкое дыхание
-    n.legL.rotation.set(0, 0, 0); n.legR.rotation.set(0, 0, 0); n.kneeL.rotation.x = 0.02; n.kneeR.rotation.x = 0.02; n.footL.rotation.x = 0; n.footR.rotation.x = 0;
-    n.head.rotation.set(-0.07, (fi === 0 ? p.sx * 0.35 : 0), 0);          // подбородок чуть вверх, взгляд вперёд
+    const T = THREE, v = ST.v || (ST.v = [new T.Vector3(), new T.Vector3()]), H = ST.host, e = EC();
+    const h = e && e.rightOnHip ? e.rightOnHip(t + fi * 3.7) : 1, br = Math.sin(t * 1.9 + fi);
+    const mx = (a, b) => a + (b - a) * h;
+    // правая рука на поясе (h = 1) или свободно опущена (h = 0); у левой наоборот. Локоть уходит в сторону.
+    const g = 1 - h;
+    v[1].set(mx(0.245, 0.2), mx(-0.08, 0.04), mx(0.03, 0.08));
+    v[0].set(-(0.245 + (0.2 - 0.245) * g), -0.08 + 0.12 * g, 0.03 + 0.05 * g);
+    H.solveArm(n.armL, n.elbL, [-0.2, 0.46 + br * 0.003, 0], v[0], -1);
+    H.solveArm(n.armR, n.elbR, [0.2, 0.46 + br * 0.003, 0], v[1], 1);
+    n.hips.rotation.set(0, 0.03, -0.035); n.hips.position.set(-0.018, 0.95 + br * 0.0015, 0);   // вес на левой ноге
+    n.spine.rotation.set(0.01 + br * 0.006, -0.04, 0.03); n.spine.scale.setScalar(1 + br * 0.006);   // дыхание: грудь и плечи
+    n.legL.rotation.set(0, 0, -0.045); n.legR.rotation.set(0.02, 0, 0.1);                       // ноги на ширине плеч
+    n.kneeL.rotation.x = 0.02; n.kneeR.rotation.x = 0.14; n.footL.rotation.x = 0; n.footR.rotation.x = -0.1;
+    n.head.rotation.set(-0.05 + br * 0.008, (fi === 0 ? p.sx * 0.35 : 0) - 0.3 + Math.sin(t * 0.4) * 0.03, 0.03);   // взгляд в камеру через плечо
   }
   function stTick(now) {
     ST.raf = 0;
@@ -1519,7 +1453,7 @@
       if (!f.n.g.visible) return;
       C.Run.prototype.updateNpc.call(ST.host, f.n, dt);
       pose(i, f.n, t, p);
-      f.n.g.rotation.y = f.yaw + (i === 0 ? p.sx * 0.12 : Math.sin(t * 0.3 + i) * 0.05);
+      f.n.g.rotation.y = f.yaw + 0.5 + (i === 0 ? p.sx * 0.12 : Math.sin(t * 0.3 + i) * 0.05);
     });
     // танцоры (EmoteCore): фигура-танцор на платформе игрока, музыка тикает здесь же
     const e = EC();
@@ -1532,7 +1466,7 @@
       const tr = d.tr;
       if (d.ph === 'in') {                                    // плавный переход из стойки в первый кадр танца, музыка стартует после него
         d.bl += dt; const k = e.smooth(Math.min(1, d.bl / IN_T));
-        e.mixPose(STAND, d.first, k, d.pose);
+        e.mixPose(e.idlePose(ST.host.time, d.tmp, tr), d.first, k, d.pose);
         if (k >= 1) { d.ph = 'play'; d.t = 0; dnMusicOn(d); d.music = true; const m2 = DN.music[d.id]; if (m2 && m2.users > 1 && m2.M.running && m2.M.running()) d.t = m2.M.time(); }
       } else {
         d.t += dt;
@@ -1545,7 +1479,7 @@
     if (DN.fade.length && e) {                                // плавный возврат из танца в стойку
       DN.fade = DN.fade.filter((x) => {
         x.t += dt; const k = e.smooth(Math.min(1, x.t / OUT_T)), idx = dispIndex(x.slot);
-        e.mixPose(x.pose, STAND, k, x.tmp || (x.tmp = new Float32Array(45)));
+        e.mixPose(x.pose, e.idlePose(ST.host.time, x.idle || (x.idle = new Float32Array(45)), null), k, x.tmp || (x.tmp = new Float32Array(45)));
         if (idx >= 0) x.fig.place(PLAT[idx][0], PLAT[idx][1], yawOf(idx)); x.fig.update(x.tmp, null);
         if (k >= 1) { dropFig(x); return false; }
         return true;
