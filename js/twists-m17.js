@@ -758,7 +758,7 @@
     name: 'gas-valves',
     setup(r, T) {
       const S = T.s;
-      S.mask = 0;
+      S.mask = 0; S.clouds = [];
       const h0 = r.hurt;
       r.hurt = function (a, fx, fz) { if (S.mask > 0 && fx === undefined) a *= 0.1; return h0.call(this, a, fx, fz); };
       S.vig = T.panel('', '', true); S.vig.style.cssText = 'inset:0;z-index:4;display:none;background:radial-gradient(ellipse at center,rgba(0,0,0,0) 35%,rgba(0,0,0,.85) 100%)';
