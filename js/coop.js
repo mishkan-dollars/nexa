@@ -251,10 +251,7 @@
       const r = this.run, T = THREE, n = r.npc(0, 0, 0), peer = NN.peer || {};
       r.actorReset(n); n.yaw = 0; n.g.visible = false; n.seed = 3.3;
       const col = peer.color || '#ffd60a';
-      const bg = new T.CylinderGeometry(0.185, 0.17, 0.07, 14); bg.scale(1, 1, 0.72);
-      const mat = new T.MeshLambertMaterial({ color: col, emissive: col, emissiveIntensity: 0.55 });
-      const band = new T.Mesh(bg, mat); band.position.y = 0.24; n.spine.add(band);
-      this.av = { n, band, kind: undefined, muz: 0, dead: false, shown: false, aim: 0 };
+      this.av = { n, kind: undefined, muz: 0, dead: false, shown: false, aim: 0 };
       this.tag.querySelector('span').textContent = peer.name || 'PLAYER ' + (this.slot === 1 ? 2 : 1);
       this.tag.querySelector('small').textContent = this.slot === 1 ? 'PLAYER 2' : 'PLAYER 1';
       this.tag.style.color = col;

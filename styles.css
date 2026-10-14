@@ -1212,7 +1212,7 @@ body.in-online .terminal { animation: none !important; transform: none !importan
 .ol-plat.p2 { left: 65%; top: 65%; width: 15%; }
 .ol.has-peer .ol-plat.p2 { border-color: #ff9a3d; opacity: 1; box-shadow: 0 0 22px 4px rgba(255,154,61,.45), 0 8px 24px rgba(0,0,0,.6); }
 .ol-fig { position: absolute; transform: translate(-50%, 0); pointer-events: none; }
-.ol-fig svg { display: block; height: 100%; width: auto; fill: #14161a; stroke: #14161a; stroke-linecap: round; stroke-linejoin: round; filter: drop-shadow(0 0 1.5px var(--c, #fff)) drop-shadow(0 0 7px var(--c, #fff)); }
+.ol-fig svg { display: block; height: 100%; width: auto; fill: #14161a; stroke: #14161a; stroke-linecap: round; stroke-linejoin: round; filter: none; }
 .ol-fig.f0 { left: 50%; bottom: 17%; height: 56%; }
 .ol-fig.f1 { left: 65%; bottom: 31%; height: 36%; }
 .ol.is3d .ol-plat, .ol.is3d .ol-fig, .ol.is3d .ol-floor { display: none; }
@@ -1450,6 +1450,7 @@ body.in-online .terminal { animation: none !important; transform: none !importan
 .ol-bg::after { content: ""; position: absolute; inset: 0; background: repeating-linear-gradient(0deg, rgba(255,255,255,.025) 0 1px, transparent 1px 3px); pointer-events: none; }
 .ol-moon, .ol-haze { display: none; }
 .ol-plat { background: radial-gradient(ellipse at 50% 40%, #232323 0, #121212 68%, #080808 100%); }
-.ol-fig svg { filter: drop-shadow(0 0 1px #fff) drop-shadow(0 0 4px rgba(255,255,255,.35)); }
+.ol-fig svg { filter: none; }
+.ol-tag .tg-l { border-color: rgba(255,255,255,.35); }
 .pk-sb.on, .pk-m.on { background: #1e1e1e; }
 .nx-in input { border-color: #f2f2f2; } .nx-in button { background: #f2f2f2; } .nx-tag small { color: #ef4b45; }

@@ -27,7 +27,9 @@
     mic: '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><rect x="9" y="3" width="6" height="12" rx="3" fill="currentColor"/><path d="M5.5 11a6.5 6.5 0 0013 0M12 17.5V21" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>',
     tg: '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M21 4L3 11l5.5 2L10 19l3-3.5 5 3.8z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M8.5 13L17 7.5" stroke="currentColor" stroke-width="1.8" fill="none"/></svg>',
     modes: '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M4 8h16M4 16h16M8 4v16M16 4v16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/></svg>',
-    fig: '<svg viewBox="0 0 80 160" aria-hidden="true"><circle cx="40" cy="16" r="11" stroke-width="2"/><path d="M40 36v44M30 38l-8 28 14 6M50 38l8 28-14 6M35 82l-3 62M45 82l3 62" fill="none" stroke-width="11"/></svg>'
+    // серьёзная стойка: прямо, руки скрещены на груди (светлее тела, чтобы читались), голова чуть вверх; у напарника руки сзади/вдоль тела
+    fig: '<svg viewBox="0 0 80 160" aria-hidden="true"><circle cx="40" cy="15" r="10.5" stroke-width="2"/><path d="M40 35v46M35 82l-2 63M45 82l2 63" fill="none" stroke-width="11"/><path d="M31 41l-7 20 24-8M49 41l7 20-24-8" fill="none" stroke="#2a2d34" stroke-width="7"/></svg>',
+    fig2: '<svg viewBox="0 0 80 160" aria-hidden="true"><circle cx="40" cy="15" r="10.5" stroke-width="2"/><path d="M40 35v46M35 82l-2 63M45 82l2 63" fill="none" stroke-width="11"/><path d="M30 41l-3 28M50 41l3 28" fill="none" stroke="#2a2d34" stroke-width="7"/></svg>'
   };
 
   function shell() {
@@ -36,7 +38,7 @@
       '<div class="ol-bg" aria-hidden="true"><i class="ol-moon"></i><i class="ol-haze"></i></div>' +
       '<div class="ol-stage" id="ol-stage"><div class="ol-floor"></div>' +
         [0, 1, 2].map((i) => '<div class="ol-plat p' + i + '"><i></i></div>').join('') +
-        [0, 1].map((i) => '<div class="ol-fig f' + i + '" hidden>' + IC.fig + '</div>').join('') +
+        [0, 1].map((i) => '<div class="ol-fig f' + i + '" hidden>' + (i ? IC.fig2 : IC.fig) + '</div>').join('') +
         [0, 1].map((i) => '<div class="ol-tag t' + i + '" hidden><span class="tg-l" translate="no"></span><span class="tg-n" translate="no"></span><span class="tg-s"></span></div>').join('') +
         '<button type="button" class="ol-invite" data-act="tab" data-v="connect" hidden><b>+</b><span>INVITE A FRIEND</span></button>' +
       '</div>' +
@@ -542,16 +544,13 @@
       const mkFig = (pi, yaw) => {
         const n = C.Run.prototype.npc.call(hostObj, PLAT[pi][0], PLAT[pi][1], yaw);
         n.yaw = yaw; n.g.rotation.y = yaw;
-        const bg = new T.CylinderGeometry(0.185, 0.17, 0.07, 18); bg.scale(1, 1, 0.72);
-        const band = new T.Mesh(bg, new T.MeshLambertMaterial({ color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 0.5 }));
-        band.position.y = 0.24; n.spine.add(band);
-        n.g.visible = false;
-        return { n, band, pi, vis: false, t: Math.random() * 6, yaw };
+        n.g.visible = false;   // без колец и свечения: чистый тёмный стикмен
+        return { n, pi, vis: false, t: Math.random() * 6, yaw };
       };
       const figs = [mkFig(0, -0.12), mkFig(2, -0.5)];
       hostObj.agm.body.color.setHex(0x0e0f12); hostObj.agm.body.emissive.setHex(0x16181d);
       Object.keys(hostObj.ag).forEach((k) => keep.push(hostObj.ag[k]));
-      keep.push(hostObj.agm.body, hostObj.agm.gear, hostObj.agm.gun, hostObj.agm.flash, figs[0].band.material, figs[0].band.geometry, figs[1].band.material, figs[1].band.geometry);
+      keep.push(hostObj.agm.body, hostObj.agm.gear, hostObj.agm.gun, hostObj.agm.flash);
       canvas.addEventListener('webglcontextlost', (e) => { e.preventDefault(); ST.lost = true; stDispose(); });
       Object.assign(ST, { canvas, r, scene, cam, host: hostObj, figs, plats, keep, ready: true, pl, lost: false });
       ok = true;
@@ -576,10 +575,7 @@
   }
   function stColors() {
     if (!ST.ready) return;
-    const p = PF.get(), peer = NN.peer;
-    ST.figs[0].band.material.color.set(p.color); ST.figs[0].band.material.emissive.set(p.color);
-    const m = ST.figs[1].band.material; if (m === ST.figs[0].band.material) return;
-    m.color.set(peer ? peer.color : '#ffffff'); m.emissive.set(peer ? peer.color : '#ffffff');
+    /* цвет игрока — только в нике и аватаре; у фигуры колец и свечения нет */
   }
   function stResize() {
     if (!ST.ready || !root) return;
