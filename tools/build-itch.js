@@ -40,7 +40,7 @@ const CRC = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n 
 function crc32(buf) { let c = 0xffffffff; for (let i = 0; i < buf.length; i += 1) c = CRC[(c ^ buf[i]) & 0xff] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0; }
 function dosTime(d) { return { time: (d.getHours() << 11) | (d.getMinutes() << 5) | (d.getSeconds() >> 1), date: ((d.getFullYear() - 1980) << 9) | ((d.getMonth() + 1) << 5) | d.getDate() }; }
 
-const files = ['index.html', 'styles.css', 'sw.js', 'manifest.webmanifest', 'assets-manifest.json']
+const files = ['index.html', 'styles.css', 'css/ui-polish.css', 'sw.js', 'manifest.webmanifest', 'assets-manifest.json']
   .concat(walk(path.join(ROOT, 'js'), []).map(rel).sort())
   .concat(assets);
 
