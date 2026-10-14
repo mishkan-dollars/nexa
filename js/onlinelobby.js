@@ -14,7 +14,7 @@
   const L = { tab: 'play', mode: 'sandbox', mission: 1, ready: false, readyMap: {}, readyList: [], cd: 0, cdT: 0, cdSpec: null, unread: 0, t0: 0, pick: false, notes: {}, joinFromUrl: false, lastStats: 0, copied: 0,
     pubSession: false, joinUi: null, roomLink: '', dances: {}, cards: {}, srvSeen: false };
   const BR = { on: false, host: false, t0: 0, state: '', findT: 0 };
-  const TRADES_ENABLED = false;   // переводы KP между игроками отключены: баланс хранится у клиента, без серверного баланса их можно дюпать (откат копии хранилища, изменённый клиент)
+  const TRADES_ENABLED = true;
   const TRD = { sent: {}, seen: new Set(), hseen: new Set(), route: {} };
   const VAULT = window.Toys && Toys.vault ? Toys.vault() : null;
   const SIG = { key: {}, mine: '', led: {} };
