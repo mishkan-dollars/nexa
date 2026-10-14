@@ -171,7 +171,7 @@
     n.speedAnim = 1;
   };
   Run.prototype.actorReset = function (n) {
-    n.death = null; n.flinch = 0; n.kick = 0; n.aimK = 0; n.vel = 0; n.swing = 0; n.lx = n.g.position.x; n.lz = n.g.position.z;
+    n.death = null; n.flinch = 0; n.kick = 0; n.aimK = 0; n.vel = 0; n.swing = 0; n.yr = n.ai = n.ex = n.br = n.mvx = n.mvz = 0; n.pv = undefined; n.lx = n.g.position.x; n.lz = n.g.position.z;
     n.act = null; n.ps = null; n.cv = n.cvT = 0; n.bash = n.rel = n.work = n.gest = n.taunt = n.daze = 0; n.bashKind = null; n.holster = false; n.stk = undefined; if (n.laser) n.laser.visible = false; if (n.helmet) n.helmet.visible = false;
     const g = n.g; g.rotation.x = 0; g.rotation.z = 0; g.position.y = 0;
     n.hips.position.y = 0.95; n.hips.rotation.set(0, 0, 0); n.spine.rotation.set(0, 0, 0); n.head.rotation.set(0, 0, 0);
@@ -233,6 +233,10 @@
     if (t > 0.7 && t < 1.7) { const j = (1.7 - t) * 0.06; n.armL.rotation.x += Math.sin(t * 38) * j; n.armR.rotation.x += Math.sin(t * 33 + 1) * j; n.legL.rotation.x += Math.sin(t * 29) * j * 0.6; }
   }
 
+  function kneeOf(phi, K, s) { // сгибание колена: пик в начале маха + приём веса сразу после касания пяткой
+    const c = Math.cos(phi + 0.2);
+    return K * (c > 0 ? Math.pow(c, 1.2) : 0) + (Math.sin(phi) > 0 ? 0.22 * s * Math.max(0, -Math.sin(2 * phi)) : 0);
+  }
   // ------------------------------------------------------------------ анимация
   Run.prototype.updateNpc = function (n, dt) {
     const g = n.g, v = tv();
@@ -259,7 +263,13 @@
     const ddx = g.position.x - n.lx, ddz = g.position.z - n.lz; n.lx = g.position.x; n.lz = g.position.z;
     const spd = dt > 0 ? Math.min(8, Math.hypot(ddx, ddz) / dt) : 0;
     n.vel = lerp(n.vel, spd, 1 - Math.exp(-dt * 10));
+    const yaw0 = g.rotation.y;
     g.rotation.y += wrap(n.yaw - g.rotation.y) * (1 - Math.exp(-dt * 7));
+    if (dt > 0) {
+      n.yr = lerp(n.yr || 0, clamp(wrap(g.rotation.y - yaw0) / dt, -4, 4), 1 - Math.exp(-dt * 6));
+      n.ai = lerp(n.ai || 0, n.pv === undefined ? 0 : clamp((n.vel - n.pv) / dt, -6, 6), 1 - Math.exp(-dt * 5)); n.pv = n.vel;
+      const km = 1 - Math.exp(-dt * 12); n.mvx = lerp(n.mvx || 0, ddx / dt, km); n.mvz = lerp(n.mvz || 0, ddz / dt, km);
+    }
     const ry = g.rotation.y, vf = (ddx * Math.sin(ry) + ddz * Math.cos(ry)) / Math.max(dt, 1e-4);
     const dir = n.vel > 0.5 && vf < -0.35 * n.vel ? -1 : 1;
     n.swing = lerp(n.swing, n.vel > 0.12 ? 1 : 0, 1 - Math.exp(-dt * 9));
@@ -269,8 +279,8 @@
     const cv = n.cv = lerp(n.cv || 0, n.cvT || 0, 1 - Math.exp(-dt * 9)); // присед в укрытии / на колено
     const lk = clamp((n.vel - 1.8) / 2.6, 0, 1), A = lerp(0.42, 0.85, lk) * clamp(n.vel / 1.3, 0.55, 1) * s * ps.gait * (1 - 0.45 * cv);
     const sl = Math.sin(ph), sr = Math.sin(ph + Math.PI), K = lerp(0.95, 1.7, lk) * s * (1 - 0.5 * cv);
-    n.legL.rotation.x = -sl * A * (1 - ps.limp) - 1.05 * cv; n.legR.rotation.x = -sr * A - 0.75 * cv;
-    n.kneeL.rotation.x = 0.06 + K * Math.max(0, Math.cos(ph)) * (1 - ps.limp * 0.4) + 1.95 * cv; n.kneeR.rotation.x = 0.06 + K * Math.max(0, -Math.cos(ph)) + 1.5 * cv;
+    n.legL.rotation.x = -(sl + 0.1 * Math.sin(2 * ph)) * A * (1 - ps.limp) - 1.05 * cv; n.legR.rotation.x = -(sr + 0.1 * Math.sin(2 * ph)) * A - 0.75 * cv;
+    n.kneeL.rotation.x = 0.06 + kneeOf(ph, K, s * (0.4 + 0.6 * lk)) * (1 - ps.limp * 0.4) + 1.95 * cv; n.kneeR.rotation.x = 0.06 + kneeOf(ph + Math.PI, K, s * (0.4 + 0.6 * lk)) + 1.5 * cv;
     n.footL.rotation.x = clamp(-(n.legL.rotation.x + n.kneeL.rotation.x) * 0.6, -0.5 - 0.1 * cv, 0.5); n.footR.rotation.x = clamp(-(n.legR.rotation.x + n.kneeR.rotation.x) * 0.6, -0.5 - 0.1 * cv, 0.5);
     n.legL.rotation.z = n.legR.rotation.z = 0;
     if (ps.stomp && n.vel > 0.6) { // тяжёлая поступь: при каждом шаге камера вздрагивает
@@ -279,20 +289,25 @@
     }
     // корпус: качка бёдер, наклон вперёд, дыхание в стойке, микро-позы личности в покое
     const id = idlePose(ps, t, (1 - s) * (1 - n.aimK));
-    const breathe = Math.sin(t * 1.7) * 0.012 * (1 - s), sway = Math.sin(t * 0.6) * 0.03 * (1 - s);
+    const ex = n.ex = lerp(n.ex || 0, lk * s, 1 - Math.exp(-dt * (lk * s > (n.ex || 0) ? 1.2 : 0.3)));
+    n.br = (n.br || 0) + dt * (1.6 + 2.6 * ex);
+    const bsn = Math.sin(n.br), breathe = bsn * (0.02 * (1 - s) + 0.03 * ex), sway = Math.sin(t * 0.6) * 0.03 * (1 - s);
+    const yr = n.yr || 0, turn = clamp(yr, -3, 3) * clamp(n.vel / 2, 0, 1);
     n.hips.position.y = 0.95 - 0.03 * s * ps.bob + 0.026 * s * ps.bob * Math.cos(2 * ph) - 0.02 * lk * s - (n.crouch || 0) * 0.14 - 0.32 * cv;
-    n.hips.rotation.y = Math.sin(ph) * 0.1 * s; n.hips.rotation.z = Math.sin(ph) * 0.04 * s * ps.sway + sway * 0.4 + ps.wobble * Math.sin(t * 1.9) * 0.08 + ps.limp * Math.sin(ph) * 0.06 * s;
-    const fl0 = n.flinch; n.flinch = Math.max(0, fl0 - dt * 4.5); const fl = fl0 * ps.flinch;
+    n.hips.position.x = Math.cos(ph) * 0.02 * s * ps.sway + Math.sin(t * 0.45) * 0.008 * (1 - s);
+    n.hips.rotation.y = Math.sin(ph) * 0.1 * s; n.hips.rotation.z = Math.cos(ph) * 0.04 * s * ps.sway + sway * 0.4 + ps.wobble * Math.sin(t * 1.9) * 0.08 + ps.limp * Math.sin(ph) * 0.06 * s - turn * 0.04;
+    const fl0 = n.flinch; n.flinch = Math.max(0, fl0 - dt * (1.2 + 3.3 * fl0)); const fl = fl0 * ps.flinch;
     n.aimK = lerp(n.aimK, n.armT, 1 - Math.exp(-dt * 7));
     n.arm = n.aimK;
-    n.kick = Math.max(0, n.kick - dt * 9);
+    n.kick = n.kick > 0.003 ? n.kick * Math.exp(-dt * 10) : 0;
     const bs = n.bash > 0 ? Math.sin(Math.PI * n.bash) : 0, kd = n.bashKind, ram = kd === 'ram' ? bs : kd === 'jab' ? bs * 0.3 : 0;
-    n.spine.rotation.set(n.lean + ps.lean + 0.04 * s + 0.28 * lk * s + breathe + (n.crouch || 0) * 0.3 + cv * 0.25 - fl * 0.34 - n.kick * 0.1 + id.sx + ram * 0.55 + bs * 0.1, -Math.sin(ph) * 0.16 * s + (n.gunKind ? -0.18 * n.aimK : 0) + id.sy, n.flinchS * fl * 0.12 + ps.wobble * Math.sin(t * 1.3) * 0.1 + id.sz);
+    const sx = n.lean + ps.lean + 0.04 * s + 0.28 * lk * s + clamp((n.ai || 0) * 0.025, -0.1, 0.14) * s + breathe + (n.crouch || 0) * 0.3 + cv * 0.25 - fl * 0.34 - n.kick * 0.1 + id.sx + ram * 0.55 + bs * 0.1;
+    n.spine.rotation.set(sx, -Math.sin(ph) * 0.16 * s + (n.gunKind ? -0.18 * n.aimK : 0) + id.sy + turn * 0.05, n.flinchS * fl * 0.12 + ps.wobble * Math.sin(t * 1.3) * 0.1 + id.sz - Math.cos(ph) * 0.02 * s - turn * 0.02);
     if (bs > 0 && kd === 'kick') { n.legR.rotation.x = -1.35 * bs; n.kneeR.rotation.x = 0.06 + 0.25 * bs; n.footR.rotation.x = 0.3 * bs; n.spine.rotation.x -= 0.15 * bs; }
     // голова: микро-повороты в стойке, рывок назад при попадании, тик/тремор личности
     n.tilt = lerp(n.tilt, n.tiltT, 1 - Math.exp(-dt * 4));
     const tw = ps.twitch * Math.sin(t * 27) * Math.sin(t * 5.1);
-    n.head.rotation.set(-fl * 0.5 + Math.sin(t * 1.3) * 0.02 - cv * 0.2 + id.hx + tw, Math.sin(t * 0.5) * 0.18 * (1 - n.aimK) * (1 - s) + (n.gunKind ? 0.18 * n.aimK : 0) + id.hy + tw * 0.8, n.tilt + ps.head * (1 - 0.5 * n.aimK) + id.hz);
+    n.head.rotation.set(-fl * 0.5 + Math.sin(t * 1.3) * 0.02 - cv * 0.2 + id.hx + tw - sx * 0.35 + bsn * 0.01 * (1 + 2 * ex) + 0.012 * s * Math.cos(2 * ph), Math.sin(t * 0.5) * 0.18 * (1 - n.aimK) * (1 - s) + (n.gunKind ? 0.18 * n.aimK : 0) + id.hy + tw * 0.8 - Math.sin(ph) * 0.05 * s + turn * 0.08, n.tilt + ps.head * (1 - 0.5 * n.aimK) + id.hz - turn * 0.03);
     if (n.gunKind && !n.holster) this.actorArmsGun(n, s, ph, lk, dt, ps, id, t);
     else this.actorArmsFree(n, s, sl, sr, lk, t, fl, ps, id);
     if (n.act) this.actPose(n, dt, t); // interiors.js: поза жильца комнаты (сидит / спит / сдаётся) поверх базовой
@@ -316,8 +331,8 @@
     const idle = 1 - s;
     n.armL.rotation.set(-A * sr * 0.9 + Math.sin(t * 1.1) * 0.03 * idle - (n.charge ? 0.9 * s : 0) + fl * 0.3, 0, -0.07 - 0.03 * idle + Math.sin(t * 0.9) * 0.02 * idle);
     n.armR.rotation.set(-A * sl * 0.9 * (1 - a) - ang * a + Math.sin(t * 1.3 + 2) * 0.03 * idle - (n.charge ? 0.9 * s * (1 - a) : 0) + fl * 0.3, 0, 0.07 + 0.03 * idle - Math.sin(t * 0.7) * 0.02 * idle);
-    n.elbL.rotation.set(-(0.18 + 0.2 * s + (0.95 + (n.charge ? 0.4 : 0)) * lk * s) - (n.charge ? 0.5 * s : 0), 0, 0);
-    n.elbR.rotation.set(-(0.18 + 0.2 * s + (0.95 + (n.charge ? 0.4 : 0)) * lk * s) * (1 - a) - 0.3 * a - (n.charge ? 0.5 * s * (1 - a) : 0), 0, 0);
+    n.elbL.rotation.set(-(0.18 + 0.2 * s + (0.95 + (n.charge ? 0.4 : 0)) * lk * s) - (n.charge ? 0.5 * s : 0) - 0.22 * Math.max(0, sr) * (0.3 + lk) * s, 0, 0);
+    n.elbR.rotation.set(-(0.18 + 0.2 * s + (0.95 + (n.charge ? 0.4 : 0)) * lk * s) * (1 - a) - 0.3 * a - (n.charge ? 0.5 * s * (1 - a) : 0) - 0.22 * Math.max(0, sl) * (0.3 + lk) * s * (1 - a), 0, 0);
     if (n.work > 0) { // техник чинит: обе руки у груди, быстрые мелкие движения
       const w = n.work, k = Math.sin(t * 13);
       n.armR.rotation.set(lerp(n.armR.rotation.x, -1.1, w), 0, 0.1); n.elbR.rotation.set(-1.3 * w + k * 0.25 * w, 0, 0);
@@ -336,7 +351,7 @@
     // позиция в корпусе: у бедра («готов») -> у плеча (прицеливание) или у бедра (стрельба от бедра, hip)
     const ty = lerp(pistol ? 0.45 : 0.42, 0.27, hp), tz = lerp(pistol ? 0.42 : 0.34, 0.38, hp), tx = pistol ? 0.06 : 0.1, trx = lerp(-0.04, 0.1, hp);
     G.position.set(lerp(0.15, tx, a) + id.gx, lerp(0.14, ty, a) + bob + id.gy, lerp(0.3, tz, a) - kick * 0.07 + id.gz);
-    G.rotation.set(lerp(0.95, trx, a) - kick * 0.16 + id.grx, lerp(0.0, -0.1, a) + id.gry, id.grz);
+    G.rotation.set(lerp(0.95, trx, a) - kick * 0.16 + id.grx + clamp(n.ai || 0, -4, 4) * 0.012, lerp(0.0, -0.1, a) + id.gry - clamp(n.yr || 0, -3, 3) * 0.035 * (0.5 + a), id.grz);
     if (bs > 0) { // удар оружием: приклад по дуге / тычок стволом
       if (kd === 'bash' || kd === 'wild') { G.rotation.y -= bs * 1.2 * (kd === 'wild' ? Math.sin(t * 40) : 1); G.rotation.x += bs * 0.5; G.position.x -= bs * 0.15; G.position.z += bs * 0.2; }
       else if (kd === 'jab') { G.position.z += bs * 0.45; G.position.y -= bs * 0.04; G.rotation.x -= bs * 0.12; }

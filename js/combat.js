@@ -226,7 +226,14 @@
 
   Run.prototype.updateRig = function (dt, vel) {
     const rg = this.rg; if (!rg) return;
-    const cam = this.camera, body = this.body, p = this.p, mv = p.moving, ph = p.phase, t = this.time;
+    const cam = this.camera, body = this.body, p = this.p, mv = this.bobK === undefined ? p.moving : this.bobK, ph = p.phase, t = this.time;
+    const sp = rg.sp || (rg.sp = { x: 0, y: 0, r: 0, vx: 0, vy: 0, vr: 0, by: 0 }), sdt = Math.min(dt, 0.033);
+    if (sdt > 0) {
+      const tx = clamp(-vel * 0.0035, -0.045, 0.045), ty = clamp(-(this.pitchVel || 0) * 0.003, -0.04, 0.04), tr = clamp(vel * 0.0035, -0.07, 0.07);
+      sp.vx += (150 * (tx - sp.x) - 15 * sp.vx) * sdt; sp.x += sp.vx * sdt;
+      sp.vy += (150 * (ty - sp.y) - 15 * sp.vy) * sdt; sp.y += sp.vy * sdt;
+      sp.vr += (120 * (tr - sp.r) - 13 * sp.vr) * sdt; sp.r += sp.vr * sdt;
+    }
     cam.updateMatrixWorld(true); body.updateMatrixWorld(true);
     const { v1, v2, v3, v4, q1, q2, e, sh, hp } = rg;
     sh[0].set(-0.24, -0.22, 0.02); body.localToWorld(sh[0]);
@@ -238,7 +245,7 @@
       const d = w.def, mdl = this.rigModel(w.id);
       Object.keys(rg.models).forEach((k) => { rg.models[k].holder.visible = k === w.id; rg.models[k].lh.visible = k === w.id; });
       let px = d.low[0], py = d.low[1], pz = d.low[2], rx = d.low[3], ry = d.low[4], rz = 0;
-      px += Math.sin(ph) * 0.01 * mv; py += Math.abs(Math.sin(ph)) * 0.014 * mv;
+      px += Math.sin(ph) * 0.01 * mv; py += Math.abs(Math.sin(ph)) * 0.014 * mv - Math.cos(ph * 2) * 0.004 * mv + Math.sin(t * 1.4) * 0.0025 * (1 - mv); rz += Math.sin(ph) * 0.012 * mv;
       const sk = this.sprintK || 0;
       if (sk > 0.001) { px = lerp(px, d.sprint[0], sk); py = lerp(py, d.sprint[1], sk); pz = lerp(pz, d.sprint[2], sk); rx = lerp(rx, d.sprint[3], sk); ry = lerp(ry, d.sprint[4], sk); rz = d.sprint[5] * sk; }
       const so = this.swapOff || 0;
@@ -249,7 +256,7 @@
         hvT = Math.max(hvT, o[6] * 0.85);
       }
       if (this.pmWo) { const o = this.pmWo(dt, px, py, pz, rx, ry, rz); if (o) { px = o[0]; py = o[1]; pz = o[2]; rx = o[3]; ry = o[4]; rz = o[5]; } }
-      px += clamp(-vel * 0.0035, -0.045, 0.045); py += clamp(-(this.pitchVel || 0) * 0.003, -0.04, 0.04);
+      px += sp.x; py += sp.y; rz += sp.r;
       v1.set(px, py, pz); body.localToWorld(v1);
       e.set(rx, ry, rz, 'YXZ'); q1.setFromEuler(e); q1.premultiply(body.quaternion);
       const ak = this.aimK || 0;

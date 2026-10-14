@@ -937,15 +937,16 @@
     placeCamera(dt) {
       const p = this.p, cam = this.camera, t = this.time;
       // body cam: заметное покачивание в такт шагам (вертикаль, боковой наклон, крен)
-      const bob = Math.sin(p.phase * 2) * 0.05 * p.moving, sway = Math.sin(p.phase) * 0.035 * p.moving, breath = Math.sin(t * 1.4) * 0.012;
+      const mvK = this.bobK = lerp(this.bobK === undefined ? p.moving : this.bobK, p.moving, 1 - Math.exp(-dt * 9));
+      const bob = Math.sin(p.phase * 2) * 0.05 * mvK, sway = Math.sin(p.phase) * 0.035 * mvK, breath = Math.sin(t * 1.4) * 0.012;
       if (this.camFree) { this.applyFreeCam(dt); return; } // катсцена: камера принадлежит режиссёру (cinema.js)
       const shk = this.q.shake === undefined ? 1 : this.q.shake, sh = this.shakeAmp * shk, c = Math.cos(p.yaw), s = Math.sin(p.yaw);
       const kp = this.kickP || 0, ky = this.kickY || 0, kr = this.kickR || 0, ki = (this.kickShake || 0) * shk; // отдача, дёрганья перезарядки, стресс
       cam.position.set(p.x + c * sway + (sh ? (Math.random() - 0.5) * sh : 0), EYE + bob + breath + (sh ? (Math.random() - 0.5) * sh : 0), p.z - s * sway);
       cam.rotation.set(
-        p.pitch + kp + Math.sin(t * 1.1) * 0.004 + Math.sin(p.phase * 2) * 0.012 * p.moving + (ki ? (Math.random() - 0.5) * ki : 0),
+        p.pitch + kp + Math.sin(t * 1.1) * 0.004 + Math.sin(p.phase * 2) * 0.012 * mvK + (ki ? (Math.random() - 0.5) * ki : 0),
         p.yaw + ky + (ki ? (Math.random() - 0.5) * ki : 0),
-        Math.sin(p.phase) * 0.018 * p.moving + kr
+        Math.sin(p.phase) * 0.018 * mvK + kr
       );
       if (this.pmCam) this.pmCam(cam, dt); // pmove.js: присед, наклон из-за угла, подкат
       if (this.baseFov && !this.fovLocked) { const f = this.fovNow ? this.fovNow() : this.baseFov; if (Math.abs(cam.fov - f) > 0.05) { cam.fov = f; cam.updateProjectionMatrix(); } }
