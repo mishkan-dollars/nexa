@@ -359,12 +359,25 @@
     return '<div class="shop-card locked"><div class="shop-av"><span class="shop-q">?</span></div><div class="shop-meta"><span class="shop-code">PL-??</span><h3>[ NO SIGNAL ]</h3><p class="shop-price"></p></div>' +
       '<ul class="shop-fx"><li>ITEM UNAVAILABLE</li></ul><div class="shop-btns"><button class="action secondary centered" disabled>BUY</button><button class="action secondary centered" disabled>PREVIEW</button></div></div>';
   }
+  let shopTab = 'items';
+  function abilShop() {
+    const eq = S.ab.eq, slots = eq.map((id, i) => '<span class="ab-slot' + (id ? ' on' : '') + '"><small>SLOT ' + (i + 1) + '</small> <b>' + (id ? ABD[id].name : 'EMPTY') + '</b>' + (id ? ' <button class="link-button" data-action="shop-ab-eq" data-value="' + i + ':">CLEAR</button>' : '') + '</span>').join(' ');
+    const cards = ABIL.map((d) => {
+      const lv = S.ab.lv[d.id] | 0, max = d.price.length, np = lv < max ? d.price[lv] : 0;
+      const btn = np ? '<button class="action' + (np > S.credits ? ' secondary' : '') + '" data-action="shop-ab-buy" data-value="' + d.id + '">' + (lv ? 'UPGRADE ' : 'BUY ') + np + ' KP</button>' : '<button class="action secondary" disabled>MAX</button>';
+      const eqb = lv ? [0, 1, 2].map((i) => '<button class="link-button' + (eq[i] === d.id ? ' on' : '') + '" data-action="shop-ab-eq" data-value="' + i + ':' + d.id + '">' + (i + 1) + '</button>').join(' ') : '';
+      return '<div class="shop-card"><h3>' + d.name + '</h3><p>' + d.info + '</p><p class="shop-sub">' + (lv ? 'LEVEL ' + lv + '/' + max + ' · RECHARGE ' + d.cd[lv - 1] + ' S' : 'NOT OWNED') + '</p>' + btn + (eqb ? '<div class="shop-eq">' + eqb + '</div>' : '') + '</div>';
+    }).join('');
+    return '<p class="shop-sub">' + slots + '</p><div class="shop-grid">' + cards + '</div>';
+  }
   function renderShop() {
+    const tabBtn = (id, t) => '<button class="link-button' + (shopTab === id ? ' on' : '') + '" data-action="shop-tab" data-value="' + id + '">' + t + '</button>';
+    const tabs = '<div class="back-row shop-tabs">' + tabBtn('items', 'ITEMS') + ' &nbsp; ' + tabBtn('abil', 'ABILITIES') + '</div>';
     const note = shopNote ? '<p class="shop-note ' + shopNote.kind + '">' + shopNote.text + '</p>' : '';
     return '<div class="screen-shell"><div class="panel" style="max-width:900px;margin:auto;"><div class="panel-head"><div><p class="eyebrow">NEXA/OS</p><h2>SHOP</h2></div><div class="session-tag">BALANCE<strong>' + S.credits + ' CR</strong></div></div>' +
       '<div class="back-row"><button class="link-button" data-action="menu">← BACK TO NEXA/OS</button></div>' +
       '<p style="color:var(--muted);margin-bottom:20px;">C:\\NEXA\\SHOP\\ &nbsp;//&nbsp; PLUSH ITEMS GRANT A MISSION ABILITY. ONE ITEM CAN BE CARRIED INTO A MISSION. EMOTES ARE PLAYED FROM THE WHEEL: HOLD B.</p>' + note +
-      '<div class="shop-grid">' + CATALOG.map(card).join('') + EMOTES.map(card).join('') + lockedCard() + '</div></div></div>';
+      tabs + (shopTab === 'abil' ? abilShop() : '<div class="shop-grid">' + CATALOG.map(card).join('') + EMOTES.map(card).join('') + lockedCard() + '</div>') + '</div></div>';
   }
   function fillAvatars() {
     if (window.Emote && window.Emote.bindShop) window.Emote.bindShop();
@@ -398,6 +411,12 @@
       else S.loadout = S.loadout === d.id ? null : d.id;
       save(); shopNote = null; ctx.render && ctx.render(); fillAvatars(); return true;
     }
+    if (a === 'shop-tab') { shopTab = v === 'abil' ? 'abil' : 'items'; shopNote = null; ctx.render && ctx.render(); fillAvatars(); return true; }
+    if (a === 'shop-ab-buy') {
+      const r = window.Toys.ab.buy(v); shopNote = r.ok ? { kind: 'ok', text: 'UNLOCKED' } : { kind: 'bad', text: r.err }; if (!r.ok && ctx.audio) ctx.audio.playSfx('denied');
+      ctx.render && ctx.render(); fillAvatars(); return true;
+    }
+    if (a === 'shop-ab-eq') { const m = /^(\d):(\w*)$/.exec(String(v)); if (m) window.Toys.ab.equip(+m[1], m[2] || null); ctx.render && ctx.render(); fillAvatars(); return true; }
     if (a === 'shop-preview') {
       if (DEF[v] && DEF[v].kind === 'emote') { if (window.Emote && window.Emote.openPreview) window.Emote.openPreview(v); } else openPreview(v);
       return true;
@@ -525,14 +544,14 @@
   // ---------------------------------------------------------------- награды и части HUD
   let pendBonus = 0; // interiors.js: бонус за бесшумные/жестокие убийства и заложников — ждёт ближайшей награды за миссию
   function bonus(n) { pendBonus = Math.max(0, Math.min(300, Math.round(n) || 0)); }
-  const REPLAY_HOUR = 300, REWARD_GAP = 30000;
+  const REPLAY_HOUR = 1500, REWARD_GAP = 30000;
   function reward(taskId) {
     taskId = Number(taskId);
     if (!Number.isInteger(taskId) || taskId < 1 || taskId > 48) return 0;
     const now = Date.now(), first = S.paid.indexOf(taskId) < 0;
     S.rl = S.rl.filter((x) => now - x.t < 3600000);
     const last = S.rl.length ? S.rl[S.rl.length - 1].t : 0, hourly = S.rl.reduce((a, x) => a + x.n, 0);
-    let n = (first ? REWARD_FIRST : REWARD_REPLAY) + pendBonus; pendBonus = 0;
+    let n = (first ? 300 + taskId * 25 : 60 + taskId * 5) + pendBonus; pendBonus = 0;
     if (now - last < REWARD_GAP) n = 0;
     else if (!first) n = Math.max(0, Math.min(n, REPLAY_HOUR - hourly));
     if (n > 0) { if (first) S.paid.push(taskId); S.rl.push({ t: now, n: first ? 0 : n }); S.credits += n; save(); }
