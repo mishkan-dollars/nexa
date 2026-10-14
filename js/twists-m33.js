@@ -309,8 +309,9 @@
       if (!sec || sec.b !== 'stealth') return;
       const hw = sec.W / 2 - 0.7;
       for (let i = 0; i < 4; i += 1) {
-        const x = (i % 2 ? 1 : -1) * hw, z = sec.zA - 6 - i * (sec.D - 12) / 3.5;
-        if (r.blockedE(x, z)) continue;
+        let x = (i % 2 ? 1 : -1) * hw, z = sec.zA - 6 - i * (sec.D - 12) / 3.5, ok = false;
+        for (const dz of [0, 2, -2, 4, -4, 6, -6]) if (!ok && !r.blockedE(x, z + dz) && !r.blockedE(x, z + dz + 1) && !r.blockedE(x, z + dz - 1)) { z += dz; ok = true; }
+        if (!ok) continue;
         T.solid(x, 1.1, z, 0.8, 2.2, 1.0, 0x5a5a5a); r.strip(x - Math.sign(x) * 0.42, 1.6, z, 0.04, 0.3, 0.5, 0xffffff);
         S.lk.push([x, z]);
       }
