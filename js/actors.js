@@ -195,7 +195,7 @@
     n.speedAnim = 1;
   };
   Run.prototype.actorReset = function (n) {
-    n.death = null; n.flinch = 0; n.kick = 0; n.aimK = 0; n.vel = 0; n.swing = 0; n.yr = n.ai = n.ex = n.br = n.mvx = n.mvz = 0; n.pv = undefined; n.lx = n.g.position.x; n.lz = n.g.position.z;
+    n.death = null; n.flinch = 0; n.kick = 0; n.aimK = 0; n.vel = 0; n.swing = 0; n.yr = n.ai = n.ex = n.br = n.mvx = n.mvz = 0; n.flinchD = 1; n.flinchL = 0.6; n.pv = undefined; n.lx = n.g.position.x; n.lz = n.g.position.z;
     n.act = null; n.ps = null; n.cv = n.cvT = 0; n.bash = n.rel = n.work = n.gest = n.taunt = n.daze = 0; n.bashKind = null; n.holster = false; n.stk = undefined; if (n.laser) n.laser.visible = false; if (n.helmet) n.helmet.visible = false;
     const g = n.g; g.rotation.x = 0; g.rotation.z = 0; g.position.y = 0;
     n.hips.position.y = 0.95; n.hips.rotation.set(0, 0, 0); n.spine.rotation.set(0, 0, 0); n.head.rotation.set(0, 0, 0);
@@ -205,7 +205,12 @@
   // попадание: рывок корпуса, голова назад
   Run.prototype.actorHit = function (n, head, amt) {
     if (n.death) return;
-    n.flinch = Math.min(1.4, (head ? 1.3 : 0.7) + (amt || 0) / 120); n.flinchS = sgn();
+    n.flinch = Math.min(1.4, (head ? 1.3 : 0.7) + (amt || 0) / 120); n.flinchS = sgn(); n.flinchD = 1; n.flinchL = 0.6;
+    const o = n.lastHit && n.lastHit.o, g = n.g; // реакция по направлению: спереди — откидывает назад, сзади — бросает вперёд, сбоку — разворачивает
+    if (o) {
+      const dx = o.x - g.position.x, dz = o.z - g.position.z, l = Math.hypot(dx, dz) || 1, fx = Math.sin(g.rotation.y), fz = Math.cos(g.rotation.y), fr = (dx * fx + dz * fz) / l, lat = (dx * fz - dz * fx) / l;
+      n.flinchD = fr >= 0 ? Math.max(0.4, fr) : Math.min(-0.4, fr); n.flinchS = lat > 0 ? 1 : -1; n.flinchL = 0.4 + 0.6 * Math.abs(lat);
+    }
   };
   // смерть: падение назад / вперёд / набок / с колен. from — точка, откуда пришёл выстрел
   Run.prototype.actorKill = function (n, head, from) {
@@ -234,11 +239,13 @@
     const kb = smooth(clamp(t / 0.32, 0, 1));
     const kf = smooth(clamp((t - (ph === 'knees' ? 0.5 : 0.1)) / (ph === 'knees' ? 0.7 : 0.8), 0, 1)), fall = Math.pow(kf, 1.5);
     const settle = smooth(clamp((t - 0.7) / 0.5, 0, 1));
-    n.hips.position.y = 0.95 - (ph === 'knees' ? 0.4 : 0.34) * kb * (1 - kf);
+    const ti = ph === 'knees' ? 1.1 : 0.78, ia = t > ti ? Math.exp(-(t - ti) * 7) : 0, fl2 = ia * Math.cos((t - ti) * 16); // удар о пол: тело подпрыгивает, конечности болтаются и гасятся
+    n.hips.position.y = 0.95 - (ph === 'knees' ? 0.4 : 0.34) * kb * (1 - kf) + 0.035 * ia * Math.abs(Math.sin((t - ti) * 12));
+    n.hips.rotation.y = D.tilt * 0.5 * kf; n.spine.rotation.y = -D.tilt * 0.6 * kf; n.head.rotation.y = D.tilt * 1.4 * kf;
     n.spine.rotation.x = (ph === 'back' ? -0.5 : 0.35) * kb * (1 - kf * 0.8);
     n.spine.rotation.z = D.side * 0.2 * kb;
     n.head.rotation.x = (ph === 'back' ? -(D.head ? 0.75 : 0.45) * kb : 0.25 * kb) * (1 - 0.4 * kf);
-    n.head.rotation.z = D.tilt * kf;
+    n.head.rotation.z = D.tilt * kf + 0.12 * fl2;
     g.rotation.x = ph === 'back' ? -Math.PI / 2 * fall : ph === 'fwd' || ph === 'knees' ? Math.PI / 2 * fall : 0;
     g.rotation.z = ph === 'side' ? D.side * Math.PI / 2 * fall : 0;
     g.position.y = 0.11 * kf;
@@ -248,11 +255,11 @@
     n.kneeL.rotation.x = kn * kb * (1 - 0.75 * settle) + D.k1 * 0.4 * kf;
     n.kneeR.rotation.x = kn * kb * (1 - 0.75 * settle) * 0.9 + D.k2 * 0.4 * kf;
     n.legL.rotation.z = -0.1 - 0.18 * D.k1 * kf; n.legR.rotation.z = 0.1 + 0.18 * D.k2 * kf;
-    n.footL.rotation.x = n.footR.rotation.x = 0.3 * kf;
+    n.footL.rotation.x = n.footR.rotation.x = 0.3 * kf + 0.15 * fl2;
     // руки взлетают при попадании, потом раскидываются
     const up = (ph === 'back' ? -1.2 : -0.5) * kb * (1 - kf);
     n.armL.rotation.x = up - 0.2 * kf; n.armR.rotation.x = up * 0.8 - 0.1 * kf;
-    n.armL.rotation.z = -(0.25 + 0.95 * D.a1 * kf); n.armR.rotation.z = 0.25 + 0.95 * D.a2 * kf;
+    n.armL.rotation.z = -(0.25 + 0.95 * D.a1 * kf) - 0.3 * fl2; n.armR.rotation.z = 0.25 + 0.95 * D.a2 * kf + 0.3 * fl2;
     n.elbL.rotation.x = -0.6 * kb * (1 - kf) - 0.3 * D.a1 * kf; n.elbR.rotation.x = -0.6 * kb * (1 - kf) - 0.3 * D.a2 * kf;
     if (t > 0.7 && t < 1.7) { const j = (1.7 - t) * 0.06; n.armL.rotation.x += Math.sin(t * 38) * j; n.armR.rotation.x += Math.sin(t * 33 + 1) * j; n.legL.rotation.x += Math.sin(t * 29) * j * 0.6; }
   }
@@ -330,17 +337,19 @@
     n.hips.position.x = Math.cos(ph) * 0.02 * s * ps.sway + Math.sin(t * 0.45) * 0.008 * (1 - s);
     n.hips.rotation.y = Math.sin(ph) * 0.1 * s; n.hips.rotation.z = Math.cos(ph) * 0.04 * s * ps.sway + sway * 0.4 + ps.wobble * Math.sin(t * 1.9) * 0.08 + ps.limp * Math.sin(ph) * 0.06 * s - turn * 0.04;
     const fl0 = n.flinch; n.flinch = Math.max(0, fl0 - dt * (1.2 + 3.3 * fl0)); const fl = fl0 * ps.flinch;
+    const fd0 = n.flinchD === undefined ? 1 : n.flinchD; n.hips.position.x += n.flinchS * fl * 0.035 * (n.flinchL === undefined ? 0.6 : n.flinchL); n.hips.position.z = -fl * fd0 * 0.05;
     n.aimK = lerp(n.aimK, n.armT, 1 - Math.exp(-dt * 7));
     n.arm = n.aimK;
     n.kick = n.kick > 0.003 ? n.kick * Math.exp(-dt * 10) : 0;
     const bs = n.bash > 0 ? Math.sin(Math.PI * n.bash) : 0, kd = n.bashKind, ram = kd === 'ram' ? bs : kd === 'jab' ? bs * 0.3 : 0;
-    const sx = n.lean + ps.lean + 0.04 * s + 0.28 * lk * s + clamp((n.ai || 0) * 0.025, -0.1, 0.14) * s + breathe + (n.crouch || 0) * 0.3 + cv * 0.25 - fl * 0.34 - n.kick * 0.1 + id.sx + ram * 0.55 + bs * 0.1;
-    n.spine.rotation.set(sx, -Math.sin(ph) * 0.16 * s + (n.gunKind ? -0.18 * n.aimK : 0) + id.sy + turn * 0.05, n.flinchS * fl * 0.12 + ps.wobble * Math.sin(t * 1.3) * 0.1 + id.sz - Math.cos(ph) * 0.02 * s - turn * 0.02);
+    const fd = n.flinchD === undefined ? 1 : n.flinchD, fL = n.flinchL === undefined ? 0.6 : n.flinchL;
+    const sx = n.lean + ps.lean + 0.04 * s + 0.28 * lk * s + clamp((n.ai || 0) * 0.025, -0.1, 0.14) * s + breathe + (n.crouch || 0) * 0.3 + cv * 0.25 - fl * 0.34 * fd - n.kick * 0.1 + id.sx + ram * 0.55 + bs * 0.1;
+    n.spine.rotation.set(sx, -Math.sin(ph) * 0.16 * s + (n.gunKind ? -0.18 * n.aimK : 0) + id.sy + turn * 0.05, n.flinchS * fl * 0.2 * fL + ps.wobble * Math.sin(t * 1.3) * 0.1 + id.sz - Math.cos(ph) * 0.02 * s - turn * 0.02);
     if (bs > 0 && kd === 'kick') { n.legR.rotation.x = -1.35 * bs; n.kneeR.rotation.x = 0.06 + 0.25 * bs; n.footR.rotation.x = 0.3 * bs; n.spine.rotation.x -= 0.15 * bs; }
     // голова: микро-повороты в стойке, рывок назад при попадании, тик/тремор личности
     n.tilt = lerp(n.tilt, n.tiltT, 1 - Math.exp(-dt * 4));
     const tw = ps.twitch * Math.sin(t * 27) * Math.sin(t * 5.1);
-    n.head.rotation.set(-fl * 0.5 + Math.sin(t * 1.3) * 0.02 - cv * 0.2 + id.hx + tw - sx * 0.35 + bsn * 0.01 * (1 + 2 * ex) + 0.012 * s * Math.cos(2 * ph), Math.sin(t * 0.5) * 0.18 * (1 - n.aimK) * (1 - s) + (n.gunKind ? 0.18 * n.aimK : 0) + id.hy + tw * 0.8 - Math.sin(ph) * 0.05 * s + turn * 0.08, n.tilt + ps.head * (1 - 0.5 * n.aimK) + id.hz - turn * 0.03);
+    n.head.rotation.set(-fl * 0.5 * fd + Math.sin(t * 1.3) * 0.02 - cv * 0.2 + id.hx + tw - sx * 0.35 + bsn * 0.01 * (1 + 2 * ex) + 0.012 * s * Math.cos(2 * ph), Math.sin(t * 0.5) * 0.18 * (1 - n.aimK) * (1 - s) + (n.gunKind ? 0.18 * n.aimK : 0) + id.hy + tw * 0.8 - Math.sin(ph) * 0.05 * s + turn * 0.08, n.tilt + ps.head * (1 - 0.5 * n.aimK) + id.hz - turn * 0.03);
     if (n.gunKind && !n.holster) this.actorArmsGun(n, s, ph, lk, dt, ps, id, t);
     else this.actorArmsFree(n, s, sl, sr, lk, t, fl, ps, id);
     if (n.act) this.actPose(n, dt, t); // interiors.js: поза жильца комнаты (сидит / спит / сдаётся) поверх базовой
