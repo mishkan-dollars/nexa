@@ -119,7 +119,7 @@
       this.run = run; this.spec = spec; this.mode = spec.mode === 'mission' ? 'mission' : 'sandbox';
       this.host = spec.role !== 'guest'; this.slot = spec.role === 'guest' ? (NN.slot || 2) : 1; this.solo = !!spec.solo;
       if (!this.solo) run.noPause = true;   // в онлайне паузы нет (мир идёт у друзей): Esc/кнопка/потеря фокуса не ставят игру на паузу
-      this.shared = this.mode === 'sandbox';
+      this.story = this.mode === 'mission'; this.shared = true; this.pseq = 0; this.snapFull = 0; this.eReq = 0; this.dropCap = null;
       this.remotes = new Map(); this.readySet = new Set();
       this.ready = false; this.offs = []; this.sendT = 0; this.snapT = 0; this.hudT = 0; this.lastSend = 0;
       this.stage = 0; this.stages = {};
@@ -282,6 +282,7 @@
         case 'emote': { const m = this.rmFor(from); if (m) this.startRemoteEmote(m, String(p.id || '').slice(0, 20)); break; }
         case 'emoteoff': { const m = this.remotes.get(from); if (m) this.stopRemoteEmote(m); break; }
         case 'bar': this.stages[from] = Math.max(this.stages[from] | 0, p.s | 0); break;
+        case 'eresync': if (this.host && this.ready) this.resendEnemies(); break;
         case 'leave': this.removeRemote(from, true); break;
         default: break;
       }
@@ -439,22 +440,26 @@
       e.nid = ++this.nid; this.byId.set(e.nid, e);
       if (!this.solo && this.peerReady) this.sendSpawn(e);
     }
-    sendSpawn(e) { NN.sendAction({ type: 'espawn', i: e.nid, t: e.type, x: q(e.x, 50), z: q(e.z, 50), a: q(e.n.yaw, 50), g: e.n.gunKind || '' }); }
+    sendSpawn(e) { const m = e.t && e.t.hp ? Math.round(e.max / e.t.hp * 100) : 100; NN.sendAction({ type: 'espawn', i: e.nid, t: e.type, x: q(e.x, 50), z: q(e.z, 50), a: q(e.n.yaw, 50), g: e.n.gunKind || '', m: m === 100 ? undefined : m, f: e.friendly ? 1 : undefined }); }
     resendEnemies() { this.byId.forEach((e) => { if (!e.dead && e.alive !== false) this.sendSpawn(e); }); }
-    sendKill(e, head) { if (!e.nid || this.solo) return; NN.sendAction({ type: 'ekill', i: e.nid, h: head ? 1 : 0, by: e.lastBy || 1 }); this.byId.delete(e.nid); }
+    sendKill(e, head) { if (!e.nid || this.solo) return; const d = this.dropCap && this.dropCap.length ? this.dropCap : undefined; NN.sendAction({ type: 'ekill', i: e.nid, h: head ? 1 : 0, by: e.lastBy || 1, d }); this.byId.delete(e.nid); }
     sendGone(e) { if (e.nid && !this.solo) NN.sendAction({ type: 'egone', i: e.nid }); this.byId.delete(e.nid); }
     sendWave(S) { if (!this.solo) NN.sendAction({ type: 'wave', n: S.wave, run: S.running ? 1 : 0, k: S.kills }); }
     waveText(S, left) { this.run.objective('WAVE ' + S.wave + ' — ' + left + ' ENEMIES'); }
     sendSnap(dt) {
       if (!this.host || this.solo || !this.shared || !this.peerReady) return;
       this.snapT += dt; if (this.snapT < (document.hidden ? 0.5 : 0.1)) return; this.snapT = 0;
+      this.snapFull += 1; const full = this.snapFull >= 5; if (full) this.snapFull = 0;
       const list = [];
       this.byId.forEach((e) => {
-        if (e.dead || !e.n) return;
-        const g = e.n.g.position;
-        list.push([e.nid, Math.round(g.x * 50), Math.round(g.z * 50), Math.round(e.n.yaw * 50), (e.n.armT > 0.5 ? 1 : 0) | (e.n.creeping ? 2 : 0) | ((e.muz || 0) > 0 ? 4 : 0)]);
+        if (e.dead || !e.n || e.nid < 0) return;
+        const g = e.n.g.position, x = Math.round(g.x * 50), z = Math.round(g.z * 50), a = Math.round(e.n.yaw * 50), f = (e.n.armT > 0.5 ? 1 : 0) | (e.n.creeping ? 2 : 0) | ((e.muz || 0) > 0 ? 4 : 0), h = Math.max(0, Math.min(255, Math.round(e.hp / e.max * 255))), l = e.ls;
+        if (!full && l && l[0] === x && l[1] === z && l[2] === a && l[3] === f && l[4] === h) return;
+        e.ls = [x, z, a, f, h];
+        list.push([e.nid, x, z, a, f, h]);
       });
-      NN.sendAction({ type: 'snap', e: list }, { fast: true });
+      if (!list.length) return;
+      for (let i = 0; i < list.length; i += 40) NN.sendAction({ type: 'snap', e: list.slice(i, i + 40) }, { fast: true });
     }
     onHit(p) {                                                 // гость попал во врага: Хост применяет урон
       if (!this.host || !this.shared || !this.ready) return;
@@ -509,18 +514,50 @@
       const r = this.run, id = p.i | 0; if (!id || this.byId.has(id) || !r.cb) return;
       const type = ['grunt', 'rusher', 'heavy', 'boss', 'target'].indexOf(p.t) >= 0 ? p.t : 'grunt';
       const gun = ['pistol', 'rifle', 'lmg', 'shotgun'].indexOf(p.g) >= 0 ? p.g : null;
-      const x = num(p.x), z = num(p.z), e = r.enemy(type, x, z, { exact: true, drop: false, tag: 'sbN', yaw: num(p.a), gun });
-      e.puppet = true; e.nid = id; e.ai = () => true; e.net = { x, z, a: num(p.a), f: 0 };
+      const x = num(p.x), z = num(p.z);
+      if (this.story) {
+        let best = null, bd = 6;
+        this.byId.forEach((e) => { if (e.prov && !e.dead && e.type === type) { const d = Math.hypot(e.x - x, e.z - z); if (d < bd) { bd = d; best = e; } } });
+        if (best) { this.byId.delete(best.nid); best.nid = id; best.prov = false; best.net.x = x; best.net.z = z; best.net.a = num(p.a); this.byId.set(id, best); return; }
+      }
+      this.noReg = true;
+      let e;
+      try { e = r.enemy(type, x, z, { exact: true, drop: false, tag: 'sbN', yaw: num(p.a), gun, hp: p.m ? clamp(num(p.m), 10, 2000) / 100 : 1, friendly: !!p.f }); } finally { this.noReg = false; }
+      e.puppet = true; e.nid = id; e.ai = () => true; e.net = { x, z, a: num(p.a), f: 0 }; e.orphan = this.story;
       this.byId.set(id, e);
+    }
+    storyEnemy(e, o, a) {
+      if (this.host) { this.registerEnemy(e); return e; }
+      e.puppet = true; e.drop = false; e.ai = () => true; e.prov = true; e.nid = --this.pseq; e.provT = performance.now(); e.net = { x: e.x, z: e.z, a: e.n.yaw, f: 0 };
+      this.byId.set(e.nid, e);
+      return e;
+    }
+    claimOrphan(type, x, z, o) {
+      let best = null, bd = 6;
+      this.byId.forEach((e) => { if (e.orphan && !e.dead && e.type === type) { const d = Math.hypot(e.x - x, e.z - z); if (d < bd) { bd = d; best = e; } } });
+      if (!best) return null;
+      best.orphan = false; best.onDeath = o.onDeath; if (o.tag) best.tag = o.tag; best.assist = !!o.assist;
+      return best;
+    }
+    expireProv() {
+      const t = performance.now();
+      this.byId.forEach((e, id) => {
+        if (!e.prov || t - e.provT < 6000) return;
+        this.byId.delete(id); e.dead = true; e.alive = false; e.n.free = true; e.n.g.visible = false;
+        const cb = this.run.cb, i = cb.enemies.indexOf(e); if (i >= 0) cb.enemies.splice(i, 1); const j = cb.shoot.indexOf(e); if (j >= 0) cb.shoot.splice(j, 1);
+      });
     }
     onSnap(p) {
       if (this.host || !this.shared || !Array.isArray(p.e)) return;
-      this.lastSnapRx = performance.now();
-      for (const s of p.e.slice(0, 40)) {
+      const now = this.lastSnapRx = performance.now();
+      let miss = false;
+      for (const s of p.e.slice(0, 64)) {
         if (!Array.isArray(s)) continue;
-        const e = this.byId.get(s[0] | 0); if (!e || e.dead) continue;
+        const e = this.byId.get(s[0] | 0); if (!e) { miss = true; continue; } if (e.dead) continue;
         e.net.x = num(s[1]) / 50; e.net.z = num(s[2]) / 50; e.net.a = num(s[3]) / 50; e.net.f = s[4] | 0;
+        if (s.length > 5) e.hp = clamp(num(s[5]), 0, 255) / 255 * e.max;
       }
+      if (miss && now - this.eReq > 2500) { this.eReq = now; NN.sendAction({ type: 'cev', k: 'eresync' }); }
     }
     puppets(dt) {
       if (this.host || !this.shared) return;
@@ -540,6 +577,7 @@
       if (e.dead) return;
       e.noCredit = (p.by | 0) !== this.slot; e.puppet = false;
       this.run.killEnemy(e, !!p.h);
+      if (Array.isArray(p.d)) { const r = this.run, w = r.wp; p.d.slice(0, 4).forEach((k) => { if (!Array.isArray(k)) return; if (k[0] === 'ammo' && w) r.pickup(num(k[1]), num(k[2]), 'ammo', { id: w.id, amount: Math.ceil(w.def.mag * 0.7) }); else if (k[0] === 'health') r.pickup(num(k[1]), num(k[2]), 'health', { amount: 30 }); }); }
     }
     onGone(p) {
       if (this.host || !this.shared) return;
@@ -592,6 +630,7 @@
       this.sendState(dt);
       this.sendSnap(dt);
       this.puppets(dt);
+      if (this.story && !this.host) this.expireProv();
       this.updateAvatars(dt);
       // свои эмоции: сообщаем остальным о начале и конце танца
       const es = r.em && r.em.ses;
@@ -669,7 +708,31 @@
     return o.apply(this, a);
   });
   // общая песочница: смерть игрока не должна стирать врагов у обоих — clearEnemies в coopbox пропускаем (волны ведёт Хост)
-  wrap1('clearEnemies', function (o, a) { const co = this.__co; if (co && co.shared && co.ready && !this.disposed) return undefined; return o.apply(this, a); });
+  wrap1('clearEnemies', function (o, a) {
+    const co = this.__co;
+    if (co && co.story && !co.solo) {
+      if (co.host) co.byId.forEach((e) => { if (!e.dead && e.nid > 0) NN.sendAction({ type: 'egone', i: e.nid }); });
+      co.byId.clear();
+      return o.apply(this, a);
+    }
+    if (co && co.shared && co.ready && !this.disposed) return undefined;
+    return o.apply(this, a);
+  });
+  wrap1('enemy', function (o, a) {
+    const co = this.__co;
+    if (!co || !co.story || co.solo || co.noReg) return o.apply(this, a);
+    const t = a[0], op = a[3] || {};
+    if (!co.host) { const ex = co.claimOrphan(t, a[1], a[2], op); if (ex) return ex; }
+    const e = o.apply(this, a);
+    if (!co.khook && this.cb) { co.khook = true; this.cb.killHooks.push((en, head) => { if (co.host && en.nid > 0) co.sendKill(en, head); }); }
+    return e && !op.noSync ? co.storyEnemy(e, op, a) : e;
+  });
+  wrap1('pickup', function (o, a) { const co = this.__co; if (co && co.dropCap && (a[2] === 'ammo' || a[2] === 'health')) co.dropCap.push([a[2], q(a[0], 50), q(a[1], 50)]); return o.apply(this, a); });
+  wrap1('killEnemy', function (o, a) {
+    const co = this.__co;
+    if (co && co.story && co.host && !co.solo && a[0] && a[0].nid > 0) { co.dropCap = []; try { return o.apply(this, a); } finally { co.dropCap = null; } }
+    return o.apply(this, a);
+  });
   wrap1('phase', function (o, a) { const co = this.__co, p = o.apply(this, a); return co && co.mode === 'mission' && !co.solo ? p.then((v) => co.barrier().then(() => v)) : p; });
   wrap1('dispose', function (o, a) { const co = this.__co; if (co) { try { co.dispose(); } catch (e) { /* ok */ } } return o.apply(this, a); });
 
