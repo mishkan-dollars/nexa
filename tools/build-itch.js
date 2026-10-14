@@ -1,7 +1,8 @@
 // Сборка NEXA/OS для itch.io:  node tools/build-itch.js
 //  1) обновляет assets-manifest.json (список и размеры всех файлов из assets/ — по нему preload.js качает всё за один раз);
 //  2) собирает dist/nexa-itch.zip (index.html в корне, пути с прямыми слэшами — как требует itch.io).
-// В архив не попадают: *.zip, *.md, .claude, tools, dist, memory.
+// В архив не попадают: *.zip, *.md, .claude, tools (в т.ч. tools/admin.html — локальный инструмент админа), dist, memory.
+//  3) в js/guard.js внутри архива подставляются SHA-256 критичных модулей (проверка целостности при старте игры); в репозитории там null.
 'use strict';
 const fs = require('fs');
 const path = require('path');
@@ -44,11 +45,17 @@ const files = ['index.html', 'styles.css', 'css/ui-polish.css', 'sw.js', 'manife
   .concat(walk(path.join(ROOT, 'js'), []).map(rel).sort())
   .concat(assets);
 
+const CRIT = ['toys', 'social', 'net', 'rendezvous', 'onlinelobby', 'coop', 'schnorr', 'admin', 'adminkey'].map((n) => 'js/' + n + '.js');
+const norm = (f) => fs.readFileSync(path.join(ROOT, f), 'utf8').replace(/\r\n/g, '\n').replace(/^\uFEFF/, '');
+const INTEG = {}; CRIT.forEach((f) => { INTEG[f] = require('crypto').createHash('sha256').update(norm(f), 'utf8').digest('hex'); });
+console.log('integrity: ' + CRIT.length + ' critical files hashed into js/guard.js (zip only)');
+
 const parts = [], central = [];
 let offset = 0;
 const stamp = dosTime(new Date());
 files.forEach((name) => {
-  const data = fs.readFileSync(path.join(ROOT, name));
+  let data = fs.readFileSync(path.join(ROOT, name));
+  if (name === 'js/guard.js') data = Buffer.from(data.toString('utf8').replace('/*@INTEGRITY@*/null', JSON.stringify(INTEG)), 'utf8');
   const nameBuf = Buffer.from(name, 'utf8');
   let method = 0, body = data;
   if (!STORE_EXT.test(name) && data.length > 64) {
