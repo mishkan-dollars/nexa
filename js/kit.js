@@ -106,9 +106,9 @@
     if (!g || this.locked || this.paused || !this.entered || this.inCinema) return;
     const id = g.sel;
     if (id === 'c4') { if (g.n.c4 > 0) this.plantC4(); else this.detonate(); return; }
-    if (g.n[id] <= 0) return;
+    if (g.n[id] <= 0 || this.gadT) return;
     g.n[id] -= 1;
-    this.throwGadget(id);
+    if (this.startGadgetThrow && this.rg && this.body) this.startGadgetThrow(id); else this.throwGadget(id);
     if (!gadAvail(g, id)) { const o = Object.keys(GAD).find((k) => gadAvail(g, k)); if (o) g.sel = o; }
     this.refreshGad();
   };

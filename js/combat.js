@@ -195,6 +195,42 @@
 
   // поза перезарядки: между ключевыми кадрами — резкий старт и мягкий финиш (рваные движения).
   // o[0..5] — смещение/поворот оружия, o[6] — руки видны, o[7] — в левой руке магазин/патрон, o[8] — ход затвора; o.a/o.b/o.k — цели левой руки (из кадров) и прогресс между ними
+  // бросок гранаты: оружие уходит вниз, левая рука выдёргивает чеку, правая замахивается и отпускает (ключевые кадры кистей в системе тела)
+  const GT = 0.64, GT_REL = 0.4;
+  const GKR = [[0, 0.2, -0.5, -0.26], [0.1, 0.12, -0.3, -0.36], [0.22, 0.12, -0.3, -0.36], [0.32, 0.3, -0.12, 0.1], [0.4, 0.08, -0.28, -0.55], [0.5, 0.0, -0.4, -0.5], [0.64, 0.2, -0.5, -0.26]];
+  const GKL = [[0, -0.22, -0.5, -0.26], [0.1, -0.06, -0.3, -0.38], [0.14, -0.06, -0.3, -0.38], [0.24, -0.34, -0.36, -0.28], [0.34, -0.22, -0.32, -0.3], [0.4, -0.28, -0.3, -0.4], [0.64, -0.22, -0.5, -0.26]];
+  const gtSample = (K, t, o) => {
+    let i = 0; while (i < K.length - 2 && t >= K[i + 1][0]) i += 1;
+    const a = K[i], b = K[i + 1], u = clamp((t - a[0]) / (b[0] - a[0]), 0, 1), k = u * u * (3 - 2 * u);
+    o[0] = a[1] + (b[1] - a[1]) * k; o[1] = a[2] + (b[2] - a[2]) * k; o[2] = a[3] + (b[3] - a[3]) * k;
+  };
+  const gtTmp = [0, 0, 0];
+  Run.prototype.startGadgetThrow = function (id) {
+    const T = THREE, rg = this.rg;
+    if (!rg.gm) {
+      const mat = (c) => new T.MeshBasicMaterial({ color: c, depthTest: false, depthWrite: false, fog: false }), g = new T.Group();
+      const mk = (geo, c, x, y, z) => { const m = new T.Mesh(geo, mat(c)); m.position.set(x, y, z); m.renderOrder = 1001; m.frustumCulled = false; g.add(m); return m; };
+      rg.gmBody = mk(new T.SphereGeometry(0.042, 8, 6).scale(1, 1.2, 1), 0x2a2a2a, 0, 0, 0);
+      mk(new T.CylinderGeometry(0.014, 0.014, 0.03, 6), 0x777777, 0, 0.056, 0);
+      mk(new T.BoxGeometry(0.012, 0.06, 0.02), 0x8a8a8a, 0.032, 0.02, 0);
+      rg.gm = g; g.visible = false; this.scene.add(g);
+      const pin = new T.Mesh(new T.TorusGeometry(0.014, 0.003, 4, 8), mat(0xc8c8c8)); pin.renderOrder = 1002; pin.frustumCulled = false; pin.visible = false; this.scene.add(pin); rg.gpin = pin;
+    }
+    rg.gmBody.material.color.setHex(id === 'frag' ? 0x2a2a2a : 0xdcdcdc);
+    this.gadT = { id, t: 0, rel: false };
+  };
+  Run.prototype.gadK = function () { const g = this.gadT; return g ? smooth(clamp(Math.min(g.t / 0.1, (GT - g.t) / 0.12), 0, 1)) : 0; };
+  Run.prototype.gadHands = function (hp, wr) {
+    const g = this.gadT, body = this.body, rg = this.rg;
+    for (let i = 0; i < 2; i += 1) { gtSample(i ? GKR : GKL, g.t, gtTmp); hp[i].set(gtTmp[0], gtTmp[1], gtTmp[2]); body.localToWorld(hp[i]); }
+  };
+  Run.prototype.gadModel = function (wr) {
+    const g = this.gadT, rg = this.rg, body = this.body, gm = rg.gm; if (!gm) return;
+    const held = g && !g.rel;
+    gm.visible = !!held; rg.gpin.visible = !!(g && g.t > 0.16 && g.t < GT_REL + 0.2);
+    if (held) { rg.v1.set(0, 0.015, -0.06).applyQuaternion(body.quaternion).add(wr[1]); gm.position.copy(rg.v1); gm.quaternion.copy(body.quaternion); }
+    if (rg.gpin.visible) { rg.v1.set(0, 0, -0.05).applyQuaternion(body.quaternion).add(wr[0]); rg.gpin.position.copy(rg.v1); rg.gpin.quaternion.copy(body.quaternion); }
+  };
   Run.prototype.rigJolt = function (z, rx, ry) { const j = this.rg && this.rg.j; if (j) { j.vz += z; j.vrx += rx; j.vry += ry; } };
   Run.prototype.rlPose = function (rl) {
     const K = rl.def.rl, u = clamp(rl.shell ? rl.cyc : rl.t / rl.dur, 0, 1), a0 = (K, i) => K[i][0];
@@ -257,7 +293,8 @@
     const { v1, v2, v3, v4, q1, q2, e, sh, hp } = rg;
     sh[0].set(-0.24, -0.22, 0.02); body.localToWorld(sh[0]);
     sh[1].set(0.24, -0.22, 0.02); body.localToWorld(sh[1]);
-    const w = this.wp, rl = this.rl;
+    const gT = this.gadT; if (gT) { gT.t += dt; if (!gT.rel && gT.t >= GT_REL) { gT.rel = true; this.throwGadget(gT.id); this.rigJolt(-0.8, -4, 0); } if (gT.t >= GT) { this.gadT = null; if (rg.gm) { rg.gm.visible = false; rg.gpin.visible = false; } } }
+    const gk = this.gadT ? this.gadK() : 0, w = this.wp && gk >= 0.98 ? null : this.wp, rl = this.rl;
     let hvT = clamp((-p.pitch - 0.12) / 0.45, 0, 1); // руки видны, только когда игрок смотрит вниз
     if (this.pmHv) hvT = this.pmHv(hvT); // pmove.js: с кулаками руки видны всегда
     if (w) {
@@ -268,6 +305,7 @@
       const sk = this.sprintK || 0;
       if (sk > 0.001) { px = lerp(px, d.sprint[0], sk); py = lerp(py, d.sprint[1], sk); pz = lerp(pz, d.sprint[2], sk); rx = lerp(rx, d.sprint[3], sk); ry = lerp(ry, d.sprint[4], sk); rz = d.sprint[5] * sk; }
       const so = this.swapOff || 0;
+      if (gk > 0) { py -= 0.42 * gk; rx -= 0.8 * gk; ry += 0.3 * gk; }
       if (so > 0) { const se = so * so * (3 - 2 * so); py -= 0.4 * se; rx -= 0.75 * se; ry += 0.3 * se; }
       if (rl) {
         const o = this.rlPose(rl);
@@ -330,6 +368,7 @@
       hp[1].set(0.22, -0.5, -0.26 + sw * 0.7); body.localToWorld(hp[1]);
     }
     if (this.pmHands) this.pmHands(dt, w);
+    if (this.gadT && !w) { this.pmQ = false; this.pmFist = 'fist'; this.pmFree = false; this.gadHands(hp, rg.wr); hvT = 1; }
     rg.hv = lerp(rg.hv, hvT, 1 - Math.exp(-dt * 12));
     // с оружием руки держат его всегда; без оружия видны, только когда игрок смотрит вниз
     const armA = w ? 1 : rg.hv, vis = armA > 0.02, arms = rg.arms, el = rg.el, wr = rg.wr;
@@ -357,6 +396,7 @@
       a.el.position.copy(el[i]);
       if (!w) { a.hand.position.copy(wr[i]); a.hand.quaternion.copy(a.fo.quaternion); }
     }
+    if (this.gadT || (rg.gm && rg.gm.visible)) this.gadModel(wr);
     if (fh) C.fpsHands.tick(fh, dt);
   };
 
