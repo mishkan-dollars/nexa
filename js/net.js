@@ -1,11 +1,15 @@
-// NEXA/OS: сетевое ядро онлайн-режима — Serverless WebRTC (без сигнального сервера, без бэкенда).
-// Рукопожатие вручную: Хост создаёт ПРИГЛАШЕНИЕ (Offer) -> ссылка ?join=<код>, друг присылает ОТВЕТ (Answer) -> Хост вставляет его и соединяется.
-//   • Код — компактный Base64url: «NX1O.<данные>» (O — Offer, A — Answer; версия протокола 1). Данные = [флаги][JSON {sid, sdp}][CRC16], JSON сжат deflate-raw
-//     (CompressionStream), если браузер умеет; иначе — обычный Base64 без сжатия. Из SDP убраны лишние строки и адреса (см. shrinkSdp).
-//   • Публичные STUN Google; страховка setTimeout 2.5 с: если сбор ICE затянулся, код выдаётся из того, что уже собрано.
-//   • Каналы: 'act' (быстрые состояния, unordered, maxRetransmits 0: позиции) и 'rel' (надёжный: выстрелы, эмоции, чат, лобби, профиль, переговоры SDP).
-//   • sendAction(data) — единая точка отправки JSON-пакета {type, n, ts, ...}; приём — NexaNet.on(type, fn).
-//   • Голос: микрофон -> addTrack (согласование по каналу 'rel', поэтому код приглашения остаётся коротким); текстовый чат с санитайзингом и антифлудом.
+// NEXA/OS: сетевое ядро онлайн-режима — чистый P2P (WebRTC), без игрового сервера. Комната на несколько игроков: топология «звезда» — Хост (игрок 1, авторитет)
+// принимает до MAX_PLAYERS-1 гостей, каждый гость соединён только с Хостом; Хост ретранслирует позиции, выстрелы, эмоции и чат остальным.
+//   • Рукопожатие вручную (запасной режим, работает всегда и без трекеров): Хост создаёт ПРИГЛАШЕНИЕ (Offer) -> ссылка ?join=<код>, друг присылает ОТВЕТ (Answer).
+//     Код — компактный Base64url «NX1O.<данные>» / «NX1A.<данные>» ([флаги][JSON {s, d}][CRC16], deflate-raw, если есть CompressionStream; из SDP убраны лишние
+//     строки и адреса). На каждого гостя — своя пара кодов; Хост может приглашать следующих, не отключая уже подключённых.
+//   • Автоматическое рукопожатие через публичные трекеры WebTorrent — js/rendezvous.js; он использует низкоуровневый NexaNet.rtc (newOffer/newAnswer/attach).
+//   • Публичные STUN Google; страховка setTimeout 2.5 с: если сбор ICE затянулся, SDP выдаётся из того, что уже собрано.
+//   • Каналы на каждое соединение: 'act' (быстрые состояния, unordered, maxRetransmits 0: позиции) и 'rel' (надёжный: выстрелы, эмоции, чат, лобби, профиль, SDP).
+//   • sendAction(data[, {to, fast}]) — единая точка отправки JSON-пакета {type, n, ts, ...}; приём — NexaNet.on(type, fn); у принятого пакета p.from = слот отправителя
+//     (Хост = 1, гости 2..N). Гость -> Хост -> остальные: типы RELAY (pos, shot, cev, boom, aim) и адресные DIRECT (profile?, profile с полем to).
+//   • Голос: микрофон -> addTrack (согласование по каналу 'rel'). Гость слышит только Хоста, но Хост сводит голоса «микс минус сам» (WebAudio) и отправляет каждому
+//     гостю смесь остальных; одновременно говорят до MAX_VOICE микрофонов (остальные — только текст).
 // ПРИВАТНОСТЬ: IP-адреса нигде не показываются и не пишутся в журнал (scrub); в код приглашения попадают только srflx/relay-кандидаты (host/mDNS — только в
 // режиме LAN). Но при прямом P2P браузер собеседника технически видит ваш сетевой адрес — это свойство WebRTC; скрыть его без TURN-сервера нельзя.
 (function () {
@@ -14,9 +18,12 @@
   const VERSION = 1;
   const TELEGRAM = 'https://t.me/nexaindustries';
   const ICE_SERVERS = [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }];
+  const MAX_PLAYERS = 6, MAX_VOICE = 4;                                   // см. ONLINE.md: 6 проверено по расчёту трафика Хоста; константу можно поднять до 8 на свой риск
   const FAST = { pos: 1, ping: 1, pong: 1, snap: 1, aim: 1 };            // типы пакетов по ненадёжному каналу 'act' (остальные — по 'rel')
+  const RELAY = { pos: 1, shot: 1, cev: 1, boom: 1, aim: 1 };            // гость -> Хост -> все остальные
+  const DIRECT = { 'profile?': 1, profile: 1 };                          // адресные (поле to = слот получателя)
   const MAX_ACT = 8 * 1024, MAX_REL = 96 * 1024, CHAT_MAX = 200;
-  const cfg = { forceMs: 2500, connectMs: 25000, guestWaitMs: 180000, silentMs: 7000, pingMs: 2000, iceServers: ICE_SERVERS };
+  const cfg = { forceMs: 2500, connectMs: 25000, guestWaitMs: 180000, silentMs: 7000, pingMs: 2000, iceServers: ICE_SERVERS, maxPlayers: MAX_PLAYERS };
 
   // ------------------------------------------------------------------ сообщения (английские исходники; переводы — js/i18n-net.js)
   const MSG = {
@@ -44,9 +51,11 @@
     MIC_NONE: 'No microphone found.',
     MIC_FAIL: 'The microphone could not be started.',
     VOICE_BLOCKED: 'Click anywhere to let the browser play the friend\'s voice.',
+    VOICE_FULL: 'Voice is full (4 microphones at once). You can still use the text chat.',
     CHAT_FLOOD: 'Slow down — too many messages.',
     CHAT_EMPTY: 'Type a message first.',
-    CHAT_OFFLINE: 'Connect to a friend to chat.'
+    CHAT_OFFLINE: 'Connect to a friend to chat.',
+    ROOM_FULL: 'The room is full.'
   };
 
   // ------------------------------------------------------------------ утилиты
@@ -73,6 +82,9 @@
     return Array.from(t).slice(0, CHAT_MAX).join('');
   }
   const cleanColor = (c) => (/^#[0-9a-f]{6}$/i.test(c) ? c : '#ff3b30');
+  const cleanPid = (s) => (typeof s === 'string' && /^[0-9a-f]{6,16}$/.test(s) ? s : '');
+  const rndHex = (n) => { try { const a = new Uint8Array(n); crypto.getRandomValues(a); return Array.from(a, (b) => (b + 256).toString(16).slice(1)).join(''); } catch (e) { let s = ''; for (let i = 0; i < n * 2; i += 1) s += Math.floor(Math.random() * 16).toString(16); return s; } };
+  const MYPID = rndHex(6);                                               // случайный идентификатор этой вкладки (для заглушения/жалоб в сессии)
 
   // ------------------------------------------------------------------ Base64url + CRC16 + deflate
   const b64e = (u8) => {
@@ -183,100 +195,201 @@
     arr.slice().forEach((f) => { try { f(a, b); } catch (e) { console.warn('[net]', type, e); } });
   }
 
-  // ------------------------------------------------------------------ состояние соединения
-  // idle -> creating -> waiting-answer | answering -> connecting -> open <-> lost -> closed | failed
-  const S = {
-    state: 'idle', role: null, sid: '', pc: null, act: null, rel: null, seq: 0, lastN: {}, lastRx: 0, openAt: 0, rtt: 0, rttMin: 0,
-    polite: false, making: false, ignoreOffer: false, ready: false, pingT: 0, watchT: 0, connT: 0, restartT: 0, peer: null, tx: 0, rx: 0, txB: 0, rxB: 0,
-    rate: { t: 0, n: 0 }, info: null, intentional: false, offerCode: '', answerCode: ''
-  };
-  function setState(st, code) {
-    if (S.state === st && !code) return;
-    const prev = S.state;
-    S.state = st;
+  // ------------------------------------------------------------------ состояние сессии
+  // R.role: 'host' | 'guest' | null. R.links — подключённые (attached) соединения: у Хоста по одному на гостя, у гостя одно (к Хосту).
+  // Состояние сессии вычисляется из соединений: idle -> creating -> waiting-answer | answering -> connecting -> open <-> lost -> closed | failed
+  const R = { role: null, links: [], mySlot: 0, sticky: 'idle', stickyCode: null, players: [], rate: { t: 0, n: 0 }, hosting: false, speak: {} };
+  let state = 'idle';
+  const isOpen = () => state === 'open' || state === 'lost';
+  function computeState() {
+    const ls = R.links;
+    if (!R.role || !ls.length) return R.sticky;
+    if (R.role === 'guest') return ls[0].state;
+    if (ls.some((l) => l.state === 'open')) return 'open';
+    if (ls.some((l) => l.state === 'lost')) return 'lost';
+    for (const s of ['connecting', 'answering', 'waiting-answer', 'creating']) if (ls.some((l) => l.state === s)) return s;
+    return R.sticky;
+  }
+  function refreshState(code) {
+    const st = computeState();
+    if (st === state && !code) return;
+    const prev = state;
+    state = st;
     log('state ' + prev + ' -> ' + st + (code ? ' (' + code + ')' : ''));
     emit('net:state', { state: st, prev, code: code || null, text: code ? MSG[code] || '' : '' });
   }
-  const isOpen = () => S.state === 'open' || S.state === 'lost';
+  const openLinks = () => R.links.filter((l) => l.ready && l.state !== 'closed');
+  const slot = () => (R.role === 'host' ? 1 : R.role === 'guest' ? R.mySlot : 0);
+  const findSlot = (s) => R.links.find((l) => l.slot === s && l.ready) || null;
+  const hostLink = () => (R.role === 'guest' ? R.links[0] || null : null);
 
-  function newPC() {
-    const pc = new RTCPeerConnection({ iceServers: cfg.iceServers, bundlePolicy: 'max-bundle', iceCandidatePoolSize: 0 });
-    pc.addEventListener('connectionstatechange', () => onPcState(pc));
-    pc.addEventListener('iceconnectionstatechange', () => onPcState(pc));
-    pc.addEventListener('negotiationneeded', () => negotiate(pc));
-    pc.addEventListener('track', (e) => onTrack(pc, e));
-    return pc;
-  }
-  function mkChannels(pc) {
+  // ------------------------------------------------------------------ соединение (Link)
+  let linkSeq = 0;
+  function newLink(gameRole) {
+    const L = { id: ++linkSeq, gr: gameRole, slot: gameRole === 'guest' ? 1 : 0, state: 'creating', pc: null, act: null, rel: null, sid: '', polite: gameRole === 'guest', making: false,
+      ready: false, attached: false, lastN: {}, lastRx: 0, openAt: 0, rtt: 0, rttMin: 0, pingT: 0, watchT: 0, connT: 0, restartT: 0, intentional: false, peerBye: false,
+      rate: { t: 0, n: 0 }, peer: null, info: null, offerCode: '', answerCode: '', tx: 0, rx: 0, txB: 0, rxB: 0, chatGot: [], sender: null, remote: null, el: null, dest: null, rsrc: null,
+      mixIn: null, speaking: false, mutedRemote: true, blocked: false, capped: false, pid: '' };
+    const pc = L.pc = new RTCPeerConnection({ iceServers: cfg.iceServers, bundlePolicy: 'max-bundle', iceCandidatePoolSize: 0 });
+    pc.addEventListener('connectionstatechange', () => onPcState(L));
+    pc.addEventListener('iceconnectionstatechange', () => onPcState(L));
+    pc.addEventListener('negotiationneeded', () => negotiate(L));
+    pc.addEventListener('track', (e) => onTrack(L, e));
     const act = pc.createDataChannel('act', { negotiated: true, id: 1, ordered: false, maxRetransmits: 0 });
     const rel = pc.createDataChannel('rel', { negotiated: true, id: 2, ordered: true });
     [act, rel].forEach((ch) => {
-      ch.addEventListener('open', () => { if (S.pc === pc) checkOpen(); });
-      ch.addEventListener('close', () => { if (S.pc === pc) onChannelClose(); });
-      ch.addEventListener('message', (e) => { if (S.pc === pc) onMessage(e.data, ch === act); });
+      ch.addEventListener('open', () => checkOpen(L));
+      ch.addEventListener('close', () => onChannelClose(L));
+      ch.addEventListener('message', (e) => onMessage(L, e.data, ch === act));
     });
-    S.act = act; S.rel = rel;
+    L.act = act; L.rel = rel;
+    return L;
   }
-  function checkOpen() {
-    if (!S.act || !S.rel || S.act.readyState !== 'open' || S.rel.readyState !== 'open' || S.ready) return;
-    S.ready = true; S.openAt = Date.now(); S.lastRx = now();
-    clearTimeout(S.connT);
-    setState('open');
-    sendAction({ type: 'hello', info: localInfo() });
-    S.pingT = setInterval(pingTick, cfg.pingMs);
-    S.watchT = setInterval(watchTick, 1000);
-    pingTick();
-    emit('net:open', { role: S.role, slot: slot() });
+  function checkOpen(L) {
+    if (!L.act || !L.rel || L.act.readyState !== 'open' || L.rel.readyState !== 'open' || L.ready || L.state === 'closed') return;
+    L.ready = true; L.openAt = Date.now(); L.lastRx = now();
+    clearTimeout(L.connT);
+    if (L.attached) linkOpened(L);
   }
-  const slot = () => (S.role === 'host' ? 1 : S.role === 'guest' ? 2 : 0);
-  function onPcState(pc) {
-    if (S.pc !== pc) return;
+  function linkOpened(L) {
+    if (L.opened) return;
+    L.opened = true;
+    L.state = 'open';
+    if (R.role === 'host') { L.peerAt = Date.now(); }
+    L.pingT = setInterval(() => pingTick(L), cfg.pingMs);
+    L.watchT = setInterval(() => watchTick(L), 1000);
+    sendLink(L, { type: 'hello', info: localInfo() });
+    if (R.role === 'host') sendLink(L, { type: 'welcome', slot: L.slot, max: cfg.maxPlayers });
+    pingTick(L);
+    refreshState();
+    emit('net:open', { role: R.role, slot: slot(), link: L.slot });
+    if (R.role === 'host') hostSync();
+    if (R.role === 'host' && V.actx) hostMixSync();
+  }
+  function onPcState(L) {
+    if (L.state === 'closed') return;
+    const pc = L.pc; if (!pc) return;
     const cs = pc.connectionState || '', ic = pc.iceConnectionState || '';
     if (cs === 'failed' || ic === 'failed') {
-      if (S.ready) { if (S.role === 'host' && !S.restartT) tryRestart(); else if (!S.restartT) markLost(); }
-      // до открытия каналов 'failed' не окончателен: у гостя проверки ICE начинаются раньше, чем Хост вставит ответ; решает таймер соединения
+      if (L.ready) { if (L.gr === 'guest' ? false : !L.restartT) tryRestart(L); else if (!L.restartT) markLost(L); }
+      // до открытия каналов 'failed' не окончателен: решает таймер соединения
     } else if (cs === 'disconnected' || ic === 'disconnected') {
-      if (S.ready) { markLost(); if (S.role === 'host' && !S.restartT) S.restartT = setTimeout(tryRestart, 3500); }
-    } else if ((cs === 'connected' || ic === 'connected' || ic === 'completed') && S.ready && S.state === 'lost') {
-      clearTimeout(S.restartT); S.restartT = 0; S.lastRx = now(); setState('open');
-    } else if (cs === 'closed' && !S.intentional && S.state !== 'idle' && S.state !== 'closed') {
-      finishClose('CLOSED');
+      if (L.ready) { markLost(L); if (L.gr === 'host' && !L.restartT) L.restartT = setTimeout(() => tryRestart(L), 3500); }
+    } else if ((cs === 'connected' || ic === 'connected' || ic === 'completed') && L.ready && L.state === 'lost') {
+      clearTimeout(L.restartT); L.restartT = 0; L.lastRx = now(); L.state = 'open'; refreshState();
+    } else if (cs === 'closed' && !L.intentional && L.state !== 'closed') {
+      linkGone(L, 'CLOSED');
     }
   }
-  function markLost() { if (S.state === 'open') setState('lost', 'PEER_SILENT'); }
-  function tryRestart() {
-    S.restartT = 0;
-    const pc = S.pc; if (!pc || !S.ready || S.state === 'closed') return;
-    if (pc.connectionState === 'connected' && S.state === 'open') return;
+  function markLost(L) { if (L.state === 'open') { L.state = 'lost'; refreshState('PEER_SILENT'); } }
+  function tryRestart(L) {
+    L.restartT = 0;
+    const pc = L.pc; if (!pc || !L.ready || L.state === 'closed') return;
+    if (pc.connectionState === 'connected' && L.state === 'open') return;
     try { pc.restartIce(); log('ice restart'); } catch (e) { /* старый браузер */ }
-    setTimeout(() => { if (S.pc === pc && S.state === 'lost' && (pc.connectionState === 'failed' || pc.iceConnectionState === 'failed')) finishClose('ICE_FAILED'); }, 12000);
+    setTimeout(() => { if (L.pc === pc && L.state === 'lost' && (pc.connectionState === 'failed' || pc.iceConnectionState === 'failed')) linkGone(L, 'ICE_FAILED'); }, 12000);
   }
-  function onChannelClose() {
-    if (!S.ready || S.intentional || S.state === 'closed') return;
-    setTimeout(() => { if (S.ready && S.rel && S.rel.readyState !== 'open' && S.state !== 'closed' && !S.intentional) finishClose(S.peerBye ? 'PEER_LEFT' : 'CLOSED'); }, 1500);
+  function onChannelClose(L) {
+    if (!L.ready || L.intentional || L.state === 'closed') return;
+    setTimeout(() => { if (L.ready && L.rel && L.rel.readyState !== 'open' && L.state !== 'closed' && !L.intentional) linkGone(L, L.peerBye ? 'PEER_LEFT' : 'CLOSED'); }, 1500);
   }
-  function fail(code) {
-    cleanup();
-    setState('failed', code);
-    emit('net:error', { code, text: MSG[code] || '' });
-  }
-  function finishClose(code) {
-    cleanup();
-    setState('closed', code);
-    emit('net:close', { code, text: MSG[code] || '' });
-  }
-  function cleanup() {
-    clearInterval(S.pingT); clearInterval(S.watchT); clearTimeout(S.connT); clearTimeout(S.restartT);
-    S.pingT = S.watchT = S.connT = S.restartT = 0;
-    voiceStop();
-    const pc = S.pc;
-    S.pc = null;
+  // уничтожить соединение (ресурсы), без событий
+  function destroyLink(L) {
+    L.intentional = true;
+    clearInterval(L.pingT); clearInterval(L.watchT); clearTimeout(L.connT); clearTimeout(L.restartT);
+    L.pingT = L.watchT = L.connT = L.restartT = 0;
+    voiceLinkStop(L);
+    const pc = L.pc; L.pc = null;
     if (pc) { try { pc.close(); } catch (e) { /* уже закрыто */ } }
-    [S.act, S.rel].forEach((ch) => { try { ch && ch.close(); } catch (e) { /* уже закрыто */ } });
-    S.act = S.rel = null; S.ready = false; S.making = false; S.lastN = {}; S.rtt = 0;
+    [L.act, L.rel].forEach((ch) => { try { ch && ch.close(); } catch (e) { /* уже закрыто */ } });
+    L.act = L.rel = null; L.ready = false; L.making = false; L.lastN = {}; L.state = 'closed';
+  }
+  // соединение пропало (штатно или нет)
+  function linkGone(L, code) {
+    if (L.state === 'closed' && !L.attached) return;
+    const was = L.attached, wasOpen = L.opened;
+    destroyLink(L);
+    if (!was) return;
+    const i = R.links.indexOf(L); if (i >= 0) R.links.splice(i, 1);
+    L.attached = false;
+    if (R.role === 'guest') {
+      R.sticky = 'closed'; R.players = []; R.mySlot = 0;
+      voiceStop();
+      refreshState(code);
+      emit('net:close', { code, text: MSG[code] || '' });
+    } else {
+      if (wasOpen) { emit('net:left', { slot: L.slot, name: L.peer ? L.peer.name : 'PLAYER', pid: L.pid, code }); hostSync(); if (V.actx) hostMixSync(); }
+      if (!R.links.length) { R.sticky = wasOpen ? 'closed' : 'failed'; refreshState(wasOpen ? code : code); if (wasOpen) emit('net:close', { code, text: MSG[code] || '' }); else emit('net:error', { code, text: MSG[code] || '' }); voiceStop(); }
+      else refreshState();
+    }
+  }
+  function fail(L, code) {
+    const was = L.attached;
+    destroyLink(L);
+    const i = R.links.indexOf(L); if (i >= 0) R.links.splice(i, 1);
+    L.attached = false;
+    if (!was) return;
+    if (!R.links.length || R.role === 'guest') { voiceStop(); R.sticky = 'failed'; R.stickyCode = code; refreshState(code); emit('net:error', { code, text: MSG[code] || '' }); }
+    else { refreshState(); emit('net:linkfail', { code }); }
   }
 
-  // ------------------------------------------------------------------ рукопожатие вручную
+  // ------------------------------------------------------------------ комната: роли, слоты, список игроков
+  function allocSlot() {
+    for (let s = 2; s <= cfg.maxPlayers; s += 1) if (!R.links.some((l) => l.slot === s)) return s;
+    return 0;
+  }
+  // присоединить соединение к сессии (Хост: выдать слот; гость: единственное соединение с Хостом)
+  function attach(L) {
+    if (!L || L.attached) return !!L;
+    if (L.gr === 'host') {
+      if (R.role !== 'host') { closeAll(true); R.role = 'host'; R.mySlot = 1; }
+      const s = allocSlot(); if (!s) return false;
+      L.slot = s;
+    } else {
+      if (R.role === 'guest' && R.links.length) return false;
+      if (R.role !== 'guest') { closeAll(true); R.role = 'guest'; }
+      L.slot = 1; R.mySlot = 0;
+    }
+    L.attached = true; R.links.push(L); R.sticky = 'idle';
+    if (L.ready) linkOpened(L);
+    return true;
+  }
+  function begin(role) {
+    if (role === 'host') { if (R.role !== 'host') { closeAll(true); R.role = 'host'; R.mySlot = 1; R.sticky = 'idle'; } }
+    else { closeAll(true); R.role = 'guest'; R.mySlot = 0; R.sticky = 'idle'; }
+  }
+  const infoOf = (L) => (L && L.peer ? { slot: L.slot, name: L.peer.name, color: L.peer.color, level: L.peer.level, v: L.peer.v, lang: L.peer.lang, pid: L.pid } : null);
+  function others() {
+    if (R.role === 'host') return R.links.filter((l) => l.opened && l.peer).sort((a, b) => a.slot - b.slot).map(infoOf);
+    if (R.role === 'guest') return R.players.filter((p) => p.slot !== R.mySlot).map((p) => Object.assign({}, p));
+    return [];
+  }
+  // Хост: пересобрать список игроков и разослать всем гостям
+  function hostSync() {
+    if (R.role !== 'host') return;
+    const me = localInfo(), list = [{ s: 1, name: me.name, color: me.color, level: me.level, pid: MYPID, lang: me.lang, v: VERSION }];
+    R.links.filter((l) => l.opened && l.peer).sort((a, b) => a.slot - b.slot).forEach((l) => list.push({ s: l.slot, name: l.peer.name, color: l.peer.color, level: l.peer.level, pid: l.pid, lang: l.peer.lang, v: l.peer.v }));
+    R.players = list.map((p) => ({ slot: p.s, name: p.name, color: p.color, level: p.level, pid: p.pid, lang: p.lang, v: p.v }));
+    sendAction({ type: 'roster', players: list });
+    emit('net:roster', others());
+  }
+  function onRoster(p) {
+    if (!Array.isArray(p.players)) return;
+    const out = [];
+    p.players.slice(0, cfg.maxPlayers + 1).forEach((q) => {
+      if (!q || typeof q !== 'object') return;
+      const s = q.s | 0; if (s < 1 || s > cfg.maxPlayers || out.some((o) => o.slot === s)) return;
+      out.push({ slot: s, name: cleanName(q.name, 'PLAYER ' + s), color: cleanColor(q.color), level: Math.max(1, Math.min(999, q.level | 0 || 1)), pid: cleanPid(q.pid), lang: String(q.lang || '').slice(0, 2), v: q.v | 0 });
+    });
+    const before = R.players.map((q) => q.slot).join();
+    R.players = out;
+    const hl = R.links[0]; if (hl) { const h = out.find((q) => q.slot === 1); if (h) hl.peer = { name: h.name, color: h.color, level: h.level, v: h.v, lang: h.lang }; }
+    out.forEach((q) => applyBlock(q));
+    emit('net:roster', others());
+    if (before !== out.map((q) => q.slot).join()) emit('net:peers', others());
+  }
+
+  // ------------------------------------------------------------------ рукопожатие: низкоуровневые операции (используют и ручной режим, и js/rendezvous.js)
   function gather(pc, t0) {
     return new Promise((resolve) => {
       let done = false, t = 0;
@@ -289,7 +402,7 @@
       const chk = () => { if (pc.iceGatheringState === 'complete') fin(false); };
       const onc = (e) => { if (!e.candidate) fin(false); };
       pc.addEventListener('icegatheringstatechange', chk); pc.addEventListener('icecandidate', onc);
-      t = setTimeout(() => fin(true), Math.max(0, cfg.forceMs - (Date.now() - t0)));   // страховка 2.5 с (от начала создания кода): затянувшийся сбор ICE не должен блокировать выдачу
+      t = setTimeout(() => fin(true), Math.max(0, cfg.forceMs - (Date.now() - t0)));   // страховка 2.5 с (от начала создания): затянувшийся сбор ICE не должен блокировать выдачу
       chk();
     });
   }
@@ -298,70 +411,94 @@
     try { base = location.origin && location.origin !== 'null' ? location.origin + location.pathname : String(location.href).split(/[?#]/)[0]; } catch (e) { base = ''; }
     return base ? base + '?join=' + code : code;
   }
-  function begin(role) {
-    close(true);
-    S.role = role; S.polite = role === 'guest'; S.intentional = false; S.peerBye = false; S.info = null; S.peer = null; S.seq = 0;
-    S.pc = newPC(); mkChannels(S.pc);
-    return S.pc;
+  function armConnectTimer(L, ms) {
+    clearTimeout(L.connT);
+    L.connT = setTimeout(() => { if (!L.ready && (L.state === 'answering' || L.state === 'connecting')) fail(L, 'CONNECT_TIMEOUT'); }, ms);
   }
-  function armConnectTimer(ms) {
-    clearTimeout(S.connT);
-    S.connT = setTimeout(() => { if (!S.ready && (S.state === 'answering' || S.state === 'connecting')) fail('CONNECT_TIMEOUT'); }, ms);
-  }
-
-  async function createOffer() {
-    if (typeof RTCPeerConnection !== 'function') { setState('failed', 'UNSUPPORTED'); return { ok: false, err: 'UNSUPPORTED' }; }
-    const pc = begin('host');
-    S.sid = Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
-    setState('creating');
-    const t0 = Date.now();
+  // свободное (не присоединённое) соединение-оферент: SDP с полным набором кандидатов (для трекера). Возвращает {link, sdp, forced}
+  async function newOffer(gameRole) {
+    const L = newLink(gameRole), t0 = Date.now();
     try {
-      await pc.setLocalDescription(await pc.createOffer());
-      const g = await gather(pc, t0);
-      if (S.pc !== pc) return { ok: false, err: 'CLOSED' };
-      const sh = shrinkSdp(g.sdp);
-      const code = await packCode('O', { s: S.sid, d: sh.sdp });
-      S.offerCode = code; S.info = { forced: g.forced, onlyLocal: sh.onlyLocal, cands: sh.cands };
-      setState('waiting-answer', g.forced ? 'GATHER_FORCED' : (sh.onlyLocal ? 'NO_PUBLIC' : null));
-      return { ok: true, code, link: linkFor(code), forced: g.forced, onlyLocal: sh.onlyLocal, chars: code.length };
-    } catch (e) { log('offer error ' + (e && e.name)); fail('ICE_FAILED'); return { ok: false, err: 'ICE_FAILED' }; }
+      await L.pc.setLocalDescription(await L.pc.createOffer());
+      const g = await gather(L.pc, t0);
+      return { link: L, sdp: g.sdp, forced: g.forced };
+    } catch (e) { destroyLink(L); return null; }
   }
+  async function newAnswer(gameRole, offerSdp) {
+    const L = newLink(gameRole), t0 = Date.now();
+    try {
+      await L.pc.setRemoteDescription({ type: 'offer', sdp: offerSdp });
+      await L.pc.setLocalDescription(await L.pc.createAnswer());
+      const g = await gather(L.pc, t0);
+      L.state = 'answering';
+      return { link: L, sdp: g.sdp, forced: g.forced };
+    } catch (e) { destroyLink(L); return null; }
+  }
+  async function applyAnswer(L, sdp) {
+    try { await L.pc.setRemoteDescription({ type: 'answer', sdp }); return true; } catch (e) { return false; }
+  }
+  function startConnecting(L, ms) { if (L.state !== 'closed') { L.state = 'connecting'; refreshState(); armConnectTimer(L, ms || cfg.connectMs); } }
+  function dropLink(L) { if (!L) return; if (L.attached) { const i = R.links.indexOf(L); if (i >= 0) R.links.splice(i, 1); L.attached = false; } destroyLink(L); refreshState(); }
 
+  // ---- ручной режим (запасной, всегда доступен): ссылка ?join=NX1O…, ответ NX1A…
+  let manual = null;   // ожидающее приглашение Хоста
+  async function createOffer() {
+    if (typeof RTCPeerConnection !== 'function') { R.sticky = 'failed'; refreshState('UNSUPPORTED'); return { ok: false, err: 'UNSUPPORTED' }; }
+    if (manual) { dropLink(manual); manual = null; }
+    begin('host');
+    const L = newLink('host'), t0 = Date.now();
+    L.sid = Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
+    L.state = 'creating'; manual = L;
+    if (!attach(L)) { dropLink(L); manual = null; return { ok: false, err: 'ROOM_FULL' }; }
+    refreshState();
+    try {
+      await L.pc.setLocalDescription(await L.pc.createOffer());
+      const g = await gather(L.pc, t0);
+      if (manual !== L || L.state === 'closed') return { ok: false, err: 'CLOSED' };
+      const sh = shrinkSdp(g.sdp);
+      const code = await packCode('O', { s: L.sid, d: sh.sdp });
+      L.offerCode = code; L.info = { forced: g.forced, onlyLocal: sh.onlyLocal, cands: sh.cands };
+      L.state = 'waiting-answer'; refreshState(g.forced ? 'GATHER_FORCED' : (sh.onlyLocal ? 'NO_PUBLIC' : null));
+      return { ok: true, code, link: linkFor(code), forced: g.forced, onlyLocal: sh.onlyLocal, chars: code.length };
+    } catch (e) { log('offer error ' + (e && e.name)); fail(L, 'ICE_FAILED'); manual = null; return { ok: false, err: 'ICE_FAILED' }; }
+  }
   async function acceptAnswer(text) {
     const p = await parseInput(text);
     if (!p.ok) return p;
     if (p.kind !== 'A') return { ok: false, err: 'WRONG_KIND_A' };
-    if (S.role !== 'host' || !S.pc || S.state !== 'waiting-answer') return { ok: false, err: 'NOT_WAITING' };
-    if (p.sid !== S.sid) return { ok: false, err: 'WRONG_SESSION' };
+    const L = manual;
+    if (R.role !== 'host' || !L || !L.pc || L.state !== 'waiting-answer') return { ok: false, err: 'NOT_WAITING' };
+    if (p.sid !== L.sid) return { ok: false, err: 'WRONG_SESSION' };
     try {
-      await S.pc.setRemoteDescription({ type: 'answer', sdp: p.sdp });
-      setState('connecting'); armConnectTimer(cfg.connectMs);
+      await L.pc.setRemoteDescription({ type: 'answer', sdp: p.sdp });
+      manual = null;
+      startConnecting(L);
       return { ok: true };
     } catch (e) { log('answer error ' + (e && e.name)); return { ok: false, err: 'BAD_DATA' }; }
   }
-
   async function createAnswer(text) {
-    if (typeof RTCPeerConnection !== 'function') { setState('failed', 'UNSUPPORTED'); return { ok: false, err: 'UNSUPPORTED' }; }
+    if (typeof RTCPeerConnection !== 'function') { R.sticky = 'failed'; refreshState('UNSUPPORTED'); return { ok: false, err: 'UNSUPPORTED' }; }
     const p = await parseInput(text);
     if (!p.ok) return p;
     if (p.kind !== 'O') return { ok: false, err: 'WRONG_KIND_O' };
-    const pc = begin('guest');
-    S.sid = p.sid;
-    setState('answering');
-    const t0 = Date.now();
+    manual = null;
+    begin('guest');
+    const L = newLink('guest'), t0 = Date.now();
+    L.sid = p.sid; L.state = 'answering';
+    attach(L); refreshState();
     try {
-      await pc.setRemoteDescription({ type: 'offer', sdp: p.sdp });
-      await pc.setLocalDescription(await pc.createAnswer());
-      const g = await gather(pc, t0);
-      if (S.pc !== pc) return { ok: false, err: 'CLOSED' };
+      await L.pc.setRemoteDescription({ type: 'offer', sdp: p.sdp });
+      await L.pc.setLocalDescription(await L.pc.createAnswer());
+      const g = await gather(L.pc, t0);
+      if (L.state === 'closed') return { ok: false, err: 'CLOSED' };
       const sh = shrinkSdp(g.sdp);
-      const code = await packCode('A', { s: S.sid, d: sh.sdp });
-      S.answerCode = code; S.info = { forced: g.forced, onlyLocal: sh.onlyLocal, cands: sh.cands };
-      armConnectTimer(cfg.guestWaitMs);
+      const code = await packCode('A', { s: L.sid, d: sh.sdp });
+      L.answerCode = code; L.info = { forced: g.forced, onlyLocal: sh.onlyLocal, cands: sh.cands };
+      armConnectTimer(L, cfg.guestWaitMs);
       emit('net:answer', { code });
       if (g.forced) log('answer: gather forced');
       return { ok: true, code, forced: g.forced, onlyLocal: sh.onlyLocal, chars: code.length };
-    } catch (e) { log('answer gen error ' + (e && e.name)); fail('BAD_DATA'); return { ok: false, err: 'BAD_DATA' }; }
+    } catch (e) { log('answer gen error ' + (e && e.name)); fail(L, 'BAD_DATA'); return { ok: false, err: 'BAD_DATA' }; }
   }
 
   // код из адресной строки: ?join=… или #join=… (в iframe itch.io чтение может быть запрещено — тогда остаётся ручная вставка)
@@ -386,26 +523,25 @@
     } catch (e) { /* адресная строка недоступна */ }
   }
 
-  // ------------------------------------------------------------------ перегооворы по каналу 'rel' (голос, перезапуск ICE): «perfect negotiation»
-  async function negotiate(pc) {
-    if (S.pc !== pc || !S.ready || S.making) return;
+  // ------------------------------------------------------------------ переговоры по каналу 'rel' (голос, перезапуск ICE): «perfect negotiation»
+  async function negotiate(L) {
+    if (!L.pc || !L.ready || L.making) return;
     try {
-      S.making = true;
-      await pc.setLocalDescription();
-      sendAction({ type: 'sdp', desc: { type: pc.localDescription.type, sdp: pc.localDescription.sdp } });
-    } catch (e) { log('negotiate error ' + (e && e.name)); } finally { S.making = false; }
+      L.making = true;
+      await L.pc.setLocalDescription();
+      sendLink(L, { type: 'sdp', desc: { type: L.pc.localDescription.type, sdp: L.pc.localDescription.sdp } });
+    } catch (e) { log('negotiate error ' + (e && e.name)); } finally { L.making = false; }
   }
-  async function onSdp(p) {
-    const pc = S.pc, d = p && p.desc;
+  async function onSdp(L, p) {
+    const pc = L.pc, d = p && p.desc;
     if (!pc || !d || (d.type !== 'offer' && d.type !== 'answer') || typeof d.sdp !== 'string') return;
     try {
-      const collision = d.type === 'offer' && (S.making || pc.signalingState !== 'stable');
-      S.ignoreOffer = !S.polite && collision;
-      if (S.ignoreOffer) return;
+      const collision = d.type === 'offer' && (L.making || pc.signalingState !== 'stable');
+      if (!L.polite && collision) return;
       await pc.setRemoteDescription({ type: d.type, sdp: d.sdp });
       if (d.type === 'offer') {
         await pc.setLocalDescription();
-        sendAction({ type: 'sdp', desc: { type: pc.localDescription.type, sdp: pc.localDescription.sdp } });
+        sendLink(L, { type: 'sdp', desc: { type: pc.localDescription.type, sdp: pc.localDescription.sdp } });
       }
     } catch (e) { log('sdp error ' + (e && e.name)); }
   }
@@ -415,60 +551,122 @@
     let i = null;
     try { i = window.NexaProfile && NexaProfile.publicInfo ? NexaProfile.publicInfo() : null; } catch (e) { i = null; }
     i = i || { name: 'PLAYER', color: '#ff3b30', level: 1 };
-    return { name: cleanName(i.name), color: cleanColor(i.color), level: Math.max(1, Math.min(999, i.level | 0 || 1)), v: VERSION, lang: (window.I18N && I18N.lang) || 'en' };
+    return { name: cleanName(i.name), color: cleanColor(i.color), level: Math.max(1, Math.min(999, i.level | 0 || 1)), v: VERSION, lang: (window.I18N && I18N.lang) || 'en', pid: MYPID };
   }
-  // единая точка отправки: {type, n (номер), ts (время), ...поля}. Быстрые типы идут по 'act' (без повторов), остальные — по 'rel'.
-  function sendAction(data, opts) {
-    if (!data || typeof data.type !== 'string') return false;
-    const fast = opts && opts.fast !== undefined ? !!opts.fast : !!FAST[data.type];
-    const ch = fast ? S.act : S.rel;
+  // отправка в одно соединение; вернёт true, если ушло. Быстрые типы идут по 'act' (без повторов; при забитом буфере свежее важнее старого), остальные — по 'rel'
+  function sendLink(L, data, fastOpt, raw) {
+    const fast = fastOpt !== undefined ? !!fastOpt : !!FAST[data.type];
+    const ch = fast ? L.act : L.rel;
     if (!ch || ch.readyState !== 'open') return false;
-    if (fast && ch.bufferedAmount > 64 * 1024) return false;   // канал забит: свежее состояние важнее старого
-    const pkt = Object.assign({}, data);
-    pkt.n = ++S.seq; pkt.ts = Date.now();
-    let s;
-    try { s = JSON.stringify(pkt); ch.send(s); } catch (e) { return false; }
-    S.tx += 1; S.txB += s.length;
+    if (fast && ch.bufferedAmount > 64 * 1024) return false;
+    let s = raw;
+    if (!s) { const pkt = Object.assign({}, data); pkt.n = ++seq; pkt.ts = Date.now(); try { s = JSON.stringify(pkt); } catch (e) { return false; } }
+    try { ch.send(s); } catch (e) { return false; }
+    L.tx += 1; L.txB += s.length;
     return true;
   }
-  function onMessage(raw, fast) {
+  let seq = 0;
+  // единая точка отправки: {type, n, ts, ...поля}. Хост — всем гостям (или opts.to = слот), гость — Хосту (DIRECT-пакеты уходят адресату через Хоста)
+  function sendAction(data, opts) {
+    if (!data || typeof data.type !== 'string') return false;
+    const fast = opts && opts.fast !== undefined ? !!opts.fast : undefined;
+    let ok = false;
+    if (R.role === 'host') {
+      const to = opts && opts.to;
+      R.links.forEach((l) => { if (l.ready && l.opened && (!to || l.slot === to)) { if (sendLink(l, data, fast)) ok = true; } });
+    } else if (R.role === 'guest') {
+      const l = R.links[0];
+      if (l && l.ready && l.opened) { const d = opts && opts.to ? Object.assign({}, data, { to: opts.to | 0 }) : data; ok = sendLink(l, d, fast); }
+    }
+    return ok;
+  }
+  function onMessage(L, raw, fast) {
     if (typeof raw !== 'string' || raw.length > (fast ? MAX_ACT : MAX_REL)) return;
     const t = now();
-    if (t - S.rate.t > 1000) { S.rate.t = t; S.rate.n = 0; }
-    if (++S.rate.n > 400) return;                              // защита от залпа пакетов от чужого клиента
+    if (t - L.rate.t > 1000) { L.rate.t = t; L.rate.n = 0; }
+    if (++L.rate.n > 400) return;                              // защита от залпа пакетов от чужого клиента
     let p;
     try { p = JSON.parse(raw); } catch (e) { return; }
     if (!p || typeof p.type !== 'string' || p.type.length > 24 || typeof p.n !== 'number') return;
-    if (fast) { if (p.n <= (S.lastN[p.type] || 0)) return; S.lastN[p.type] = p.n; }
-    S.lastRx = t; S.rx += 1; S.rxB += raw.length;
-    if (S.state === 'lost') setState('open');
+    // от гостя поле from не доверяем: ставим слот соединения; от Хоста from — слот реального отправителя (ретрансляция) или 1
+    if (L.gr === 'host') p.from = L.slot; else p.from = (p.from | 0) >= 1 && (p.from | 0) <= cfg.maxPlayers ? p.from | 0 : 1;
+    if (fast) { const k = p.type + ':' + p.from; if (p.n <= (L.lastN[k] || 0)) return; L.lastN[k] = p.n; }
+    L.lastRx = t; L.rx += 1; L.rxB += raw.length;
+    if (L.state === 'lost') { L.state = 'open'; refreshState(); }
     switch (p.type) {
-      case 'ping': sendAction({ type: 'pong', t: p.t }); return;
-      case 'pong': if (typeof p.t === 'number') { const r = Math.max(0, now() - p.t); S.rtt = S.rtt ? S.rtt * 0.7 + r * 0.3 : r; S.rttMin = S.rttMin ? Math.min(S.rttMin, r) : r; emit('net:rtt', Math.round(S.rtt)); } return;
-      case 'sdp': onSdp(p); return;
-      case 'bye': S.peerBye = true; finishClose('PEER_LEFT'); return;
-      case 'hello': onHello(p); return;
-      case 'chat': onChat(p); return;
-      case 'vox': remoteSpeaking(!!p.on, !!p.muted); return;
-      default: emit(p.type, p);
+      case 'ping': sendLink(L, { type: 'pong', t: p.t }); return;
+      case 'pong': if (typeof p.t === 'number') { const r = Math.max(0, now() - p.t); L.rtt = L.rtt ? L.rtt * 0.7 + r * 0.3 : r; L.rttMin = L.rttMin ? Math.min(L.rttMin, r) : r; emit('net:rtt', Math.round(rttMain())); } return;
+      case 'sdp': onSdp(L, p); return;
+      case 'bye': L.peerBye = true; linkGone(L, 'PEER_LEFT'); return;
+      case 'hello': onHello(L, p); return;
+      case 'welcome': if (L.gr === 'guest') { R.mySlot = Math.max(2, Math.min(cfg.maxPlayers, p.slot | 0 || 2)); emit('net:welcome', { slot: R.mySlot }); } return;
+      case 'roster': if (L.gr === 'guest') onRoster(p); return;
+      case 'vcap': if (L.gr === 'guest') { voiceDisable(); V.err = 'VOICE_FULL'; voiceEvt(); } return;
+      case 'chat': onChat(L, p); return;
+      case 'vox': R.speak[p.from] = !!p.on && !p.muted; voiceEvt(); if (L.gr === 'host') relayOthers(L, p, raw, false); return;
+      default: break;
+    }
+    if (L.gr === 'host') {                                      // Хост принимает от гостя
+      if (RELAY[p.type]) { relayOthers(L, p, null, fast); emit(p.type, p); return; }
+      if (DIRECT[p.type] && (p.to | 0) > 1) { const dst = findSlot(p.to | 0); if (dst) { const q = Object.assign({}, p); delete q.to; sendLink(dst, q, undefined); } return; }
+      emit(p.type, p);
+    } else {
+      if (DIRECT[p.type] && (p.to | 0) > 0 && (p.to | 0) !== R.mySlot) return;
+      emit(p.type, p);
     }
   }
-  function onHello(p) {
-    const i = p.info || {};
-    S.peer = { name: cleanName(i.name, 'PLAYER 2'), color: cleanColor(i.color), level: Math.max(1, Math.min(999, i.level | 0 || 1)), v: i.v | 0, lang: String(i.lang || '').slice(0, 2) };
-    chatSys(S.role === 'host' ? 'FRIEND_JOINED' : 'HOST_READY', S.peer.name);
-    emit('net:peer', S.peer);
+  // Хост: переслать пакет гостя остальным гостям (с проставленным from)
+  function relayOthers(from, p, raw, fast) {
+    const q = Object.assign({}, p); q.from = from.slot;
+    const s = JSON.stringify(q);
+    R.links.forEach((l) => { if (l !== from && l.opened && l.ready) sendLink(l, q, fast === undefined ? !!FAST[p.type] : !!fast, s); });
   }
-  function pingTick() { sendAction({ type: 'ping', t: now() }); }
-  function watchTick() {
-    if (!S.ready) return;
-    if (now() - S.lastRx > cfg.silentMs) markLost();
-    if (S.openAt) emit('net:tick', { up: Math.round((Date.now() - S.openAt) / 1000) });
+  function rttMain() {
+    if (R.role === 'guest') return R.links[0] ? R.links[0].rtt : 0;
+    let m = 0; R.links.forEach((l) => { if (l.rtt > m) m = l.rtt; });
+    return m;
+  }
+  function onHello(L, p) {
+    const i = p.info || {};
+    L.peer = { name: cleanName(i.name, L.gr === 'host' ? 'PLAYER ' + L.slot : 'HOST'), color: cleanColor(i.color), level: Math.max(1, Math.min(999, i.level | 0 || 1)), v: i.v | 0, lang: String(i.lang || '').slice(0, 2) };
+    const first = !L.helloGot; L.helloGot = true;
+    L.pid = cleanPid(i.pid);
+    applyBlock({ name: L.peer.name, pid: L.pid, slot: L.slot });
+    if (first) chatSys(R.role === 'host' ? 'FRIEND_JOINED' : 'HOST_READY', L.peer.name);
+    if (R.role === 'host') hostSync();
+    else if (!R.players.some((q) => q.slot === 1)) R.players.push({ slot: 1, name: L.peer.name, color: L.peer.color, level: L.peer.level, pid: L.pid, lang: L.peer.lang, v: L.peer.v });
+    else { const h = R.players.find((q) => q.slot === 1); Object.assign(h, { name: L.peer.name, color: L.peer.color, level: L.peer.level, pid: L.pid }); }
+    emit('net:peer', Object.assign({ slot: L.slot, pid: L.pid }, L.peer));
+  }
+  function pingTick(L) { sendLink(L, { type: 'ping', t: now() }); }
+  function watchTick(L) {
+    if (!L.ready) return;
+    if (now() - L.lastRx > cfg.silentMs) markLost(L);
+    if (L.openAt && L === (R.links[0] || L)) emit('net:tick', { up: Math.round((Date.now() - L.openAt) / 1000) });
   }
 
+  // ------------------------------------------------------------------ заглушение и жалобы (локально): незнакомые игроки
+  const muted = {};                                              // pid -> true (сессия)
+  const blockedNames = (function () { try { return JSON.parse(lsGet('nexaBlocked') || '[]').filter((x) => typeof x === 'string').slice(0, 200); } catch (e) { return []; } }());
+  function applyBlock(q) { if (!q) return; if (q.name && blockedNames.indexOf(String(q.name).toLowerCase()) >= 0 && q.pid) muted[q.pid] = true; }
+  function pidOfSlot(s) { if (R.role === 'host') { const l = findSlot(s); return l ? l.pid : ''; } const q = R.players.find((x) => x.slot === s); return q ? q.pid : ''; }
+  function setMuted(s, on) { const pid = pidOfSlot(s); if (!pid) return false; if (on) muted[pid] = true; else delete muted[pid]; voiceApplyMute(); emit('net:mute', { slot: s, on: !!on }); return true; }
+  const isMuted = (s) => { const pid = pidOfSlot(s); return !!(pid && muted[pid]); };
+  function report(s, name) {          // «пожаловаться»: локально скрыть и заблокировать (имя запоминается в браузере)
+    const q = others().find((x) => x.slot === s); const n = String(name || (q && q.name) || '').toLowerCase();
+    setMuted(s, true);
+    if (n && blockedNames.indexOf(n) < 0) { blockedNames.push(n); lsSet('nexaBlocked', JSON.stringify(blockedNames.slice(-200))); }
+    return true;
+  }
+  const isBlockedName = (n) => blockedNames.indexOf(String(n || '').toLowerCase()) >= 0;
+  function kick(s) { const l = findSlot(s); if (R.role === 'host' && l) { sendLink(l, { type: 'bye' }); linkGone(l, 'PEER_LEFT'); } }
+
   // ------------------------------------------------------------------ текстовый чат
-  const chat = { history: [], seen: 0, sent: [], got: [] };
-  function pushChat(m) { chat.history.push(m); if (chat.history.length > 120) chat.history.shift(); emit('net:chat', m); return m; }
+  const chat = { history: [], seen: 0, sent: [] };
+  function pushChat(m) {
+    if (m.from === 'peer' && m.slot && isMuted(m.slot)) return null;     // заглушённый игрок: сообщения скрыты
+    chat.history.push(m); if (chat.history.length > 120) chat.history.shift(); emit('net:chat', m); return m;
+  }
   function chatSys(key, name) { return pushChat({ id: 's' + Date.now() + Math.random(), from: 'sys', key, name: name || '', text: '', ts: Date.now() }); }
   function chatSend(text) {
     const t = cleanChat(text);
@@ -480,26 +678,33 @@
     if (!sendAction({ type: 'chat', text: t })) return { ok: false, err: 'CHAT_OFFLINE' };
     chat.sent.push(n);
     const me = localInfo();
-    pushChat({ id: 'm' + n + Math.random(), from: 'me', name: me.name, color: me.color, text: t, ts: n });
+    pushChat({ id: 'm' + n + Math.random(), from: 'me', name: me.name, color: me.color, text: t, ts: n, slot: slot() });
     try { window.NexaProfile && NexaProfile.count('msgSent'); } catch (e) { /* профиль не обязателен */ }
     return { ok: true, text: t };
   }
-  function onChat(p) {
+  function onChat(L, p) {
     const t = cleanChat(p.text), n = Date.now();
     if (!t) return;
-    chat.got = chat.got.filter((x) => n - x < 10000);
-    if (chat.got.length >= 10) return;                         // антифлуд на приёме
-    chat.got.push(n);
-    const pr = S.peer || { name: 'PLAYER 2', color: '#ffffff' };
-    pushChat({ id: 'p' + n + Math.random(), from: 'peer', name: pr.name, color: pr.color, text: t, ts: n });
+    L.chatGot = L.chatGot.filter((x) => n - x < 10000);
+    if (L.chatGot.length >= 10) return;                        // антифлуд на приёме (на каждого отправителя)
+    L.chatGot.push(n);
+    let who;
+    if (L.gr === 'host') who = L.peer || { name: 'PLAYER ' + L.slot, color: '#ffffff' };
+    else { if (p.from === R.mySlot) return; who = R.players.find((q) => q.slot === p.from) || L.peer || { name: 'PLAYER', color: '#ffffff' }; }
+    const msg = pushChat({ id: 'p' + n + Math.random(), from: 'peer', name: who.name, color: who.color, text: t, ts: n, slot: p.from });
+    if (!msg) return;
+    if (L.gr === 'host') relayOthers(L, { type: 'chat', text: t, n: p.n }, null, false);   // Хост: показать остальным гостям (санитайзинг уже сделан)
     try { window.NexaProfile && NexaProfile.count('msgGot'); } catch (e) { /* профиль не обязателен */ }
   }
 
-  // ------------------------------------------------------------------ голос (микрофон -> addTrack, приём -> <audio>)
-  const V = { mic: false, muted: false, volume: 1, speaking: false, peerSpeaking: false, peerMuted: false, blocked: false, err: null, stream: null, track: null, sender: null,
-    actx: null, an: null, buf: null, remote: null, el: null, meterT: 0, level: 0, remoteSrc: null, loud: 0, quiet: 0 };
+  // ------------------------------------------------------------------ голос (микрофон -> addTrack, приём -> <audio>; Хост сводит голоса «микс минус сам»)
+  const V = { mic: false, muted: false, volume: 1, speaking: false, blocked: false, err: null, stream: null, track: null, actx: null, an: null, buf: null, meterT: 0, level: 0, micSrc: null, loud: 0, quiet: 0, inOn: true };
   function voiceEvt() { emit('net:voice', voiceState()); }
-  function voiceState() { return { mic: V.mic, muted: V.muted, volume: V.volume, speaking: V.speaking, peerSpeaking: V.peerSpeaking, peerMuted: V.peerMuted, hasRemote: !!V.remote, blocked: V.blocked, err: V.err, level: V.level }; }
+  function voiceState() {
+    const ls = R.links.filter((l) => l.opened), ps = Object.keys(R.speak).some((k) => R.speak[k] && !isMuted(k | 0));
+    return { mic: V.mic, muted: V.muted, volume: V.volume, speaking: V.speaking, peerSpeaking: ps, peerMuted: !ps,
+      hasRemote: ls.some((l) => !!l.remote), blocked: V.blocked, err: V.err, level: V.level, max: MAX_VOICE };
+  }
   function audioCtx() {
     if (V.actx) return V.actx;
     const AC = window.AudioContext || window.webkitAudioContext;
@@ -523,7 +728,7 @@
     const ac = audioCtx();
     if (!ac || !V.stream) return;
     try {
-      const src = ac.createMediaStreamSource(V.stream);
+      const src = V.micSrc = ac.createMediaStreamSource(V.stream);
       V.an = ac.createAnalyser(); V.an.fftSize = 512; V.buf = new Uint8Array(V.an.fftSize);
       src.connect(V.an);                                          // к выходу НЕ подключаем: собственный голос в динамики не идёт
       V.meterT = setInterval(meterTick, 100);
@@ -531,7 +736,7 @@
   }
   async function voiceEnable() {
     V.err = null;
-    if (!isOpen() || !S.pc) { V.err = 'NOT_CONNECTED'; voiceEvt(); return { ok: false, err: 'NOT_CONNECTED' }; }
+    if (!isOpen() || !R.links.length) { V.err = 'NOT_CONNECTED'; voiceEvt(); return { ok: false, err: 'NOT_CONNECTED' }; }
     if (V.mic) return { ok: true };
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { V.err = 'MIC_UNSUPPORTED'; voiceEvt(); return { ok: false, err: V.err }; }
     try {
@@ -541,13 +746,14 @@
       V.err = n === 'NotAllowedError' || n === 'SecurityError' ? 'MIC_DENIED' : n === 'NotFoundError' || n === 'OverconstrainedError' ? 'MIC_NONE' : 'MIC_FAIL';
       voiceEvt(); return { ok: false, err: V.err };
     }
-    if (!S.pc) { V.stream.getTracks().forEach((t) => t.stop()); V.stream = null; V.err = 'NOT_CONNECTED'; voiceEvt(); return { ok: false, err: V.err }; }
+    if (!R.links.length) { V.stream.getTracks().forEach((t) => t.stop()); V.stream = null; V.err = 'NOT_CONNECTED'; voiceEvt(); return { ok: false, err: V.err }; }
     V.track = V.stream.getAudioTracks()[0];
     if (!V.track) { V.err = 'MIC_NONE'; voiceEvt(); return { ok: false, err: V.err }; }
     V.track.enabled = !V.muted;
-    V.sender = S.pc.addTrack(V.track, V.stream);                  // согласование уйдёт по каналу 'rel' (negotiationneeded)
     V.mic = true;
     startMeter();
+    if (R.role === 'guest') { const L = R.links[0]; if (L && L.pc && !L.sender) L.sender = L.pc.addTrack(V.track, V.stream); }   // согласование уйдёт по каналу 'rel'
+    else hostMixSync();
     sendAction({ type: 'vox', on: false, muted: V.muted });
     voiceEvt();
     return { ok: true };
@@ -559,75 +765,112 @@
     sendAction({ type: 'vox', on: V.speaking, muted: V.muted });
     voiceEvt();
   }
-  function voiceSetVolume(v) {
-    V.volume = Math.max(0, Math.min(1, +v || 0));
-    if (V.el) V.el.volume = V.volume;
-    voiceEvt();
+  function voiceApplyMute() {
+    R.links.forEach((l) => { if (l.el) l.el.volume = (l.pid && muted[l.pid]) || !V.inOn ? 0 : V.volume; });
+    if (R.role === 'host') hostMixSync();
   }
+  function voiceSetVolume(v) { V.volume = Math.max(0, Math.min(1, +v || 0)); voiceApplyMute(); voiceEvt(); }
+  // «входящий голос»: для незнакомых в публичных комнатах по умолчанию выключен (включается кнопкой)
+  function voiceIncoming(on) { V.inOn = !!on; voiceApplyMute(); voiceEvt(); }
   function voiceDisable() {
-    if (V.sender && S.pc) { try { S.pc.removeTrack(V.sender); } catch (e) { /* уже удалён */ } }
+    if (R.role === 'guest') { const L = R.links[0]; if (L && L.sender && L.pc) { try { L.pc.removeTrack(L.sender); } catch (e) { /* уже удалён */ } L.sender = null; } }
     if (V.stream) V.stream.getTracks().forEach((t) => { try { t.stop(); } catch (e) { /* ignore */ } });
     clearInterval(V.meterT); V.meterT = 0; V.an = null;
-    V.stream = V.track = V.sender = null; V.mic = false; V.speaking = false; V.level = 0;
+    try { V.micSrc && V.micSrc.disconnect(); } catch (e) { /* ignore */ }
+    V.micSrc = null; V.stream = V.track = null; V.mic = false; V.speaking = false; V.level = 0;
     sendAction({ type: 'vox', on: false, muted: true });
+    if (R.role === 'host') hostMixSync();
     voiceEvt();
+  }
+  function voiceLinkStop(L) {
+    if (L.el) { try { L.el.pause(); L.el.srcObject = null; L.el.remove(); } catch (e) { /* ignore */ } L.el = null; }
+    try { L.rsrc && L.rsrc.disconnect(); } catch (e) { /* ignore */ }
+    try { L.dest && L.dest.disconnect(); } catch (e) { /* ignore */ }
+    L.rsrc = L.dest = L.remote = L.sender = null; L.mixIn = null;
   }
   function voiceStop() {
     voiceDisable();
-    if (V.el) { try { V.el.pause(); V.el.srcObject = null; } catch (e) { /* ignore */ } }
-    V.remote = null; V.peerSpeaking = false; V.blocked = false; V.err = null;
+    R.links.forEach(voiceLinkStop);
+    V.blocked = false; V.err = null;
     if (V.actx) { try { V.actx.close(); } catch (e) { /* ignore */ } V.actx = null; }
     voiceEvt();
   }
-  function remoteSpeaking(on, muted) { if (V.peerSpeaking !== on || V.peerMuted !== muted) { V.peerSpeaking = on && !muted; V.peerMuted = muted; voiceEvt(); } }
   function playRemote() {
-    if (!V.el) return;
-    let pr;
-    try { pr = V.el.play(); } catch (e) { pr = null; }
-    if (pr && pr.then) pr.then(() => { if (V.blocked) { V.blocked = false; voiceEvt(); } }, () => { V.blocked = true; voiceEvt(); });
+    R.links.forEach((l) => {
+      if (!l.el) return;
+      let pr; try { pr = l.el.play(); } catch (e) { pr = null; }
+      if (pr && pr.then) pr.then(() => { if (V.blocked) { V.blocked = false; voiceEvt(); } }, () => { V.blocked = true; voiceEvt(); });
+    });
   }
-  function onTrack(pc, e) {
-    if (S.pc !== pc || e.track.kind !== 'audio') return;
-    V.remote = e.streams && e.streams[0] ? e.streams[0] : new MediaStream([e.track]);
-    if (!V.el) {
-      V.el = document.createElement('audio');
-      V.el.autoplay = true; V.el.setAttribute('playsinline', ''); V.el.hidden = true; V.el.setAttribute('aria-hidden', 'true');
-      document.body.appendChild(V.el);
+  function onTrack(L, e) {
+    if (L.state === 'closed' || e.track.kind !== 'audio') return;
+    L.remote = e.streams && e.streams[0] ? e.streams[0] : new MediaStream([e.track]);
+    if (!L.el) {
+      L.el = document.createElement('audio');
+      L.el.autoplay = true; L.el.setAttribute('playsinline', ''); L.el.hidden = true; L.el.setAttribute('aria-hidden', 'true');
+      document.body.appendChild(L.el);
     }
-    V.el.srcObject = V.remote; V.el.volume = V.volume;
+    L.el.srcObject = L.remote; L.el.volume = (L.pid && muted[L.pid]) || !V.inOn ? 0 : V.volume;
     playRemote();
+    if (R.role === 'host') { const ac = audioCtx(); if (ac) { try { L.rsrc = ac.createMediaStreamSource(L.remote); } catch (er) { L.rsrc = null; } } hostMixSync(); }
     voiceEvt();
+  }
+  // Хост: для каждого гостя своя смесь «все остальные голоса» (свой голос гость не получает). До MAX_VOICE источников одновременно (включая Хоста)
+  function hostMixSync() {
+    if (R.role !== 'host') return;
+    const ac = V.actx; if (!ac) return;
+    const links = R.links.filter((l) => l.opened && l.pc);
+    // источники: микрофон Хоста + удалённые голоса гостей (не заглушённые Хостом), не больше MAX_VOICE
+    const srcs = [];
+    if (V.mic && V.micSrc) srcs.push({ key: 'host', node: V.micSrc, link: null });
+    links.forEach((l) => { if (l.rsrc && !(l.pid && muted[l.pid]) && srcs.length < MAX_VOICE) srcs.push({ key: 'l' + l.id, node: l.rsrc, link: l }); else if (l.rsrc && !l.capped && srcs.length >= MAX_VOICE) { l.capped = true; sendLink(l, { type: 'vcap' }); } });
+    links.forEach((M) => {
+      const want = srcs.filter((s) => s.link !== M);
+      if (want.length && !M.dest) { try { M.dest = ac.createMediaStreamDestination(); } catch (e) { M.dest = null; } }
+      if (!M.dest) return;
+      if (!M.mixIn) M.mixIn = new Map();
+      M.mixIn.forEach((node, k) => { if (!want.some((s) => s.key === k)) { try { node.disconnect(M.dest); } catch (e) { /* ok */ } M.mixIn.delete(k); } });
+      want.forEach((s) => { if (!M.mixIn.has(s.key)) { try { s.node.connect(M.dest); M.mixIn.set(s.key, s.node); } catch (e) { /* ok */ } } });
+      if (want.length && !M.sender) { const tr = M.dest.stream.getAudioTracks()[0]; if (tr) { try { M.sender = M.pc.addTrack(tr, M.dest.stream); } catch (e) { /* ok */ } } }
+    });
   }
   // любой жест игрока разблокирует автоплей голоса друга
   ['pointerdown', 'keydown'].forEach((n) => document.addEventListener(n, () => { if (V.blocked) playRemote(); if (V.actx && V.actx.state === 'suspended') { try { V.actx.resume(); } catch (e) { /* ignore */ } } }, true));
 
   // ------------------------------------------------------------------ завершение
-  function close(silent) {
-    const had = S.pc || S.ready;
-    if (S.ready && !silent) sendAction({ type: 'bye' });
-    S.intentional = true;
-    cleanup();
-    S.role = null; S.offerCode = S.answerCode = '';
-    if (had || S.state !== 'idle') { if (!silent) { setState('idle'); } else S.state = 'idle'; }
+  function closeAll(silent) {
+    const had = R.links.length > 0;
+    R.links.slice().forEach((l) => { if (l.ready && !silent) sendLink(l, { type: 'bye' }); });
+    R.links.slice().forEach((l) => { l.attached = false; destroyLink(l); });
+    R.links = []; manual = null;
+    voiceStop();
+    R.role = null; R.mySlot = 0; R.players = []; R.speak = {};
+    if (had || state !== 'idle') { R.sticky = 'idle'; if (!silent) refreshState(); else state = 'idle'; }
   }
-  window.addEventListener('pagehide', () => { if (S.ready) sendAction({ type: 'bye' }); });
+  const close = closeAll;
+  window.addEventListener('pagehide', () => { R.links.forEach((l) => { if (l.ready) sendLink(l, { type: 'bye' }); }); });
 
   window.NexaNet = {
-    VERSION, TELEGRAM, ICE_SERVERS, MSG, config: cfg, FAST,
+    VERSION, TELEGRAM, ICE_SERVERS, MSG, config: cfg, FAST, MAX_PLAYERS, MAX_VOICE, RELAY, DIRECT, PID: MYPID,
     supported: () => typeof RTCPeerConnection === 'function',
     canDeflate,
-    get state() { return S.state; }, get role() { return S.role; }, get slot() { return slot(); }, get peer() { return S.peer; },
-    get isHost() { return S.role === 'host'; }, get isOpen() { return S.state === 'open'; }, get connected() { return isOpen(); },
-    get rtt() { return Math.round(S.rtt); }, get info() { return S.info; },
-    get offerCode() { return S.offerCode; }, get answerCode() { return S.answerCode; },
-    stats: () => ({ tx: S.tx, rx: S.rx, txB: S.txB, rxB: S.rxB, rtt: Math.round(S.rtt), up: S.openAt ? Math.round((Date.now() - S.openAt) / 1000) : 0 }),
+    get state() { return state; }, get role() { return R.role; }, get slot() { return slot(); }, get peer() { return others()[0] || null; }, get players() { return others(); },
+    get isHost() { return R.role === 'host'; }, get isOpen() { return state === 'open'; }, get connected() { return isOpen(); },
+    get count() { return R.role ? 1 + R.links.filter((l) => l.opened).length : 1; },
+    get rtt() { return Math.round(rttMain()); }, get info() { const l = manual || R.links[0]; return l ? l.info : null; },
+    get offerCode() { return manual ? manual.offerCode : ''; }, get answerCode() { return R.role === 'guest' && R.links[0] ? R.links[0].answerCode : ''; },
+    get pending() { return !!manual; },
+    stats: () => { let tx = 0, rx = 0, txB = 0, rxB = 0, up = 0; R.links.forEach((l) => { tx += l.tx; rx += l.rx; txB += l.txB; rxB += l.rxB; if (l.openAt) up = Math.max(up, Math.round((Date.now() - l.openAt) / 1000)); }); return { tx, rx, txB, rxB, rtt: Math.round(rttMain()), up }; },
     createOffer, acceptAnswer, createAnswer, parse: parseInput, linkFor, pendingJoin, clearJoinFromUrl,
-    sendAction, on, off, close, reset: () => close(false), localInfo,
+    sendAction, on, off, close, reset: () => closeAll(false), localInfo,
+    kick, setMuted, isMuted, report, isBlockedName, begin,
     setLan(v) { lsSet('nexaNetLan', v ? '1' : '0'); }, get lan() { return localMode(); },
     text: (code) => MSG[code] || String(code || ''),
     chat: { send: chatSend, get history() { return chat.history; }, sys: chatSys, clean: cleanChat, clear() { chat.history.length = 0; } },
-    voice: { enable: voiceEnable, disable: voiceDisable, setMuted: voiceSetMuted, setVolume: voiceSetVolume, get state() { return voiceState(); }, unlock: playRemote },
-    util: { scrub, cleanName, cleanChat, cleanColor, shrinkSdp, packCode, crc16 },
+    voice: { enable: voiceEnable, disable: voiceDisable, setMuted: voiceSetMuted, setVolume: voiceSetVolume, incoming: voiceIncoming, get state() { return voiceState(); }, unlock: playRemote },
+    // низкоуровневый доступ для js/rendezvous.js: соединения без ручных кодов
+    rtc: { newOffer, newAnswer, applyAnswer, attach, drop: dropLink, connecting: startConnecting, fullSdp: true, free: () => (R.role === 'guest' ? (R.links.length ? 0 : 1) : Math.max(0, cfg.maxPlayers - 1 - R.links.length)) },
+    util: { scrub, cleanName, cleanChat, cleanColor, cleanPid, shrinkSdp, packCode, crc16, rndHex },
     log: () => logBuf.slice()
   };
 }());
