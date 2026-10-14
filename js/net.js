@@ -859,7 +859,7 @@
     get count() { return R.role ? 1 + R.links.filter((l) => l.opened).length : 1; },
     get rtt() { return Math.round(rttMain()); }, get info() { const l = manual || R.links[0]; return l ? l.info : null; },
     get offerCode() { return manual ? manual.offerCode : ''; }, get answerCode() { return R.role === 'guest' && R.links[0] ? R.links[0].answerCode : ''; },
-    get pending() { return !!manual; },
+    get pending() { return !!manual; }, get pendingLinks() { return R.links.filter((l) => !l.opened).length; },
     stats: () => { let tx = 0, rx = 0, txB = 0, rxB = 0, up = 0; R.links.forEach((l) => { tx += l.tx; rx += l.rx; txB += l.txB; rxB += l.rxB; if (l.openAt) up = Math.max(up, Math.round((Date.now() - l.openAt) / 1000)); }); return { tx, rx, txB, rxB, rtt: Math.round(rttMain()), up }; },
     createOffer, acceptAnswer, createAnswer, parse: parseInput, linkFor, pendingJoin, clearJoinFromUrl,
     sendAction, on, off, close, reset: () => closeAll(false), localInfo,

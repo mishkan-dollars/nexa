@@ -1,20 +1,20 @@
 // NEXA/OS: «почтовый ящик» для автоматического рукопожатия WebRTC — публичные открытые WebSocket-трекеры протокола WebTorrent (без аккаунтов, ключей и оплаты).
 // Через трекер ходят ТОЛЬКО служебные SDP offer/answer; игра, чат и голос идут напрямую (P2P, RTCDataChannel/медиа). Без трекеров игра работает через ручные коды (net.js).
-//   • Rendezvous(theme, opts) — announce-протокол JSON поверх WebSocket (минимальная реализация, без библиотек); транспорт заменяемый (WebTorrentTransport).
+//   • Rendezvous(theme, opts) — announce-протокол JSON поверх WebSocket (минимальная реализация, без библиотек); транспорт заменяемый (MultiTransport = трекеры + Nostr-релеи).
 //     info_hash = SHA-1('nexa-hl-v1/' + тема) (20-байтная binary string), peer_id = 20 случайных байт. announce {action:'announce', info_hash, peer_id, numwant, offers:[…],
 //     uploaded:0, downloaded:0, left:1, event:'started'}; входящий offer -> answer {…, to_peer_id, offer_id, answer}; входящий answer -> завершить соединение.
 //   • NexaRoom: комната по ссылке ?room=<id> (хост отвечает, гость предлагает), приватная комната по имени, публичные комнаты (gossip-рой 'lobby': пиры
 //     обмениваются списком открытых комнат по DataChannel), «Быстрая игра» (очередь 'quick/<режим>': меньший peer_id — хост).
-// Список трекеров настраивается: ?tracker=ws://127.0.0.1:PORT (можно через запятую) или localStorage 'nexaTrackers'; по умолчанию — только заведомо бесплатные открытые
-// трекеры без планов и квот. Трекеры могут быть недоступны или отключать клиентов по своим правилам — ручной режим (коды) от них не зависит и работает всегда.
+// ДВА независимых транспорта сигналинга параллельно: WebTorrent-трекеры и Nostr-релеи (NIP-01, эфемерные события, подпись BIP-340 — js/schnorr.js). Список серверов —
+// js/servers.js; конфигурация: ?tracker=ws://127.0.0.1:PORT и ?relay=ws://127.0.0.1:PORT (через запятую) либо localStorage 'nexaTrackers'/'nexaRelays'. Одновременно живых
+// соединений до LIVE_MAX (6), остальные в резерве; сбойный сервер помечается «мёртвым» на несколько минут (экспоненциально дольше при повторах), берётся запасной;
+// дубли offer_id отбрасываются. Серверы могут быть недоступны или отключать клиентов по своим правилам — ручной режим (коды) от них не зависит и работает всегда.
 // ПРИВАТНОСТЬ: трекеры и незнакомые игроки технически видят сетевой адрес (WebRTC); IP нигде не показывается в интерфейсе/журнале (scrub); все данные из сети
 // валидируются и санитайзятся; публичный чат не модерируется (заглушить/пожаловаться — локально).
 (function () {
   'use strict';
   const NN = window.NexaNet;
   if (!NN) return;
-  const DEFAULT_TRACKERS = ['wss://tracker.openwebtorrent.com', 'wss://tracker.webtorrent.dev'];
-  const OPTIONAL_TRACKERS = ['wss://tracker.files.fm:7073/announce'];   // НЕ по умолчанию: у сервиса есть тарифы — включайте сами через ?tracker=/localStorage, если согласны
   const SALT = 'nexa-hl-v1/';
   const MAXP = NN.MAX_PLAYERS;
   const lsGet = (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } };
@@ -27,6 +27,7 @@
     TRACKER_TIMEOUT: 'No answer from your friend yet. Check that the host keeps the game open, or use the manual connection with codes.',
     ROOM_BAD: 'This room link is not valid.',
     ROOM_NAME_BAD: 'Use 3–24 letters, digits, - or _ for the room name.',
+    SERVERS_OFF: 'Signaling servers are switched off. Use the manual connection with codes.',
     ROOM_GONE: 'The room is no longer available.',
     QUICK_TIMEOUT: 'No players found right now. Create a public room and wait for others.',
     PUBLIC_OFF: 'Public rooms need your consent first.'
@@ -66,63 +67,228 @@
   }
   const toHex = (bin) => Array.from(bin, (c) => (c.charCodeAt(0) + 256).toString(16).slice(1)).join('');
 
-  // ------------------------------------------------------------------ список трекеров
-  function validTracker(u) {
+  // ------------------------------------------------------------------ список серверов (js/servers.js) и их здоровье
+  const SV = window.NexaServers || { TRACKERS: [], NOSTR_RELAYS: [], LIVE_MAX: 6, DEAD_MS: 180000, KIND: 27777 };
+  const LIVE_MAX = () => SV.LIVE_MAX || 6;
+  const loopback = (u) => { try { return /^(127\.0\.0\.1|localhost|\[::1\])$/.test(new URL(u).hostname); } catch (e) { return false; } };
+  function validServer(u) {
     let url; try { url = new URL(u); } catch (e) { return false; }
     if (url.protocol === 'wss:') return true;
-    return url.protocol === 'ws:' && /^(127\.0\.0\.1|localhost|\[::1\])$/.test(url.hostname);   // ws:// — только петля (тесты); публичные — только wss://
+    return url.protocol === 'ws:' && loopback(u);     // ws:// — только петля (тесты); публичные — только wss://
   }
-  function trackerList() {
-    let list = null;
-    try {
-      const q = new URLSearchParams(location.search).getAll('tracker').join(',');
-      if (q) list = q.split(',');
-    } catch (e) { list = null; }
-    if (!list) {
-      const s = lsGet('nexaTrackers');
-      if (s) { try { const j = JSON.parse(s); list = Array.isArray(j) ? j : String(s).split(','); } catch (e) { list = String(s).split(','); } }
-    }
-    list = (list || DEFAULT_TRACKERS).map((x) => String(x).trim()).filter((x) => x && validTracker(x));
-    return Array.from(new Set(list)).slice(0, 6);
+  const validTracker = validServer;
+  const hostLabel = (u) => { try { const h = new URL(u); return loopback(u) ? 'localhost (test)' : h.hostname + (h.port && h.port !== '443' ? ':' + h.port : ''); } catch (e) { return 'server'; } };
+  function paramList(name) {
+    try { const q = new URLSearchParams(location.search).getAll(name).join(','); return q ? q.split(',') : null; } catch (e) { return null; }
   }
+  const cleanList = (l) => Array.from(new Set((l || []).map((x) => String(x).trim()).filter((x) => x && validServer(x)))).slice(0, 24);
+  // [{url, type:'tracker'|'nostr'}]: параметры ?tracker= / ?relay= (через запятую) или localStorage 'nexaTrackers' / 'nexaRelays' заменяют списки по умолчанию
+  function serverEntries() {
+    let tr = paramList('tracker'), rl = paramList('relay');
+    const custom = !!(tr || rl);
+    if (!tr) { const s = lsGet('nexaTrackers'); if (s) { try { const j = JSON.parse(s); tr = Array.isArray(j) ? j : String(s).split(','); } catch (e) { tr = String(s).split(','); } } }
+    if (!rl) { const s = lsGet('nexaRelays'); if (s) { try { const j = JSON.parse(s); rl = Array.isArray(j) ? j : String(s).split(','); } catch (e) { rl = String(s).split(','); } } }
+    if (custom) { tr = tr || []; rl = rl || []; } else { tr = tr || SV.TRACKERS; rl = rl || SV.NOSTR_RELAYS; }
+    const rlc = cleanList(rl), out = cleanList(tr).slice(0, 6).map((u) => ({ url: u, type: 'tracker' }));
+    // реле перемешиваем один раз за сессию: нагрузка распределяется, а «первые шесть» у разных игроков разные
+    if (!serverEntries.order) serverEntries.order = Math.random();
+    const sh = rlc.map((u, i) => ({ u, k: Math.abs(Math.sin((i + 1) * 12.9898 + serverEntries.order * 78.233)) })).sort((a, b) => a.k - b.k).map((x) => x.u);
+    sh.forEach((u) => out.push({ url: u, type: 'nostr' }));
+    return out;
+  }
+  const trackerList = () => serverEntries().filter((e) => e.type === 'tracker').map((e) => e.url);
+  const serversOn = () => lsGet('nexaServersOn') !== '0';
+  // здоровье по адресу: состояние, число подряд сбоев, «мёртв до»
+  const HEALTH = new Map();
+  const hl = (url, type) => { let h = HEALTH.get(url); if (!h) HEALTH.set(url, h = { url, type: type || 'tracker', state: 'idle', fails: 0, deadUntil: 0, lastOk: 0, why: '' }); return h; };
+  const deadBase = () => (SV.DEAD_MS || 180000);
+  function markDead(url, type, why, hard) {
+    const h = hl(url, type);
+    h.fails += 1; h.state = 'down'; h.why = why || '';
+    h.deadUntil = now() + (hard ? 30 * 60000 : Math.min(30 * 60000, deadBase() * Math.pow(2, Math.min(4, h.fails - 1))));
+    emit('servers', serverList());
+  }
+  function markOk(url, type) { const h = hl(url, type); h.state = 'online'; h.fails = 0; h.deadUntil = 0; h.lastOk = now(); h.why = ''; emit('servers', serverList()); }
+  const isDead = (url) => { const h = HEALTH.get(url); return !!(h && h.state === 'down' && h.deadUntil > now()); };
+  function serverList() {
+    const on = serversOn(), act = activeSet();
+    return serverEntries().map((e) => {
+      const h = HEALTH.get(e.url) || { state: 'idle', fails: 0 };
+      let st = 'reserve';
+      if (!on) st = 'off';
+      else if (h.state === 'online') st = 'online';
+      else if (h.state === 'connecting') st = 'connecting';
+      else if (h.state === 'down' && (h.deadUntil > now() || h.fails)) st = 'down';
+      if (st === 'reserve' && act.has(e.url)) st = 'connecting';
+      return { url: e.url, host: hostLabel(e.url), type: e.type, state: st, fails: h.fails || 0 };
+    });
+  }
+  const transports = new Set();
+  function activeSet() { const s = new Set(); transports.forEach((t) => t.adapters.forEach((a) => { if (a.state === 'connecting' || a.state === 'open') s.add(a.url); })); return s; }
 
-  // ------------------------------------------------------------------ транспорт WebTorrent-трекеров (заменяемый: достаточно тех же методов)
-  class WebTorrentTransport {
-    constructor(urls, hooks) { this.urls = urls; this.h = hooks; this.socks = []; this.closed = false; this.q = []; this.offerSock = new Map(); }
-    open() { this.urls.forEach((u) => this.connect({ url: u, state: 'connecting', ws: null, tries: 0 })); }
-    connect(t) {
-      if (this.closed) return;
-      if (!this.socks.includes(t)) this.socks.push(t);
-      let ws;
-      try { ws = new WebSocket(t.url); } catch (e) { t.state = 'error'; this.h.status(); return; }
-      t.ws = ws; t.state = 'connecting'; t.tries += 1;
-      const timer = setTimeout(() => { if (t.state === 'connecting') { t.state = 'error'; try { ws.close(); } catch (e) { /* ok */ } this.h.status(); } }, 6000);
-      ws.onopen = () => { clearTimeout(timer); t.state = 'open'; this.h.status(); this.h.open(t); };
-      ws.onerror = () => { clearTimeout(timer); if (t.state !== 'open') { t.state = 'error'; this.h.status(); } };
-      ws.onclose = () => {
-        clearTimeout(timer);
-        const was = t.state; t.state = was === 'open' ? 'closed' : 'error'; this.h.status();
-        if (!this.closed && t.tries < 3) setTimeout(() => { if (!this.closed && t.state !== 'open') this.connect(t); }, 3000 * t.tries);   // мягкое переподключение, потом отваливаемся
-      };
+  // ------------------------------------------------------------------ адаптеры серверов
+  // Трекер WebTorrent: announce JSON поверх WebSocket
+  class TrackerAdapter {
+    constructor(mt, e) { this.mt = mt; this.url = e.url; this.type = 'tracker'; this.state = 'connecting'; this.ws = null; this.got = false; }
+    connect() {
+      let ws; const mt = this.mt;
+      try { ws = new WebSocket(this.url); } catch (e) { mt.fail(this, 'ws'); return; }
+      this.ws = ws; this.t0 = now();
+      this.timer = setTimeout(() => { if (this.state === 'connecting') mt.fail(this, 'timeout'); }, 6000);
+      ws.onopen = () => { clearTimeout(this.timer); this.state = 'open'; markOk(this.url, 'tracker'); mt.h.status(); mt.h.open(this);
+        this.silent = setTimeout(() => { if (this.state === 'open' && !this.got) mt.fail(this, 'silent'); }, 15000); };
+      ws.onerror = () => { if (this.state === 'connecting') mt.fail(this, 'error'); };
+      ws.onclose = () => { if (this.state !== 'closed' && this.state !== 'failed') mt.fail(this, 'closed'); };
       ws.onmessage = (e) => {
         if (typeof e.data !== 'string' || e.data.length > 64 * 1024) return;
         let m; try { m = JSON.parse(e.data); } catch (er) { return; }
         if (!m || typeof m !== 'object') return;
-        if (m['failure reason']) { t.state = 'error'; this.h.status(); return; }
+        this.got = true;
+        if (m['failure reason']) { mt.fail(this, 'refused', true); return; }
         if (m.action !== 'announce' || typeof m.info_hash !== 'string') return;
-        if (m.offer && typeof m.offer_id === 'string') this.offerSock.set(m.offer_id, t);
-        this.h.message(m, t);
+        mt.h.message(m, this);
       };
     }
-    send(t, obj) { if (t.ws && t.state === 'open') { try { t.ws.send(JSON.stringify(obj)); return true; } catch (e) { return false; } } return false; }
-    announce(obj) { let n = 0; this.socks.forEach((t) => { if (this.send(t, obj)) n += 1; }); return n; }
-    answer(obj, offerId) {
-      const t = this.offerSock.get(offerId);
-      if (t && this.send(t, obj)) return true;
-      return this.announce(obj) > 0;
+    announce(obj) { return this.raw(obj); }
+    answer(obj) { return this.raw(obj); }
+    raw(obj) { if (this.ws && this.state === 'open') { try { this.ws.send(JSON.stringify(obj)); return true; } catch (e) { return false; } } return false; }
+    close() { clearTimeout(this.timer); clearTimeout(this.silent); this.state = 'closed'; try { this.ws && this.ws.close(); } catch (e) { /* ok */ } }
+  }
+  // Nostr-релей (NIP-01): REQ с фильтром по тегу темы, публикация эфемерных событий, подписанных одноразовым ключом сессии (BIP-340)
+  let nostrKey = null;
+  const getKey = () => nostrKey || (nostrKey = window.NexaSchnorr.newKey());
+  class NostrAdapter {
+    constructor(mt, e) { this.mt = mt; this.url = e.url; this.type = 'nostr'; this.state = 'connecting'; this.ws = null; this.got = false; this.q = []; this.sub = 'nx' + NN.util.rndHex(4); }
+    connect() {
+      const mt = this.mt; let ws;
+      if (!window.NexaSchnorr) { mt.fail(this, 'nocrypto', true); return; }
+      try { ws = new WebSocket(this.url); } catch (e) { mt.fail(this, 'ws'); return; }
+      this.ws = ws;
+      this.timer = setTimeout(() => { if (this.state === 'connecting') mt.fail(this, 'timeout'); }, 7000);
+      ws.onopen = () => {
+        const f = { kinds: [SV.KIND || 27777], '#t': [this.mt.hashHex], since: Math.floor(Date.now() / 1000) - 20, limit: 20 };
+        this.raw(['REQ', this.sub, f]);
+        this.silent = setTimeout(() => { if (!this.got && this.state !== 'closed') mt.fail(this, 'silent'); }, 9000);
+      };
+      ws.onerror = () => { if (this.state === 'connecting') mt.fail(this, 'error'); };
+      ws.onclose = () => { if (this.state !== 'closed' && this.state !== 'failed') mt.fail(this, 'closed'); };
+      ws.onmessage = (e) => {
+        if (typeof e.data !== 'string' || e.data.length > 96 * 1024) return;
+        let m; try { m = JSON.parse(e.data); } catch (er) { return; }
+        if (!Array.isArray(m) || typeof m[0] !== 'string') return;
+        this.got = true;
+        if (this.state === 'connecting') { clearTimeout(this.timer); this.state = 'open'; markOk(this.url, 'nostr'); mt.h.status(); mt.h.open(this); this.pump(); }
+        if (m[0] === 'EVENT' && m[1] === this.sub) this.onEvent(m[2]);
+        else if (m[0] === 'OK') { if (m[2] === false) { const why = String(m[3] || ''); if (/pow|auth|restrict|paid|payment|blocked|not allowed|whitelist|invalid: .*kind/i.test(why)) mt.fail(this, 'refused:' + why.slice(0, 40), true); else this.rej = (this.rej || 0) + 1; if (this.rej > 6) mt.fail(this, 'rejecting', true); } }
+        else if (m[0] === 'NOTICE' && /pow|paid|payment|auth|rate|too many/i.test(String(m[1] || ''))) mt.fail(this, 'notice', true);
+        else if (m[0] === 'CLOSED' || m[0] === 'AUTH') mt.fail(this, m[0].toLowerCase(), true);   // нужен аккаунт/подпись личности — такие реле не используем
+      };
     }
-    states() { return this.socks.map((t) => t.state); }
-    close() { this.closed = true; this.socks.forEach((t) => { try { t.ws && t.ws.close(); } catch (e) { /* ok */ } }); this.socks = []; }
+    onEvent(ev) {
+      if (!ev || typeof ev !== 'object' || typeof ev.content !== 'string' || ev.content.length > 40000) return;
+      let c; try { c = JSON.parse(ev.content); } catch (e) { return; }
+      if (!c || typeof c !== 'object' || typeof c.pid !== 'string' || !/^[0-9a-f]{40}$/.test(c.pid) || c.pid === this.mt.ctx.peerHex) return;
+      if (typeof c.oid !== 'string' || c.oid.length > 64 || typeof c.sdp !== 'string' || c.sdp.length > 24000) return;
+      const pb = String.fromCharCode.apply(null, NexaSchnorr.unhex(c.pid));
+      if (c.a === 'o') this.mt.h.message({ action: 'announce', info_hash: this.mt.ctx.hash, peer_id: pb, offer_id: c.oid, offer: { type: 'offer', sdp: c.sdp } }, this);
+      else if (c.a === 'a' && c.to === this.mt.ctx.peerHex) this.mt.h.message({ action: 'announce', info_hash: this.mt.ctx.hash, peer_id: pb, offer_id: c.oid, answer: { type: 'answer', sdp: c.sdp } }, this);
+    }
+    raw(arr) { if (this.ws && this.ws.readyState === 1) { try { this.ws.send(JSON.stringify(arr)); return true; } catch (e) { return false; } } return false; }
+    publish(content) {
+      if (this.q.length >= 10) this.q.shift();                       // не копим очередь: свежее важнее
+      this.q.push(content); this.pump();
+    }
+    pump() {
+      if (this.state !== 'open' || this.pumping || !this.q.length) return;
+      const last = this.lastPub || 0, wait = Math.max(0, 600 - (now() - last));         // не чаще ~1.6 событий в секунду на реле (не спамим)
+      this.pumping = setTimeout(() => {
+        this.pumping = 0;
+        const c = this.q.shift(); if (!c || this.state !== 'open') return;
+        try { const ev = NexaSchnorr.makeEvent(getKey(), SV.KIND || 27777, [['t', this.mt.hashHex]], c); this.lastPub = now(); this.raw(['EVENT', ev]); } catch (e) { /* ok */ }
+        this.pump();
+      }, wait);
+    }
+    announce(obj) {
+      if (!obj.offers || !obj.offers.length) return this.state === 'open';
+      obj.offers.forEach((o) => this.publish(JSON.stringify({ a: 'o', pid: this.mt.ctx.peerHex, oid: o.offer_id, sdp: o.offer.sdp })));
+      return this.state === 'open';
+    }
+    answer(obj) {
+      this.publish(JSON.stringify({ a: 'a', pid: this.mt.ctx.peerHex, to: toHex(obj.to_peer_id), oid: obj.offer_id, sdp: obj.answer.sdp }));
+      return this.state === 'open';
+    }
+    close() { clearTimeout(this.timer); clearTimeout(this.silent); clearTimeout(this.pumping); this.state = 'closed'; if (this.ws) { try { this.raw(['CLOSE', this.sub]); this.ws.close(); } catch (e) { /* ok */ } } }
+  }
+
+  // ------------------------------------------------------------------ MultiTransport: все серверы параллельно (до LIVE_MAX живых, остальные в резерве)
+  // Интерфейс транспорта (заменяемый): open(), announce(obj) -> число серверов, answer(obj, offerId) -> bool, states(), status(), close();
+  // hooks: status(), open(adapter), message(msg, adapter) — msg в формате announce WebTorrent.
+  class MultiTransport {
+    constructor(entries, hooks, ctx) {
+      this.entries = entries; this.h = hooks; this.ctx = ctx; this.adapters = []; this.closed = false; this.fillT = 0; this.ctx.peerHex = toHex(ctx.peerId); this.hashHex = toHex(ctx.hash);
+      this.offerFrom = new Map();
+    }
+    open() { transports.add(this); this.fill(); this.fillT = setInterval(() => this.fill(), 4000); }
+    fill() {
+      if (this.closed) return;
+      const act = this.adapters.filter((a) => a.state === 'connecting' || a.state === 'open').length;
+      let free = LIVE_MAX() - act;
+      for (const e of this.entries) {
+        if (free <= 0) break;
+        if (this.adapters.some((a) => a.url === e.url && (a.state === 'connecting' || a.state === 'open'))) continue;
+        if (isDead(e.url)) continue;
+        const a = e.type === 'nostr' ? new NostrAdapter(this, e) : new TrackerAdapter(this, e);
+        this.adapters = this.adapters.filter((x) => x.url !== e.url);
+        this.adapters.push(a); hl(e.url, e.type).state = 'connecting'; free -= 1;
+        a.connect();
+      }
+      this.h.status();
+      emit('servers', serverList());
+    }
+    fail(a, why, hard) {
+      if (a.state === 'failed' || a.state === 'closed') return;
+      const wasOpen = a.state === 'open';
+      a.state = 'failed'; a.close(); a.state = 'failed';
+      markDead(a.url, a.type, why, hard);
+      if (wasOpen && !hard) { const h = hl(a.url); h.deadUntil = now() + 15000; }       // оборвалось после работы — короткий отдых, потом снова
+      this.h.status();
+      setTimeout(() => this.fill(), 600);                                               // взять запасной из списка
+    }
+    announce(obj) { let n = 0; this.adapters.forEach((a) => { if (a.state === 'open' && a.announce(obj)) n += 1; }); return n; }
+    answer(obj, offerId) { let n = 0; this.adapters.forEach((a) => { if (a.state === 'open' && a.answer(obj, offerId)) n += 1; }); return n > 0; }
+    states() { return this.adapters.map((a) => (a.state === 'open' ? 'open' : a.state === 'connecting' ? 'connecting' : 'error')); }
+    status() {
+      const up = this.adapters.filter((a) => a.state === 'open').length, connecting = this.adapters.filter((a) => a.state === 'connecting').length;
+      const usable = this.entries.filter((e) => !isDead(e.url) && !this.adapters.some((a) => a.url === e.url && (a.state === 'open' || a.state === 'connecting'))).length;
+      return { up, connecting, total: this.entries.length, reserve: usable };
+    }
+    close() { this.closed = true; clearInterval(this.fillT); this.adapters.forEach((a) => { a.close(); }); this.adapters = []; transports.delete(this); emit('servers', serverList()); }
+  }
+
+  // проверка здоровья всех серверов списка (кнопка «Проверить»): короткое соединение, не больше LIVE_MAX одновременно
+  let probing = null;
+  function probe() {
+    if (probing) return probing;
+    const list = serverEntries().filter((e) => !activeSet().has(e.url));
+    list.forEach((e) => { const h = hl(e.url, e.type); if (h.state !== 'online') h.state = 'connecting'; h.deadUntil = 0; });
+    emit('servers', serverList());
+    let i = 0;
+    const one = (e) => new Promise((res) => {
+      let ws, done = false;
+      const fin = (ok, why) => { if (done) return; done = true; try { ws && ws.close(); } catch (er) { /* ok */ } if (ok) markOk(e.url, e.type); else markDead(e.url, e.type, why || 'probe'); res(); };
+      try { ws = new WebSocket(e.url); } catch (er) { fin(false, 'ws'); return; }
+      const tm = setTimeout(() => fin(false, 'timeout'), 6000);
+      ws.onopen = () => {
+        if (e.type === 'tracker') { clearTimeout(tm); fin(true); return; }
+        try { ws.send(JSON.stringify(['REQ', 'nxp' + NN.util.rndHex(3), { kinds: [SV.KIND || 27777], '#t': ['0'.repeat(40)], limit: 1 }])); } catch (er) { fin(false, 'send'); }
+      };
+      ws.onmessage = (ev) => { clearTimeout(tm); let m = null; try { m = JSON.parse(ev.data); } catch (er) { /* ok */ } fin(Array.isArray(m) && m[0] !== 'AUTH' && m[0] !== 'CLOSED', 'refused'); };
+      ws.onerror = () => { clearTimeout(tm); fin(false, 'error'); };
+      ws.onclose = () => { clearTimeout(tm); fin(false, 'closed'); };
+    });
+    const worker = async () => { while (i < list.length) { const e = list[i]; i += 1; await one(e); } };
+    probing = Promise.all(Array.from({ length: Math.min(LIVE_MAX(), list.length) }, worker)).then(() => { probing = null; emit('servers', serverList()); return serverList(); });
+    return probing;
   }
 
   // ------------------------------------------------------------------ Rendezvous: один «рой» (тема) на трекерах
@@ -137,18 +303,18 @@
       opts = opts || {};
       this.theme = theme; this.mode = opts.mode || 'both'; this.o = opts; this.peerId = randBin(20); this.hash = ''; this.running = false;
       this.pend = new Map(); this.seen = new Set(); this.timer = 0; this.pollT = 0; this.tr = null; this.busy = false; this.lastAns = 0;
-      this.transportFactory = opts.transport || ((urls, hooks) => new WebTorrentTransport(urls, hooks));
-      this.trackers = opts.trackers || trackerList();
+      this.transportFactory = opts.transport || ((entries, hooks, ctx) => new MultiTransport(entries, hooks, ctx));
+      this.entries = opts.entries || serverEntries();
     }
     async start() {
       this.running = true;
       this.hash = await infoHash(this.theme);
       if (!this.running) return;
-      this.tr = this.transportFactory(this.trackers, {
+      this.tr = this.transportFactory(this.entries, {
         status: () => this.status(),
-        open: () => { this.announce(true); },
+        open: (a) => this.onOpen(a),
         message: (m, t) => this.onMessage(m, t)
-      });
+      }, { hash: this.hash, peerId: this.peerId });
       this.tr.open();
       this.startedAt = now();
       this.timer = setInterval(() => this.tick(), 3500);
@@ -156,9 +322,16 @@
     }
     status() {
       if (!this.tr) return;
-      const st = this.tr.states(), up = st.filter((s) => s === 'open').length;
-      this.up = up;
-      try { this.o.onStatus && this.o.onStatus({ up, total: st.length, states: st, ms: now() - (this.startedAt || now()) }); } catch (e) { /* ok */ }
+      const s = this.tr.status();
+      this.up = s.up;
+      try { this.o.onStatus && this.o.onStatus(Object.assign({ ms: now() - (this.startedAt || now()) }, s)); } catch (e) { /* ok */ }
+    }
+    // новый сервер открылся: отдать ему уже опубликованные offer'ы и дослать недостающие
+    onOpen(a) {
+      const offers = [];
+      this.pend.forEach((p, id) => { if (p.wire) offers.push(p.wire); });
+      if (offers.length && a.announce) a.announce({ action: 'announce', info_hash: this.hash, peer_id: this.peerId, numwant: 5, uploaded: 0, downloaded: 0, left: 1, offers });
+      this.announce(true);
     }
     async announce(first) {
       if (!this.running || !this.tr || this.busy) return;
@@ -172,8 +345,9 @@
           const r = await this.o.makeOffer();
           if (!r || !this.running) break;
           const id = toHex(randBin(10));          // 20 hex-символов (binary string)
-          this.pend.set(id, { token: r.token, t: now() });
-          offers.push({ offer_id: id, offer: { type: 'offer', sdp: r.sdp } });
+          const wire = { offer_id: id, offer: { type: 'offer', sdp: r.sdp } };
+          this.pend.set(id, { token: r.token, t: now(), wire });
+          offers.push(wire);
         }
         msg.offers = offers;
         if (this.tr && this.tr.announce(msg) > 0) this.sentFirst = true;
@@ -251,6 +425,7 @@
     stopHost();
     const id = opts.id ? roomName(opts.id) : newRoomId();
     if (!id) return { ok: false, err: 'ROOM_NAME_BAD' };
+    if (!serversOn()) return { ok: false, err: 'SERVERS_OFF' };
     if (typeof RTCPeerConnection !== 'function') return { ok: false, err: 'UNSUPPORTED' };
     NN.begin('host');
     Object.assign(H, { id, pub: !!opts.pub, title: String(opts.title || '').slice(0, 24), mode: opts.mode === 'mission' ? 'mission' : 'sandbox', mission: Math.max(1, Math.min(47, opts.mission | 0 || 1)) });
@@ -275,7 +450,9 @@
     emit('host', { id, pub: H.pub });
     return { ok: true, id, link: roomLink(id) };
   }
-  const pendingLinks = () => { try { return NN.players.length ? Math.max(0, (NN.count || 1) - 1 - NN.players.length) : 0; } catch (e) { return 0; } };
+  const pendingLinks = () => NN.pendingLinks || 0;
+  // нет ни одного живого сервера и взять запасной неоткуда (или слишком долго ничего не открылось)
+  const noServers = (s) => s.up === 0 && ((s.connecting === 0 && s.reserve === 0 && s.ms > 2500) || s.ms > 12000);
   function stopHost() { if (hostR) { hostR.stop(); hostR = null; } Gossip.advertise(null); H.id = ''; H.pub = false; }
   function adOf() {
     const me = NN.localInfo();
@@ -288,6 +465,7 @@
     stopJoin();
     id = roomName(id);
     if (!id) { emit('join', { stage: 'error', err: 'ROOM_BAD' }); return { ok: false, err: 'ROOM_BAD' }; }
+    if (!serversOn()) { emit('join', { stage: 'error', err: 'SERVERS_OFF' }); return { ok: false, err: 'SERVERS_OFF' }; }
     if (typeof RTCPeerConnection !== 'function') { emit('join', { stage: 'error', err: 'UNSUPPORTED' }); return { ok: false, err: 'UNSUPPORTED' }; }
     NN.begin('guest');
     J.id = id; J.t0 = now(); J.stage = 'searching'; J.got = false;
@@ -295,7 +473,7 @@
     const fire = (stage, extra) => { J.stage = stage; emit('join', Object.assign({ stage, id, ms: now() - J.t0, up: joinR && joinR.up }, extra || {})); };
     const r = joinR = new Rendezvous('room/' + id, {
       mode: 'offerer',
-      onStatus: (s) => { emit('status', Object.assign({ kind: 'join' }, s)); if (s.up === 0 && s.ms > 7000 && J.stage === 'searching') { fire('unavailable', { err: 'NO_TRACKER' }); } },
+      onStatus: (s) => { emit('status', Object.assign({ kind: 'join' }, s)); if (noServers(s) && J.stage === 'searching') { fire('unavailable', { err: 'NO_TRACKER' }); } },
       offerCount: () => (J.got ? 0 : 2),
       makeOffer: async () => { const o = await NN.rtc.newOffer('guest'); return o ? { sdp: o.sdp, token: o.link } : null; },
       dropToken: (link) => { if (link && !link.attached) NN.rtc.drop(link); },
@@ -325,12 +503,13 @@
     opts = opts || {};
     stopQuick();
     if (typeof RTCPeerConnection !== 'function') return { ok: false, err: 'UNSUPPORTED' };
+    if (!serversOn()) return { ok: false, err: 'SERVERS_OFF' };
     mode = mode === 'mission' ? 'mission' + Math.max(1, Math.min(47, opts.mission | 0 || 1)) : 'sandbox';
     const beacon = 'v=0\r\no=- 0 0 IN IP4 127.0.0.1\r\ns=-\r\nt=0 0\r\na=nexa-quick\r\n';
     let paired = false;
     const q = quickR = new Rendezvous('quick/' + mode, {
       mode: 'both', beacon: true,
-      onStatus: (s) => { emit('status', Object.assign({ kind: 'quick' }, s)); if (s.up === 0 && s.ms > 7000 && !paired) { stopQuick(); emit('quick', { stage: 'unavailable', err: 'NO_TRACKER' }); } },
+      onStatus: (s) => { emit('status', Object.assign({ kind: 'quick' }, s)); if (noServers(s) && !paired) { stopQuick(); emit('quick', { stage: 'unavailable', err: 'NO_TRACKER' }); } },
       offerCount: () => 1,
       makeOffer: async () => ({ sdp: beacon, token: null }),
       onBeacon: (pid) => {
@@ -466,6 +645,7 @@
     });
   }
   async function gossipStart() {
+    if (!serversOn()) return;
     if (G.on) { G.listeners += 1; return; }
     G.on = true; G.listeners = 1;
     const rz = G.rz = new Rendezvous('lobby', {
@@ -521,7 +701,12 @@
   const consent = (v) => { lsSet(CONSENT_KEY, v ? '1' : '0'); };
 
   window.NexaRoom = {
-    DEFAULT_TRACKERS, OPTIONAL_TRACKERS, trackers: trackerList, validTracker, Rendezvous, WebTorrentTransport, infoHash, sha1js,
+    DEFAULT_TRACKERS: SV.TRACKERS, trackers: trackerList, validTracker, Rendezvous, MultiTransport, infoHash, sha1js,
+    servers: {
+      list: serverList, probe, entries: serverEntries, health: HEALTH, get on() { return serversOn(); },
+      setOn(v) { lsSet('nexaServersOn', v ? '1' : '0'); if (!v) { stopHost(); stopJoin(); stopQuick(); gossipStop(true); } emit('servers', serverList()); },
+      get live() { return serverList().filter((x) => x.state === 'online').length; }
+    },
     hostRoom, joinRoom, stopHost, stopJoin, quickPlay, stopQuick, roomLink, pendingRoom, clearRoomFromUrl, roomName, newRoomId,
     gossip: {
       start: gossipStart, stop: gossipStop, rooms: listRooms, refresh() { broadcast({ t: 'rooms?' }); emit('rooms', listRooms()); }, requestProfile,
