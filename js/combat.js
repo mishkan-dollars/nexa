@@ -251,6 +251,8 @@
       sp.vy += (150 * (ty - sp.y) - 15 * sp.vy) * sdt; sp.y += sp.vy * sdt;
       sp.vr += (120 * (tr - sp.r) - 13 * sp.vr) * sdt; sp.r += sp.vr * sdt;
     }
+    const J = rg.j || (rg.j = { z: 0, rx: 0, ry: 0, vz: 0, vrx: 0, vry: 0 });
+    if (sdt > 0) { J.vz += (320 * -J.z - 20 * J.vz) * sdt; J.z += J.vz * sdt; J.vrx += (320 * -J.rx - 20 * J.vrx) * sdt; J.rx += J.vrx * sdt; J.vry += (320 * -J.ry - 20 * J.vry) * sdt; J.ry += J.vry * sdt; }
     cam.updateMatrixWorld(true); body.updateMatrixWorld(true);
     const { v1, v2, v3, v4, q1, q2, e, sh, hp } = rg;
     sh[0].set(-0.24, -0.22, 0.02); body.localToWorld(sh[0]);
@@ -266,14 +268,14 @@
       const sk = this.sprintK || 0;
       if (sk > 0.001) { px = lerp(px, d.sprint[0], sk); py = lerp(py, d.sprint[1], sk); pz = lerp(pz, d.sprint[2], sk); rx = lerp(rx, d.sprint[3], sk); ry = lerp(ry, d.sprint[4], sk); rz = d.sprint[5] * sk; }
       const so = this.swapOff || 0;
-      if (so > 0) { py -= 0.32 * so; rx -= 0.5 * so; }
+      if (so > 0) { const se = so * so * (3 - 2 * so); py -= 0.4 * se; rx -= 0.75 * se; ry += 0.3 * se; }
       if (rl) {
         const o = this.rlPose(rl);
         px += o[0]; py += o[1]; pz += o[2]; rx += o[3]; ry += o[4]; rz += o[5];
         hvT = Math.max(hvT, o[6] * 0.85);
       }
       if (this.pmWo) { const o = this.pmWo(dt, px, py, pz, rx, ry, rz); if (o) { px = o[0]; py = o[1]; pz = o[2]; rx = o[3]; ry = o[4]; rz = o[5]; } }
-      px += sp.x; py += sp.y; rz += sp.r;
+      px += sp.x; py += sp.y; rz += sp.r; pz += J.z; rx += J.rx; ry += J.ry;
       v1.set(px, py, pz); body.localToWorld(v1);
       e.set(rx, ry, rz, 'YXZ'); q1.setFromEuler(e); q1.premultiply(body.quaternion);
       const ak = this.aimK || 0;
@@ -461,11 +463,11 @@
     const running = (K.ShiftLeft || K.ShiftRight || this.runHeld || this.padRun) && p.moving > 0.3 && !this.aimWant;
     this.sprintK = lerp(this.sprintK, running ? 1 : 0, 1 - Math.exp(-dt * 9));
     // смена оружия: опустить -> переключить -> поднять
-    if (this.swapTo) { this.swapOff = Math.min(1, this.swapOff + dt / 0.13); if (this.swapOff >= 1) { this.wp = this.swapTo; this.swapTo = null; this.rl = null; this.snd && this.snd.play('draw'); this.refreshHud(); } }
-    else if (this.swapOff > 0) this.swapOff = Math.max(0, this.swapOff - dt / 0.22);
+    if (this.swapTo) { this.swapOff = Math.min(1, this.swapOff + dt / 0.1); if (this.swapOff >= 1) { this.wp = this.swapTo; this.swapTo = null; this.rl = null; this.snd && this.snd.play('draw'); this.rigJolt(0.6, 3, sgn() * 1); this.refreshHud(); } }
+    else if (this.swapOff > 0) this.swapOff = Math.max(0, this.swapOff - dt / 0.17);
     const busy = this.swapOff > 0.3 || this.swapTo;
     const want = this.aimWant && this.sprintK < 0.3 && !this.rl && !busy;
-    this.aimK = clamp(this.aimK + (want ? 1 : -1.3) * dt / d.adsTime, 0, 1);
+    this.aimK = clamp(this.aimK + (want ? 1.25 : -1.8) * dt / d.adsTime, 0, 1);
     this.layer.classList.toggle('ads', this.aimK > 0.6);
     // перезарядка
     const rl = this.rl;
@@ -511,9 +513,9 @@
         rl.t -= rl.dur;
         w.mag += 1; w.reserve -= 1;
         this.snd && this.snd.play('shell');
-        this.kick(-0.008, sgn() * 0.006, sgn() * 0.014, 0.003);
+        this.kick(-0.008, sgn() * 0.006, sgn() * 0.014, 0.003); this.rigJolt(0.3, 2.2, sgn() * 0.8);
         this.refreshHud();
-        if (w.mag >= rl.def.mag || w.reserve <= 0) { rl.fin = 0.5; rl.cyc = 0; this.rg.pump = 1; this.snd && this.snd.play('pump'); this.kick(0.012, sgn() * 0.008, sgn() * 0.02, 0.004); }
+        if (w.mag >= rl.def.mag || w.reserve <= 0) { rl.fin = 0.5; rl.cyc = 0; this.rg.pump = 1; this.snd && this.snd.play('pump'); this.kick(0.016, sgn() * 0.01, sgn() * 0.026, 0.006); this.rigJolt(-1, 3.5, sgn() * 1.5); }
       }
       return;
     }
@@ -527,11 +529,12 @@
         rl.fumbled = true; rl.hold = rnd(0.3, 0.55); this.snd && this.snd.play('magout', { k: 0.8, w: rl.id }); this.kick(0.02, sgn() * 0.012, sgn() * 0.03, 0.006); return;
       }
       rl.done[name] = true;
-      if (name === 'magout') { this.snd && this.snd.play('magout', { w: rl.id }); this.kick(0.012, sgn() * 0.008, sgn() * 0.016, 0.004); this.dropMag(this.rg.models[rl.id], rl.def); }
+      const P = rlp(rl.id);
+      if (name === 'magout') { this.snd && this.snd.play('magout', { w: rl.id }); this.kick(0.012 * P.cam, sgn() * 0.008, sgn() * 0.016, 0.004); this.rigJolt(0.3 * P.jolt, -3 * P.jolt, sgn() * 1.2 * P.jolt); this.dropMag(this.rg.models[rl.id], rl.def); }
       else if (name === 'magin') {
-        this.snd && this.snd.play('magin', { w: rl.id }); this.kick(-0.022, sgn() * 0.012, sgn() * 0.03, 0.007);
+        this.snd && this.snd.play('magin', { w: rl.id }); this.kick(-0.03 * P.cam, sgn() * 0.014, sgn() * 0.04, 0.01 * P.cam); this.rigJolt(0.9 * P.jolt, 5 * P.jolt, sgn() * 1.5 * P.jolt);
         const take = Math.min(rl.cap - w.mag, w.reserve); w.mag += take; w.reserve -= take; this.refreshHud();
-      } else if (name === 'rack') { this.snd && this.snd.play('rack'); this.kick(0.018, sgn() * 0.01, sgn() * 0.024, 0.006); this.rg.slide = 1; }
+      } else if (name === 'rack') { this.snd && this.snd.play('rack'); this.kick(0.024 * P.cam, sgn() * 0.012, sgn() * 0.03, 0.008 * P.cam); this.rigJolt(-0.5 * P.jolt * (P.bolt || 1), 2 * P.jolt, sgn() * 2.2 * P.jolt * (P.bolt || 1)); this.rg.slide = 1; }
     }
     if (u >= 1) this.rl = null;
   };

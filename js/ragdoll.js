@@ -240,6 +240,10 @@
     if (n.death) return n.death;
     const now = performance.now(), hit = n.lastHit && now - n.lastHit.t < 250 ? n.lastHit : null, blast = n.blast && now - n.blast.t < 250 ? n.blast : null;
     const D = kill0.call(this, n, head, from);
+    try { // враг рядом погиб — кровь брызгает на торс игрока (вид от первого лица)
+      const pp = this.p, g0 = n.g, dx = pp ? pp.x - g0.position.x : 0, dz = pp ? pp.z - g0.position.z : 0, ds = Math.hypot(dx, dz);
+      if (pp && ds < 3.8 && (hit || blast) && this.bloodSplatTorso && !this.camFree) this.bloodSplatTorso({ x: dx / (ds || 1), z: dz / (ds || 1) }, clamp((3.8 - ds) / 2.6, 0.2, 1) * (blast ? 1.2 : head ? 1 : 0.75));
+    } catch (err) { /* без крови */ }
     if (!(hit || blast || from) || !n.g.visible || (activeCount(this) >= 12 && !n.pForce) || !window.THREE) return D; // декоративные трупы (actorLay) и перегруз — старая поза
     try { ragStart(this, n, D, head, hit, blast, from); } catch (err) { D.rag = null; console.warn('[ragdoll]', err); }
     return D;

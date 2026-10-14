@@ -460,6 +460,45 @@
     for (let i = 0; i < P * 6; i += 1) { const m = new T.Mesh(dg, dm); m.visible = false; m.renderOrder = 1; this.scene.add(m); B.decals.push({ m, grow: 0, tgt: 0, t: 0 }); }
     B.gore = this.qs('.m-gore');
   };
+  // брызги на торсе игрока (вид от первого лица): пул пятен на теле, бурые к концу и исчезают через 16–30 с; dir — куда летела кровь, amount 0..1.5
+  const TB = 18, TB_COL = { red: [0xa01212, 0x2e0d06], dark: [0x161616, 0x050505] };
+  Run.prototype.bloodSplatTorso = function (dir, amount) {
+    this.ensureBlood && this.ensureBlood();
+    const body = this.body; if (!this.bl || !body || !this.p) return;
+    const T = THREE;
+    let F = this.fpb;
+    if (!F || F.body !== body) {
+      const col = TB_COL[this.bloodMode] || TB_COL.red, geo = new T.CircleGeometry(0.5, 9).rotateX(-Math.PI / 2);
+      F = this.fpb = { body, s: [], i: 0, act: 0, c0: new T.Color(col[0]), c1: new T.Color(col[1]) };
+      for (let k = 0; k < TB; k += 1) {
+        const mt = new T.MeshBasicMaterial({ color: col[0], transparent: true, opacity: 0, depthTest: false, depthWrite: false, fog: false }), m = new T.Mesh(geo, mt);
+        m.renderOrder = 996; m.frustumCulled = false; m.visible = false; body.add(m); F.s.push({ m, mt, t: 0, L: 1, sx: 1, sz: 1 });
+      }
+    }
+    const yaw = this.p.yaw, lx = dir ? -(dir.x * Math.cos(yaw) - dir.z * Math.sin(yaw)) : 0, lz = dir ? -(dir.x * Math.sin(yaw) + dir.z * Math.cos(yaw)) : 0;
+    const a = clamp(amount === undefined ? 1 : amount, 0.1, 1.5), cnt = Math.round(3 + 8 * a);
+    for (let k = 0; k < cnt; k += 1) {
+      const q = F.s[F.i]; F.i = (F.i + 1) % TB;
+      const x = clamp(lx * 0.12 + rnd(-0.17, 0.17), -0.24, 0.24), z = clamp(0.08 + lz * 0.1 + rnd(-0.1, 0.1), -0.02, 0.22), sz = rnd(0.01, 0.034) * (0.7 + a * 0.5), st = Math.random() < 0.3 ? rnd(2, 3.2) : 1;
+      q.m.position.set(x, -0.19 - 1.2 * x * x - rnd(0, 0.004), z); q.m.rotation.y = Math.random() * 6.28;
+      q.sx = sz * st; q.sz = sz; q.t = 0; q.L = rnd(16, 30); q.m.visible = true; q.mt.opacity = 0.92; q.mt.color.copy(F.c0);
+    }
+    F.act = TB;
+  };
+  Run.prototype.updateTorsoBlood = function (dt) {
+    const F = this.fpb; if (!F || !F.act) return;
+    let act = 0;
+    for (let i = 0; i < F.s.length; i += 1) {
+      const q = F.s[i]; if (!q.m.visible) continue;
+      q.t += dt; const u = q.t / q.L;
+      if (u >= 1) { q.m.visible = false; continue; }
+      act += 1;
+      q.mt.color.copy(F.c0).lerp(F.c1, clamp(u / 0.6, 0, 1));
+      q.mt.opacity = 0.92 * (u < 0.7 ? 1 : 1 - (u - 0.7) / 0.3);
+      const g = 0.4 + 0.6 * Math.min(1, q.t / 0.18); q.m.scale.set(q.sx * g, 1, q.sz * g);
+    }
+    F.act = act;
+  };
   Run.prototype.decal = function (x, z, r, grow) {
     const B = this.bl; if (!B) return null;
     const d = B.decals[B.di]; B.di = (B.di + 1) % B.decals.length;

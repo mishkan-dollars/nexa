@@ -328,7 +328,7 @@
         part(0.19, 0.1, 0.34, 0x050505, 992, 0, -0.88, -0.08, g);         // ботинок
         return g;
       });
-      this.body = body;
+      this.body = body; this.fpb = null;
       body.rotation.order = 'YXZ';
       this.scene.add(body); // тело следует за поворотом, но не за наклоном головы — вниз видны торс, руки и ноги
       this.buildRig && this.buildRig(); // руки и оружие (combat.js)
@@ -341,6 +341,7 @@
       this.body.rotation.x = p.pitch * 0.2;
       this.legs.forEach((g, i) => { g.rotation.x = Math.sin(ph + (i ? 0 : Math.PI)) * 0.5 * mv; });
       this.body.visible = !this.camFree;
+      this.updateTorsoBlood && this.updateTorsoBlood(dt);
       this.updateRig && this.updateRig(dt, vel);
     }
 
