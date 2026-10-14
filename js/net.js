@@ -23,7 +23,8 @@
   const RELAY = { pos: 1, shot: 1, cev: 1, boom: 1, aim: 1 };            // гость -> Хост -> все остальные
   const DIRECT = { 'profile?': 1, profile: 1 };                          // адресные (поле to = слот получателя)
   const MAX_ACT = 8 * 1024, MAX_REL = 96 * 1024, CHAT_MAX = 200;
-  const cfg = { forceMs: 2500, connectMs: 25000, guestWaitMs: 180000, silentMs: 7000, pingMs: 2000, iceServers: ICE_SERVERS, maxPlayers: MAX_PLAYERS };
+  const cfg = { forceMs: 2500, connectMs: 20000, guestWaitMs: 180000, silentMs: 7000, pingMs: 2000, iceServers: ICE_SERVERS, maxPlayers: MAX_PLAYERS };
+  try { if (localStorage.getItem('nexaIce') === 'none') cfg.iceServers = []; } catch (e) { /* без хранилища */ }   // тесты/сети без STUN: только локальные кандидаты
 
   // ------------------------------------------------------------------ сообщения (английские исходники; переводы — js/i18n-net.js)
   const MSG = {
@@ -55,7 +56,14 @@
     CHAT_FLOOD: 'Slow down — too many messages.',
     CHAT_EMPTY: 'Type a message first.',
     CHAT_OFFLINE: 'Connect to a friend to chat.',
-    ROOM_FULL: 'The room is full.'
+    ROOM_FULL: 'The room is full.',
+    VOICE_LOCAL: 'Voice does not work in "this computer" mode (no network link). Use a normal connection for voice.',
+    LOCAL_NO: 'This browser cannot link tabs (no BroadcastChannel).',
+    LOCAL_NONE: 'No room found in the other tabs. Open a room in one tab first (both tabs must be in the same, non-private browser window set).',
+    DIAG_MDNS: 'Both browsers hide local addresses (mDNS) and no public address was found — two windows on one PC often cannot reach each other this way. Use "THIS COMPUTER" mode, another network or a mobile hotspot.',
+    DIAG_NO_STUN: 'No public address was found on either side — the STUN server (stun.l.google.com) may be blocked. Try another network, a VPN or a mobile hotspot.',
+    DIAG_ONE_SIDE: 'Only one side found a public address — the other network may block the STUN server or strictly filter UDP. Try another network or a mobile hotspot.',
+    DIAG_NAT: 'Both sides have public addresses but the NAT/firewall blocks the direct link (no relay server). Try another network, a VPN or a mobile hotspot.'
   };
 
   // ------------------------------------------------------------------ утилиты
@@ -225,18 +233,32 @@
 
   // ------------------------------------------------------------------ соединение (Link)
   let linkSeq = 0;
-  function newLink(gameRole) {
+  function fakeChan(label) {
+    const ls = { open: [], close: [], message: [] };
+    const c = { label, readyState: 'connecting', bufferedAmount: 0, out: () => {},
+      addEventListener(t, fn) { (ls[t] || (ls[t] = [])).push(fn); },
+      dispatch(t, ev) { (ls[t] || []).slice().forEach((fn) => { try { fn(ev || {}); } catch (e) { /* ok */ } }); },
+      send(x) { if (c.readyState !== 'open') throw new Error('closed'); c.out(x); },
+      open() { if (c.readyState === 'connecting') { c.readyState = 'open'; c.dispatch('open'); } },
+      close() { if (c.readyState === 'closed') return; c.readyState = 'closed'; c.dispatch('close'); } };
+    return c;
+  }
+  function newLink(gameRole, local) {
     const L = { id: ++linkSeq, gr: gameRole, slot: gameRole === 'guest' ? 1 : 0, state: 'creating', pc: null, act: null, rel: null, sid: '', polite: gameRole === 'guest', making: false,
       ready: false, attached: false, lastN: {}, lastRx: 0, openAt: 0, rtt: 0, rttMin: 0, pingT: 0, watchT: 0, connT: 0, restartT: 0, intentional: false, peerBye: false,
       rate: { t: 0, n: 0 }, peer: null, info: null, offerCode: '', answerCode: '', tx: 0, rx: 0, txB: 0, rxB: 0, chatGot: [], sender: null, remote: null, el: null, dest: null, rsrc: null,
       mixIn: null, speaking: false, mutedRemote: true, blocked: false, capped: false, pid: '' };
-    const pc = L.pc = new RTCPeerConnection({ iceServers: cfg.iceServers, bundlePolicy: 'max-bundle', iceCandidatePoolSize: 0 });
-    pc.addEventListener('connectionstatechange', () => onPcState(L));
-    pc.addEventListener('iceconnectionstatechange', () => onPcState(L));
-    pc.addEventListener('negotiationneeded', () => negotiate(L));
-    pc.addEventListener('track', (e) => onTrack(L, e));
-    const act = pc.createDataChannel('act', { negotiated: true, id: 1, ordered: false, maxRetransmits: 0 });
-    const rel = pc.createDataChannel('rel', { negotiated: true, id: 2, ordered: true });
+    let act, rel;
+    if (local) { L.local = true; act = fakeChan('act'); rel = fakeChan('rel'); }
+    else {
+      const pc = L.pc = new RTCPeerConnection({ iceServers: cfg.iceServers, bundlePolicy: 'max-bundle', iceCandidatePoolSize: 0 });
+      pc.addEventListener('connectionstatechange', () => onPcState(L));
+      pc.addEventListener('iceconnectionstatechange', () => onPcState(L));
+      pc.addEventListener('negotiationneeded', () => negotiate(L));
+      pc.addEventListener('track', (e) => onTrack(L, e));
+      act = pc.createDataChannel('act', { negotiated: true, id: 1, ordered: false, maxRetransmits: 0 });
+      rel = pc.createDataChannel('rel', { negotiated: true, id: 2, ordered: true });
+    }
     [act, rel].forEach((ch) => {
       ch.addEventListener('open', () => checkOpen(L));
       ch.addEventListener('close', () => onChannelClose(L));
@@ -272,7 +294,8 @@
     const cs = pc.connectionState || '', ic = pc.iceConnectionState || '';
     if (cs === 'failed' || ic === 'failed') {
       if (L.ready) { if (L.gr === 'guest' ? false : !L.restartT) tryRestart(L); else if (!L.restartT) markLost(L); }
-      // до открытия каналов 'failed' не окончателен: решает таймер соединения
+      else if (L.state === 'connecting' || (L.answerAt && Date.now() - L.answerAt > 15000)) fail(L, 'ICE_FAILED');   // быстрый отказ с диагностикой, не ждём таймер
+      // до открытия каналов у гостя 'failed' раньше ответа Хоста не окончателен: решает таймер соединения
     } else if (cs === 'disconnected' || ic === 'disconnected') {
       if (L.ready) { markLost(L); if (L.gr === 'host' && !L.restartT) L.restartT = setTimeout(() => tryRestart(L), 3500); }
     } else if ((cs === 'connected' || ic === 'connected' || ic === 'completed') && L.ready && L.state === 'lost') {
@@ -299,6 +322,7 @@
     clearInterval(L.pingT); clearInterval(L.watchT); clearTimeout(L.connT); clearTimeout(L.restartT);
     L.pingT = L.watchT = L.connT = L.restartT = 0;
     voiceLinkStop(L);
+    if (L.bc) { try { L.bc.postMessage({ k: 'bye' }); L.bc.close(); } catch (e) { /* ok */ } L.bc = null; clearInterval(L.hiT); }
     const pc = L.pc; L.pc = null;
     if (pc) { try { pc.close(); } catch (e) { /* уже закрыто */ } }
     [L.act, L.rel].forEach((ch) => { try { ch && ch.close(); } catch (e) { /* уже закрыто */ } });
@@ -329,7 +353,7 @@
     const i = R.links.indexOf(L); if (i >= 0) R.links.splice(i, 1);
     L.attached = false;
     if (!was) return;
-    if (!R.links.length || R.role === 'guest') { voiceStop(); R.sticky = 'failed'; R.stickyCode = code; refreshState(code); emit('net:error', { code, text: MSG[code] || '' }); }
+    if (!R.links.length || R.role === 'guest') { voiceStop(); R.sticky = 'failed'; R.stickyCode = code; refreshState(code); emit('net:error', { code, text: MSG[code] || '', diag: DG }); }
     else { refreshState(); emit('net:linkfail', { code }); }
   }
 
@@ -388,6 +412,20 @@
     emit('net:roster', others());
     if (before !== out.map((q) => q.slot).join()) emit('net:peers', others());
   }
+
+  // ------------------------------------------------------------------ диагностика кандидатов: только счётчики по типам (адреса не читаются и не показываются)
+  const zeroC = () => ({ host: 0, mdns: 0, srflx: 0, relay: 0 });
+  let DG = null;
+  function candStats(sdp) {
+    const c = zeroC();
+    String(sdp || '').split(/\r?\n/).forEach((l) => {
+      const m = /^a=candidate:\S+ \d+ \S+ \d+ (\S+) \d+ typ (\w+)/i.exec(l); if (!m) return;
+      const t = m[2].toLowerCase();
+      if (t === 'host') { if (/\.local$/i.test(m[1])) c.mdns += 1; else c.host += 1; } else if (t === 'srflx' || t === 'prflx') c.srflx += 1; else if (t === 'relay') c.relay += 1;
+    });
+    return c;
+  }
+  function diagSet(side, sdp) { DG = DG || { local: zeroC(), remote: zeroC() }; DG[side] = candStats(sdp); }
 
   // ------------------------------------------------------------------ рукопожатие: низкоуровневые операции (используют и ручной режим, и js/rendezvous.js)
   function gather(pc, t0) {
@@ -456,6 +494,7 @@
       const g = await gather(L.pc, t0);
       if (manual !== L || L.state === 'closed') return { ok: false, err: 'CLOSED' };
       const sh = shrinkSdp(g.sdp);
+      DG = null; diagSet('local', g.sdp);
       const code = await packCode('O', { s: L.sid, d: sh.sdp });
       L.offerCode = code; L.info = { forced: g.forced, onlyLocal: sh.onlyLocal, cands: sh.cands };
       L.state = 'waiting-answer'; refreshState(g.forced ? 'GATHER_FORCED' : (sh.onlyLocal ? 'NO_PUBLIC' : null));
@@ -471,6 +510,7 @@
     if (p.sid !== L.sid) return { ok: false, err: 'WRONG_SESSION' };
     try {
       await L.pc.setRemoteDescription({ type: 'answer', sdp: p.sdp });
+      diagSet('remote', p.sdp);
       manual = null;
       startConnecting(L);
       return { ok: true };
@@ -484,7 +524,7 @@
     manual = null;
     begin('guest');
     const L = newLink('guest'), t0 = Date.now();
-    L.sid = p.sid; L.state = 'answering';
+    L.sid = p.sid; L.state = 'answering'; DG = null; diagSet('remote', p.sdp);
     attach(L); refreshState();
     try {
       await L.pc.setRemoteDescription({ type: 'offer', sdp: p.sdp });
@@ -492,6 +532,7 @@
       const g = await gather(L.pc, t0);
       if (L.state === 'closed') return { ok: false, err: 'CLOSED' };
       const sh = shrinkSdp(g.sdp);
+      diagSet('local', g.sdp); L.answerAt = Date.now();
       const code = await packCode('A', { s: L.sid, d: sh.sdp });
       L.answerCode = code; L.info = { forced: g.forced, onlyLocal: sh.onlyLocal, cands: sh.cands };
       armConnectTimer(L, cfg.guestWaitMs);
@@ -747,6 +788,7 @@
       voiceEvt(); return { ok: false, err: V.err };
     }
     if (!R.links.length) { V.stream.getTracks().forEach((t) => t.stop()); V.stream = null; V.err = 'NOT_CONNECTED'; voiceEvt(); return { ok: false, err: V.err }; }
+    if (R.links.every((l) => !l.pc)) { V.stream.getTracks().forEach((t) => t.stop()); V.stream = null; V.err = 'VOICE_LOCAL'; voiceEvt(); return { ok: false, err: V.err }; }
     V.track = V.stream.getAudioTracks()[0];
     if (!V.track) { V.err = 'MIC_NONE'; voiceEvt(); return { ok: false, err: V.err }; }
     V.track.enabled = !V.muted;
@@ -837,8 +879,61 @@
   // любой жест игрока разблокирует автоплей голоса друга
   ['pointerdown', 'keydown'].forEach((n) => document.addEventListener(n, () => { if (V.blocked) playRemote(); if (V.actx && V.actx.state === 'suspended') { try { V.actx.resume(); } catch (e) { /* ignore */ } } }, true));
 
+  // ------------------------------------------------------------------ режим «этот компьютер»: вкладки одного браузера соединяются через BroadcastChannel (без WebRTC и кодов)
+  // Данные идут теми же каналами 'act'/'rel' (поддельные каналы поверх BroadcastChannel). Работает между вкладками/окнами ОДНОГО профиля (не в режиме инкогнито); голос недоступен.
+  const LC = { disc: null, rid: '', presT: 0, joinTO: 0 };
+  function localWire(L, name) {
+    const bc = L.bc = new BroadcastChannel(name); let opened = false;
+    const out = (c) => (x) => bc.postMessage({ k: 'd', c, s: x });
+    L.act.out = out('act'); L.rel.out = out('rel');
+    const open = () => { if (opened) return; opened = true; clearInterval(L.hiT); L.act.open(); L.rel.open(); };
+    bc.onmessage = (e) => {
+      const m = e.data; if (!m || typeof m !== 'object') return;
+      if (m.k === 'hi') { bc.postMessage({ k: 'ho' }); open(); }
+      else if (m.k === 'ho') open();
+      else if (m.k === 'd' && opened && typeof m.s === 'string') (m.c === 'act' ? L.act : L.rel).dispatch('message', { data: m.s });
+      else if (m.k === 'bye') { L.peerBye = true; L.act.close(); L.rel.close(); }
+    };
+    let n = 0; L.hiT = setInterval(() => { try { bc.postMessage({ k: 'hi' }); } catch (e) { /* ok */ } if (++n > 40) clearInterval(L.hiT); }, 200);
+  }
+  function localStop() { clearInterval(LC.presT); LC.presT = 0; clearTimeout(LC.joinTO); if (LC.disc) { try { LC.disc.close(); } catch (e) { /* ok */ } LC.disc = null; } LC.rid = ''; }
+  const localApi = typeof BroadcastChannel === 'function' ? {
+    host() {
+      localStop(); begin('host');
+      LC.rid = rndHex(4); const rid = LC.rid, d = LC.disc = new BroadcastChannel('nexa-local-v1');
+      const present = () => { if (R.role === 'host' && R.links.length < cfg.maxPlayers - 1) { try { d.postMessage({ t: 'host', rid }); } catch (e) { /* ok */ } } };
+      d.onmessage = (e) => {
+        const m = e.data; if (!m || m.t !== 'join' || m.rid !== rid || typeof m.gid !== 'string' || !/^[0-9a-f]{8}$/.test(m.gid)) return;
+        if (R.role !== 'host' || R.links.length >= cfg.maxPlayers - 1) return;
+        const L = newLink('host', true);
+        if (!attach(L)) { destroyLink(L); return; }
+        localWire(L, 'nexa-lk-' + rid + '-' + m.gid); L.state = 'connecting'; startConnecting(L, 8000);
+      };
+      LC.presT = setInterval(present, 600); present();
+      return rid;
+    },
+    join() {
+      localStop(); begin('guest');
+      return new Promise((resolve) => {
+        const d = LC.disc = new BroadcastChannel('nexa-local-v1'); let done = false;
+        const fin = (ok) => { if (done) return; done = true; clearTimeout(LC.joinTO); try { d.close(); } catch (e) { /* ok */ } if (LC.disc === d) LC.disc = null; if (!ok) closeAll(true); resolve(ok); };
+        d.onmessage = (e) => {
+          const m = e.data; if (done || !m || m.t !== 'host' || typeof m.rid !== 'string' || !/^[0-9a-f]{8}$/.test(m.rid)) return;
+          const gid = rndHex(4), L = newLink('guest', true);
+          if (!attach(L)) { destroyLink(L); fin(false); return; }
+          localWire(L, 'nexa-lk-' + m.rid + '-' + gid); L.state = 'connecting'; startConnecting(L, 8000);
+          try { d.postMessage({ t: 'join', rid: m.rid, gid }); } catch (er) { /* ok */ }
+          fin(true);
+        };
+        LC.joinTO = setTimeout(() => fin(false), 5000);
+      });
+    },
+    stop: localStop
+  } : null;
+
   // ------------------------------------------------------------------ завершение
   function closeAll(silent) {
+    localStop();
     const had = R.links.length > 0;
     R.links.slice().forEach((l) => { if (l.ready && !silent) sendLink(l, { type: 'bye' }); });
     R.links.slice().forEach((l) => { l.attached = false; destroyLink(l); });
@@ -861,6 +956,7 @@
     get offerCode() { return manual ? manual.offerCode : ''; }, get answerCode() { return R.role === 'guest' && R.links[0] ? R.links[0].answerCode : ''; },
     get pending() { return !!manual; }, get pendingLinks() { return R.links.filter((l) => !l.opened).length; },
     stats: () => { let tx = 0, rx = 0, txB = 0, rxB = 0, up = 0; R.links.forEach((l) => { tx += l.tx; rx += l.rx; txB += l.txB; rxB += l.rxB; if (l.openAt) up = Math.max(up, Math.round((Date.now() - l.openAt) / 1000)); }); return { tx, rx, txB, rxB, rtt: Math.round(rttMain()), up }; },
+    local: localApi, diag: () => (DG ? JSON.parse(JSON.stringify(DG)) : null), candStats,
     createOffer, acceptAnswer, createAnswer, parse: parseInput, linkFor, pendingJoin, clearJoinFromUrl,
     sendAction, on, off, close, reset: () => closeAll(false), localInfo,
     kick, setMuted, isMuted, report, isBlockedName, begin,

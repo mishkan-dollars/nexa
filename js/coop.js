@@ -1,4 +1,4 @@
-// NEXA/OS: кооператив на двоих (поверх js/net.js). Оба клиента запускают одно и то же задание / песочницу (id и seed от Хоста). Напарник — настоящий стикмен игры
+// NEXA/OS: кооператив на нескольких игроков, до NexaNet.MAX_PLAYERS (поверх js/net.js, топология «звезда»: Хост ретранслирует). Все клиенты запускают одно и то же задание / песочницу (id и seed от Хоста). Напарник — настоящий стикмен игры
 // (Run.prototype.npc из actors.js) с ником над головой: позиция, поворот, присед, оружие, выстрелы (трассеры, вспышка, звуки игры), эмоции (танцы EmoteCore),
 // смерть, взрывы, жизни, реплики чата. Хост = Игрок 1, друг = Игрок 2; позиции — ~15 Гц по каналу 'act', события — по 'rel'.
 // ВРАГИ: в «CO-OP SANDBOX» (MISSIONS.coopbox) Хост — авторитет: волны врагов, ИИ, снапшоты ~10 Гц; у друга враги — «куклы» (puppet), попадания друг шлёт Хосту,
@@ -29,7 +29,7 @@
     title: 'CO-OP SANDBOX',
     build(r) {
       MISSIONS.sandbox.build(r);
-      const co = r.__co, off = co && co.slot === 2 ? 1.4 : -1.4;
+      const co = r.__co, off = co ? (co.slot - 1) * 1.6 - 1.6 : 0;   // игроки в ряд у входа, слот 1 слева
       r.spawn(co ? off : 0, 17, 0);
     },
     async play(r) {
@@ -101,20 +101,22 @@
   };
 
   // ------------------------------------------------------------------ сессия
+  // Комната из нескольких игроков: у каждого напарника своя запись Remote (слот 1..N): состояние, аватар, эмоция, плашка. Хост — авторитет (враги, волны), ретранслирует остальным.
   class Session {
     constructor(run, spec) {
       this.run = run; this.spec = spec; this.mode = spec.mode === 'mission' ? 'mission' : 'sandbox';
-      this.host = spec.role !== 'guest'; this.slot = spec.role === 'guest' ? 2 : 1; this.solo = !!spec.solo;
-      if (!this.solo) run.noPause = true;   // в онлайне паузы нет (мир идёт у друга): Esc/кнопка/потеря фокуса не ставят игру на паузу
+      this.host = spec.role !== 'guest'; this.slot = spec.role === 'guest' ? (NN.slot || 2) : 1; this.solo = !!spec.solo;
+      if (!this.solo) run.noPause = true;   // в онлайне паузы нет (мир идёт у друзей): Esc/кнопка/потеря фокуса не ставят игру на паузу
       this.shared = this.mode === 'sandbox';
-      this.rem = { x: 0, z: 0, yaw: 0, hp: 100, dead: false, w: '', crouch: false, aim: 0, got: false, p: { x: 0, z: 0, yaw: 0, pitch: 0, phase: 0, moving: 0 }, lastT: 0 };
-      this.av = null; this.ready = false; this.peerReady = false; this.offs = []; this.sendT = 0; this.snapT = 0; this.hudT = 0; this.lastSend = 0;
-      this.byId = new Map(); this.nid = 0; this.dmgBy = 1; this.chatOpen = false; this.emo = null; this.lastEm = null; this.shotAt = -9; this.cap = null;
+      this.remotes = new Map(); this.readySet = new Set();
+      this.ready = false; this.offs = []; this.sendT = 0; this.snapT = 0; this.hudT = 0; this.lastSend = 0;
+      this.byId = new Map(); this.nid = 0; this.dmgBy = 1; this.chatOpen = false; this.lastEm = null; this.cap = null;
       this.hitRate = { t: 0, n: 0 }; this.rng0 = null; this.wave = null; this.pq = []; this.gone = false; this.lastSnapRx = 0; this.lastPos = { x: 1e9, z: 1e9, a: 1e9, c: 0, w: '', h: -1, d: 0, q: 0 };
       this.seedOn();
       this.hook();
       if (!this.solo && PF) { PF.count('matches'); if (this.host) PF.count('hostMatches'); }
     }
+    get peerReady() { return this.readySet.size > 0; }
     seedOn() {
       if (!this.spec.seed) return;
       this.rng0 = Math.random; this.rng = seeded(this.spec.seed); Math.random = this.rng;
@@ -125,18 +127,42 @@
       const r = this.run;
       this.on('pos', this.onPos); this.on('shot', this.onShot); this.on('cev', this.onCev); this.on('boom', this.onBoom);
       this.on('net:close', () => this.partnerGone(NN.text('PEER_LEFT'))); this.on('net:chat', this.onChat);
+      this.on('net:left', (p) => this.removeRemote(p.slot, true)); this.on('net:roster', () => this.pruneRemotes());
       this.on('net:state', (s) => { if (s.state === 'lost') this.note('CONNECTION UNSTABLE…'); });
       this.on('hit', this.onHit); this.on('espawn', this.onSpawn); this.on('ekill', this.onKill); this.on('egone', this.onGone); this.on('snap', this.onSnap);
       this.on('eshot', this.onEShot); this.on('hurt', this.onHurt); this.on('wave', this.onWave);
       r.hooks.push((dt) => { try { this.tick(dt); } catch (e) { if (!this.errLogged) { this.errLogged = true; console.warn('[coop]', e); } } });
       this.buildUi();
     }
+    // запись о напарнике по слоту (создаётся при первом пакете, если игрок есть в списке комнаты)
+    rmFor(slot) {
+      slot = slot | 0;
+      let m = this.remotes.get(slot);
+      if (m || slot < 1 || slot === this.slot || this.gone) return m || null;
+      const q = NN.players.find((x) => x.slot === slot); if (!q) return null;
+      m = { slot, name: q.name, color: q.color, av: null, emo: null, shotAt: -9, tag: null, who: null,
+        rem: { x: 0, z: 0, yaw: 0, hp: 100, dead: false, w: '', crouch: false, aim: 0, got: false, p: { x: 0, z: 0, yaw: 0, pitch: 0, phase: 0, moving: 0 }, lastT: 0 } };
+      this.remotes.set(slot, m); this.mkRemoteUi(m);
+      return m;
+    }
+    liveRemotes() { return Array.from(this.remotes.values()).filter((m) => m.rem.got && !m.rem.dead); }
+    pruneRemotes() { this.remotes.forEach((m, s) => { if (!NN.players.some((q) => q.slot === s)) this.removeRemote(s, true); }); }
+    removeRemote(slot, say) {
+      const m = this.remotes.get(slot); if (!m) { if (say && this.host && !NN.players.length) this.partnerGone('FRIEND LEFT'); return; }
+      this.stopRemoteEmote(m);
+      if (m.av) { m.av.n.g.visible = false; }
+      if (m.tag) m.tag.remove(); if (m.who) m.who.remove();
+      this.remotes.delete(slot); this.readySet.delete(slot);
+      this.byId.forEach((e) => { if (e.puppet && !e.dead && e.owner === slot) { e.dead = true; e.alive = false; e.n.free = true; e.n.g.visible = false; } });
+      if (say) this.note(m.name + ' — ' + NN.text('PEER_LEFT'), 2.6);
+      if (!this.remotes.size && !NN.players.length) this.partnerGone('FRIEND LEFT THE MATCH');
+    }
 
     // -------------------------------------------------------------- интерфейс поверх миссии
     buildUi() {
       const r = this.run, L = r.layer;
       const hud = this.hud = document.createElement('div'); hud.className = 'nx-hud'; hud.setAttribute('data-i18n', 'net');
-      hud.innerHTML = '<div class="nx-who" hidden><span class="nx-av"></span><b translate="no"></b><span class="hp"><i></i></span><span class="talk"></span><span class="st" translate="no"></span></div>';
+      hud.innerHTML = '';
       L.appendChild(hud);
       const chat = this.chat = document.createElement('div'); chat.className = 'nx-chat'; chat.setAttribute('data-i18n', 'net');
       chat.innerHTML = '<div class="nx-log" role="log"></div><form class="nx-in" autocomplete="off"><input type="text" maxlength="200" placeholder="Type a message…" aria-label="Chat message" enterkeyhint="send"><button type="submit">SEND</button></form>';
@@ -144,9 +170,7 @@
       const btns = this.btns = document.createElement('div'); btns.className = 'nx-btns'; btns.setAttribute('data-i18n', 'net');
       btns.innerHTML = '<button type="button" class="nx-btn" data-k="chat">CHAT</button><button type="button" class="nx-btn" data-k="mic">MIC</button>';
       L.appendChild(btns);
-      const tag = this.tag = document.createElement('div'); tag.className = 'nx-tag'; tag.hidden = true; tag.innerHTML = '<span translate="no"></span><small></small>'; L.appendChild(tag);
       this.input = chat.querySelector('input'); this.log = chat.querySelector('.nx-log');
-      this.who = hud.querySelector('.nx-who');
       chat.querySelector('form').addEventListener('submit', (e) => { e.preventDefault(); this.sendChat(); });
       ['pointerdown', 'mousedown', 'touchstart'].forEach((n) => chat.addEventListener(n, (e) => e.stopPropagation(), { passive: true }));
       ['pointerdown', 'mousedown', 'touchstart'].forEach((n) => btns.addEventListener(n, (e) => e.stopPropagation(), { passive: true }));
@@ -218,6 +242,17 @@
       this.btns.hidden = this.solo || this.gone;
     }
 
+    mkRemoteUi(m) {
+      const L = this.run.layer; if (!L) return;
+      const tag = m.tag = document.createElement('div'); tag.className = 'nx-tag'; tag.hidden = true; tag.innerHTML = '<span translate="no"></span><small></small>';
+      tag.querySelector('span').textContent = m.name; tag.querySelector('small').textContent = 'PLAYER ' + m.slot; tag.style.color = m.color; L.appendChild(tag);
+      const w = m.who = document.createElement('div'); w.className = 'nx-who'; w.hidden = true;
+      w.innerHTML = '<span class="nx-av"></span><b translate="no"></b><span class="hp"><i></i></span><span class="talk"></span><span class="st" translate="no"></span>';
+      w.querySelector('.nx-av').innerHTML = PF ? PF.avatar(m.name || 'P', m.color, 24) : '';
+      w.querySelector('b').textContent = m.name || 'PLAYER';
+      this.hud.appendChild(w);
+    }
+
     // -------------------------------------------------------------- готовность
     onReady() {
       if (this.ready) return;
@@ -227,43 +262,42 @@
       if (!this.solo && this.host && this.peerReady) this.resendEnemies();
     }
     onCev(p) {
+      const from = p.from | 0;
       switch (p.k) {
-        case 'ready': this.peerReady = true; if (this.host && this.ready) this.resendEnemies(); break;
-        case 'emote': this.startRemoteEmote(String(p.id || '').slice(0, 20)); break;
-        case 'emoteoff': this.stopRemoteEmote(); break;
-        case 'leave': this.partnerGone('FRIEND LEFT THE MATCH'); break;
+        case 'ready': this.readySet.add(from); this.rmFor(from); if (this.host && this.ready) this.resendEnemies(); break;
+        case 'emote': { const m = this.rmFor(from); if (m) this.startRemoteEmote(m, String(p.id || '').slice(0, 20)); break; }
+        case 'emoteoff': { const m = this.remotes.get(from); if (m) this.stopRemoteEmote(m); break; }
+        case 'leave': this.removeRemote(from, true); break;
         default: break;
       }
     }
     partnerGone(text) {
       if (this.gone) return;
-      this.gone = true; this.solo = true; this.run.noPause = false;   // друг ушёл — снова одиночная игра, пауза разрешена
+      this.gone = true; this.solo = true; this.run.noPause = false;   // все ушли — снова одиночная игра, пауза разрешена
       this.note(text || 'FRIEND LEFT', 3);
-      if (this.av) { this.av.n.g.visible = false; }
-      this.stopRemoteEmote();
-      if (this.tag) this.tag.hidden = true; if (this.who) this.who.hidden = true;
+      this.remotes.forEach((m) => { this.stopRemoteEmote(m); if (m.av) m.av.n.g.visible = false; if (m.tag) m.tag.hidden = true; if (m.who) m.who.hidden = true; });
       this.byId.forEach((e) => { if (e.puppet && !e.dead) { e.dead = true; e.alive = false; e.n.free = true; e.n.g.visible = false; } });
       this.updBtns();
     }
 
-    // -------------------------------------------------------------- аватар напарника
-    buildAvatar() {
-      const r = this.run, T = THREE, n = r.npc(0, 0, 0), peer = NN.peer || {};
-      r.actorReset(n); n.yaw = 0; n.g.visible = false; n.seed = 3.3;
-      const col = peer.color || '#ffd60a';
-      this.av = { n, kind: undefined, muz: 0, dead: false, shown: false, aim: 0 };
-      this.tag.querySelector('span').textContent = peer.name || 'PLAYER ' + (this.slot === 1 ? 2 : 1);
-      this.tag.querySelector('small').textContent = this.slot === 1 ? 'PLAYER 2' : 'PLAYER 1';
-      this.tag.style.color = col;
-      const w = this.who; w.querySelector('.nx-av').innerHTML = PF ? PF.avatar(peer.name || 'P', col, 24) : '';
-      w.querySelector('b').textContent = peer.name || 'PLAYER'; w.hidden = false;
+    // -------------------------------------------------------------- аватары напарников
+    buildAvatar(m) {
+      const r = this.run, n = r.npc(0, 0, 0), peer = NN.players.find((x) => x.slot === m.slot) || {};
+      r.actorReset(n); n.yaw = 0; n.g.visible = false; n.seed = 3.3 + m.slot;
+      // без колец и свечения: цвет игрока только в нике над головой и в плашке
+      m.av = { n, kind: undefined, muz: 0, dead: false, shown: false, aim: 0 };
+      m.name = peer.name || m.name; m.color = peer.color || m.color;
+      m.tag.querySelector('span').textContent = m.name; m.tag.querySelector('small').textContent = 'PLAYER ' + m.slot; m.tag.style.color = m.color;
+      m.who.querySelector('.nx-av').innerHTML = PF ? PF.avatar(m.name || 'P', m.color, 24) : '';
+      m.who.querySelector('b').textContent = m.name || 'PLAYER'; m.who.hidden = false;
     }
     gunKind(id) { return GUN[id] || (id ? 'rifle' : null); }
-    updateAvatar(dt) {
-      const r = this.run, A = this.av, R = this.rem; if (!A) return;
-      const n = A.n, g = n.g;
-      if (!R.got || this.gone) { g.visible = false; return; }
-      const em = this.emo;
+    updateAvatars(dt) { this.remotes.forEach((m) => this.updateAvatar(m, dt)); }
+    updateAvatar(m, dt) {
+      const r = this.run, A = m.av, R = m.rem; if (!A) return;
+      const n = A.n, g = n.g, tg = m.tag;
+      if (!R.got || this.gone) { g.visible = false; if (tg) tg.hidden = true; return; }
+      const em = m.emo;
       if (!A.shown) { g.position.x = R.x; g.position.z = R.z; n.lx = R.x; n.lz = R.z; A.shown = true; }
       const k = 1 - Math.exp(-dt * 13);
       g.position.x += (R.x - g.position.x) * k; g.position.z += (R.z - g.position.z) * k;
@@ -274,16 +308,16 @@
       else if (!R.dead && A.dead) { A.dead = false; r.actorReset(n); A.kind = undefined; g.position.y = 0; }
       if (!A.dead) {
         if (R.w !== A.kind) { A.kind = R.w; r.setGun(n, this.gunKind(R.w)); }
-        const recent = r.time - this.shotAt < 1.4 || R.aim > 0.35;
+        const recent = r.time - m.shotAt < 1.4 || R.aim > 0.35;
         n.armT = n.gunKind ? (recent ? 1 : 0) : 0;
         n.cvT = R.crouch ? 1 : 0;
         A.muz = Math.max(0, A.muz - dt);
         if (n.flashM) n.flashM.visible = A.muz > 0;
       }
       g.visible = !em && !(R.hide);
-      if (em) this.updateEmote(dt);
+      if (em) this.updateEmote(m, dt);
       // ник над головой
-      const cam = r.camera, tg = this.tag;
+      const cam = r.camera;
       if (!cam || !g.visible && !em || A.dead) { tg.hidden = true; return; }
       const v = this.v3 || (this.v3 = new THREE.Vector3());
       v.set(g.position.x, 2.12, g.position.z).project(cam);
@@ -294,22 +328,22 @@
       tg.style.fontSize = clamp(22 - d * 0.5, 13, 20).toFixed(0) + 'px';
     }
 
-    // -------------------------------------------------------------- эмоции напарника: тот же танцор, что у игрока (EmoteCore.makeFigure)
-    startRemoteEmote(id) {
-      const EC = window.EmoteCore, r = this.run; if (!EC || !r.scene || !this.av) return;
+    // -------------------------------------------------------------- эмоции напарников: тот же танцор, что у игрока (EmoteCore.makeFigure)
+    startRemoteEmote(m, id) {
+      const EC = window.EmoteCore, r = this.run; if (!EC || !r.scene || !m.av) return;
       const tr = EC.track(id); if (!tr) return;
-      this.stopRemoteEmote();
-      const e = this.emo = { id, tr, t: 0, fig: null, pose: new Float32Array(45), tmp: new Float32Array(45), wait: false };
-      const go = () => { if (this.emo !== e || r.disposed) return; e.fig = EC.makeFigure(THREE, { cast: false }); r.scene.add(e.fig.group); EC.idlePose(0, e.pose, tr); e.fig.update(e.pose, null); };
+      this.stopRemoteEmote(m);
+      const e = m.emo = { id, tr, t: 0, fig: null, pose: new Float32Array(45), tmp: new Float32Array(45), wait: false };
+      const go = () => { if (m.emo !== e || r.disposed) return; e.fig = EC.makeFigure(THREE, { cast: false }); r.scene.add(e.fig.group); EC.idlePose(0, e.pose, tr); e.fig.update(e.pose, null); };
       if (tr.ready()) go(); else tr.load().then(go);
       const snd = r.snd;   // музыка танца напарника: тот же трек, что играет у самого танцующего; тише с расстоянием
       if (snd && snd.ctx && snd.ctx.state !== 'closed' && EC.makeMusic) {
-        try { const M = e.music = EC.makeMusic(snd.ctx, () => Math.min(1, snd.musVol() * 1.35) * this.emoVol(), tr); M.target = 1; M.play(0); } catch (er) { e.music = null; }
+        try { const M = e.music = EC.makeMusic(snd.ctx, () => Math.min(1, snd.musVol() * 1.35) * this.emoVol(m), tr); M.target = 1; M.play(0); } catch (er) { e.music = null; }
       }
     }
-    emoVol() { const R = this.rem, p = this.run.p; if (!R) return 1; return Math.max(0.12, 1 - Math.hypot(R.x - p.x, R.z - p.z) / 45); }
-    updateEmote(dt) {
-      const EC = window.EmoteCore, e = this.emo, R = this.rem; if (!e) return;
+    emoVol(m) { const R = m.rem, p = this.run.p; if (!R) return 1; return Math.max(0.12, 1 - Math.hypot(R.x - p.x, R.z - p.z) / 45); }
+    updateEmote(m, dt) {
+      const EC = window.EmoteCore, e = m.emo, R = m.rem; if (!e) return;
       if (e.music) e.music.tick(dt);
       if (!e.fig) return;
       e.t += dt;
@@ -317,11 +351,11 @@
       EC.sampleDance(e.t, e.pose, tr);
       if (e.t < 0.45) { EC.idlePose(e.t, e.tmp, tr); EC.mixPose(e.tmp, e.pose, EC.smooth(e.t / 0.45), e.pose); }
       e.fig.place(R.x, R.z, R.yaw + Math.PI); e.fig.update(e.pose, null);
-      if (!tr.loop && e.t > tr.dur + 0.45) this.stopRemoteEmote();
+      if (!tr.loop && e.t > tr.dur + 0.45) this.stopRemoteEmote(m);
     }
-    stopRemoteEmote() {
-      const e = this.emo; if (!e) return;
-      this.emo = null;
+    stopRemoteEmote(m) {
+      const e = m.emo; if (!e) return;
+      m.emo = null;
       if (e.music) { try { e.music.stop(); } catch (er) { /* уже остановлена */ } e.music = null; }
       if (e.fig) { try { e.fig.dispose(); } catch (er) { /* сцена могла быть уничтожена */ } }
     }
@@ -339,21 +373,23 @@
       NN.sendAction({ type: 'pos', x, z, a, c, w, h, d, q: aim });
     }
     onPos(p) {
-      const R = this.rem;
+      const m = this.rmFor(p.from); if (!m) return;
+      const R = m.rem;
       R.x = num(p.x); R.z = num(p.z); R.yaw = num(p.a); R.crouch = !!p.c; R.w = typeof p.w === 'string' ? p.w.slice(0, 12) : ''; R.hp = clamp(num(p.h, 100), 0, 100); R.dead = !!p.d; R.aim = clamp(num(p.q), 0, 1);
       R.p.x = R.x; R.p.z = R.z; R.p.yaw = R.yaw; R.p.moving = 0.5; R.got = true; R.lastT = performance.now();
-      if (!this.av && this.ready) this.buildAvatar();
+      if (!m.av && this.ready) this.buildAvatar(m);
     }
 
     // -------------------------------------------------------------- выстрелы
     onShot(p) {
-      const r = this.run, A = this.av, R = this.rem; if (!A || !r.cb || !r.scene) return;
+      const r = this.run, m = this.remotes.get(p.from | 0); if (!m) return;
+      const A = m.av, R = m.rem; if (!A || !r.cb || !r.scene) return;
       const n = A.n, id = typeof p.w === 'string' ? p.w : R.w;
-      this.shotAt = r.time; A.muz = 0.05; n.kick = 1;
+      m.shotAt = r.time; A.muz = 0.05; n.kick = 1;
       const d = Math.hypot(R.x - r.p.x, R.z - r.p.z);
       if (r.snd) { try { r.snd.shot(SND[id] || 'erifle', { dist: d, at: [R.x, 1.4, R.z] }); } catch (e) { /* звук не критичен */ } }
       const list = Array.isArray(p.tr) ? p.tr.slice(0, 3) : [];
-      const mz = this.muzzle(A);
+      const mz = this.muzzle(m);
       list.forEach((t) => {
         if (!Array.isArray(t) || t.length < 8) return;
         const o = { x: num(t[0]), y: num(t[1]), z: num(t[2]) }, dx = num(t[3]) / 1000, dy = num(t[4]) / 1000, dz = num(t[5]) / 1000, len = clamp(num(t[6]) / 10, 0, 120), k = t[7] | 0;
@@ -361,11 +397,11 @@
         if (k === 1) { const nx = -dx, ny = -dy, nz = -dz, l = Math.hypot(nx, ny, nz) || 1; r.sparks(o.x + dx * len, o.y + dy * len, o.z + dz * len, nx / l, ny / l, nz / l, 4); }
         else if (k === 2) r.sparks(o.x + dx * len, o.y + dy * len, o.z + dz * len, 0, 1, 0, 3);
       });
-      if (this.host && this.shared) this.withRemote(() => r.noise(30));
+      if (this.host && this.shared) this.withRemote(m, () => r.noise(30));
     }
-    muzzle(A) {
-      const T = THREE, n = A.n, v = this.mv || (this.mv = new T.Vector3());
-      if (n.flashM && n.gunG) { n.g.updateMatrixWorld(true); v.copy(n.flashM.position); n.gunG.localToWorld(v); } else v.set(this.rem.x, 1.35, this.rem.z);
+    muzzle(m) {
+      const T = THREE, n = m.av.n, v = this.mv || (this.mv = new T.Vector3());
+      if (n.flashM && n.gunG) { n.g.updateMatrixWorld(true); v.copy(n.flashM.position); n.gunG.localToWorld(v); } else v.set(m.rem.x, 1.35, m.rem.z);
       return v;
     }
     onBoom(p) {
@@ -395,23 +431,23 @@
       });
       NN.sendAction({ type: 'snap', e: list }, { fast: true });
     }
-    onHit(p) {                                                 // друг попал во врага: Хост применяет урон
+    onHit(p) {                                                 // гость попал во врага: Хост применяет урон
       if (!this.host || !this.shared || !this.ready) return;
       const t = performance.now();
       if (t - this.hitRate.t > 1000) { this.hitRate.t = t; this.hitRate.n = 0; }
-      if (++this.hitRate.n > 60) return;
+      if (++this.hitRate.n > 60 * Math.max(1, this.remotes.size)) return;
       const e = this.byId.get(p.i | 0); if (!e || e.dead) return;
       const r = this.run, d = clamp(num(p.d), 0, 400);
       if (!d) return;
-      this.dmgBy = 2;
+      this.dmgBy = p.from | 0 || 2;
       try { r.damageEnemy(e, d, !!p.h, p.x === undefined ? undefined : { x: num(p.x) / 100, y: num(p.y) / 100, z: num(p.z) / 100 }); } finally { this.dmgBy = 1; }
     }
-    // выбор цели врагов: ближайший живой игрок. withRemote подменяет «игрока» на аватар друга, а удары по нему превращает в сетевой урон
-    withRemote(fn) {
-      const r = this.run, R = this.rem, saved = r.p, savedAim = r.aimK, own = {};
+    // выбор цели врагов: ближайший живой игрок. withRemote подменяет «игрока» на аватар напарника, а удары по нему превращает в сетевой урон (адресно этому игроку)
+    withRemote(m, fn) {
+      const r = this.run, R = m.rem, saved = r.p, savedAim = r.aimK, own = {};
       ['hurt', 'pmHd', 'pmMelee', 'pmAim'].forEach((k) => { own[k] = Object.prototype.hasOwnProperty.call(r, k) ? r[k] : undefined; });
       r.p = R.p; R.p.moving = 0.5; r.aimK = R.aim;
-      r.hurt = (amt, fx, fz) => { if (!this.solo) NN.sendAction({ type: 'hurt', a: Math.round(amt * 10) / 10, x: q(fx, 10), z: q(fz, 10) }); };
+      r.hurt = (amt, fx, fz) => { if (!this.solo) NN.sendAction({ type: 'hurt', a: Math.round(amt * 10) / 10, x: q(fx, 10), z: q(fz, 10) }, { to: m.slot }); };
       r.pmHd = () => [R.x, R.crouch ? 1.1 : 1.6, R.z]; r.pmMelee = () => false; r.pmAim = () => 1;
       try { return fn(); } finally {
         r.p = saved; r.aimK = savedAim;
@@ -419,19 +455,26 @@
       }
     }
     updateEnemies(orig, dt, frozen) {
-      const r = this.run, cb = r.cb, R = this.rem;
-      if (!this.host || this.solo || !this.shared || !R.got || R.dead || !this.peerReady) return orig.call(r, dt, frozen);
-      const all = cb.enemies, Lg = [], Rg = [], px = r.p.x, pz = r.p.z;
+      const r = this.run, cb = r.cb, live = this.liveRemotes();
+      if (!this.host || this.solo || !this.shared || !live.length || !this.peerReady) return orig.call(r, dt, frozen);
+      const all = cb.enemies, px = r.p.x, pz = r.p.z, groups = new Map(), local = [];
+      const tg = [{ k: 0, x: px, z: pz, dead: r.dead }].concat(live.map((m) => ({ k: m.slot, x: m.rem.x, z: m.rem.z, dead: false, m })));
       for (const e of all) {
-        if (e.dead) { Lg.push(e); continue; }
-        const g = e.n.g.position, dl = Math.hypot(g.x - px, g.z - pz), dr = Math.hypot(g.x - R.x, g.z - R.z);
-        let t = e.tgt || 'l';
-        if (r.dead) t = 'r'; else if (t === 'l' && dr < dl * 0.8) t = 'r'; else if (t === 'r' && dl < dr * 0.8) t = 'l';
-        e.tgt = t; (t === 'r' ? Rg : Lg).push(e);
+        if (e.dead) { local.push(e); continue; }
+        const g = e.n.g.position;
+        let best = null, bd = 1e9, cur = null, cd = 1e9;
+        for (const t of tg) { if (t.dead) continue; const d = Math.hypot(g.x - t.x, g.z - t.z); if (d < bd) { bd = d; best = t; } if (t.k === e.tgt) { cd = d; cur = t; } }
+        const pick = !best ? tg[0] : (cur && bd > cd * 0.8 ? cur : best);       // гистерезис: не дёргаться между целями
+        e.tgt = pick.k;
+        if (pick.k === 0) local.push(e); else { let a = groups.get(pick.k); if (!a) groups.set(pick.k, a = []); a.push(e); }
       }
-      cb.enemies = Lg; orig.call(r, dt, frozen);
-      if (Rg.length) { cb.enemies = Rg; this.withRemote(() => orig.call(r, dt, frozen)); }
-      const keep = new Set(Lg); Rg.forEach((e) => keep.add(e));
+      cb.enemies = local; orig.call(r, dt, frozen);
+      const keep = new Set(local);
+      groups.forEach((list, k) => {
+        const m = this.remotes.get(k); if (!m) { list.forEach((e) => keep.add(e)); return; }
+        cb.enemies = list; this.withRemote(m, () => orig.call(r, dt, frozen));
+        list.forEach((e) => keep.add(e));
+      });
       cb.enemies = all.filter((e) => keep.has(e));
     }
     // -------- клиент: куклы врагов
@@ -483,7 +526,6 @@
     // удар по кукле: урон считает Хост, у нас — только эффекты
     puppetHit(e, amt, head, pt) {
       const r = this.run; if (e.dead || this.solo) return;
-      const t = performance.now();
       NN.sendAction({ type: 'hit', i: e.nid, d: Math.round(amt * 10) / 10, h: head ? 1 : 0, x: pt ? Math.round(pt.x * 100) : undefined, y: pt ? Math.round(pt.y * 100) : undefined, z: pt ? Math.round(pt.z * 100) : undefined });
       r.actorHit(e.n, head, amt); e.flashT = 0.06;
       if (!e.t.passive) {
@@ -491,7 +533,6 @@
         r.bloodHit(qp, head, amt, { x: dx / l, y: dy / l, z: dz / l });
         r.snd && r.snd.play(head ? 'bone' : 'flesh', { k: 1.4 });
       }
-      void t;
     }
     onEShot(p) {
       const r = this.run, e = this.byId.get(p.i | 0); if (this.host || !e || e.dead || !r.cb) return;
@@ -520,27 +561,30 @@
     tick(dt) {
       const r = this.run;
       if (r.entered) this.seedOff();
-      if (!this.av && this.ready && this.rem.got && !this.solo) this.buildAvatar();
+      if (this.ready && !this.solo) this.remotes.forEach((m) => { if (!m.av && m.rem.got) this.buildAvatar(m); });
       if (this.pq.length && this.ready) { const L = this.pq.splice(0); L.forEach((x) => (x[0] === 's' ? this.onSpawn(x[1]) : this.onKill(x[1]))); }
       if (!this.ready) { if (r.entered && r.scene) this.onReady(); else return; }
       this.sendState(dt);
       this.sendSnap(dt);
       this.puppets(dt);
-      this.updateAvatar(dt);
-      // свои эмоции: сообщаем напарнику о начале и конце танца
+      this.updateAvatars(dt);
+      // свои эмоции: сообщаем остальным о начале и конце танца
       const es = r.em && r.em.ses;
       if (es && (!this.lastEm || this.lastEm !== es)) { this.lastEm = es; if (!this.solo) NN.sendAction({ type: 'cev', k: 'emote', id: es.id }); }
       else if (!es && this.lastEm) { this.lastEm = null; if (!this.solo) NN.sendAction({ type: 'cev', k: 'emoteoff' }); }
-      // плашка напарника (4 раза в секунду)
+      // плашки напарников (4 раза в секунду)
       this.hudT += dt;
       if (this.hudT > 0.25) {
         this.hudT = 0;
-        const w = this.who, R = this.rem, v = NN.voice.state;
-        if (w && !w.hidden) {
-          w.querySelector('.hp i').style.width = (R.dead ? 0 : R.hp) + '%';
-          w.querySelector('.talk').classList.toggle('on', !!v.peerSpeaking);
-          w.querySelector('.st').textContent = R.dead ? '✖' : (NN.rtt ? NN.rtt + ' ms' : '');
-        }
+        const v = NN.voice.state;
+        this.remotes.forEach((m) => {
+          const w = m.who, R = m.rem;
+          if (w && !w.hidden) {
+            w.querySelector('.hp i').style.width = (R.dead ? 0 : R.hp) + '%';
+            w.querySelector('.talk').classList.toggle('on', !!v.peerSpeaking);
+            w.querySelector('.st').textContent = R.dead ? '✖' : (NN.rtt ? NN.rtt + ' ms' : '');
+          }
+        });
         this.updBtns();
       }
     }
@@ -549,7 +593,7 @@
       this.disposed = true;
       this.seedOff();
       this.offs.forEach((f) => { try { f(); } catch (e) { /* ok */ } }); this.offs = [];
-      this.stopRemoteEmote();
+      this.remotes.forEach((m) => this.stopRemoteEmote(m));
       if (this.chatOpen) { this.run.hacking = false; this.chatOpen = false; }
       if (!this.solo && NN.connected) NN.sendAction({ type: 'cev', k: 'leave' });
       if (cur === this) cur = null;
@@ -569,7 +613,7 @@
     const co = this.__co, e = a[0];
     if (co && e) {
       if (e.puppet) { co.puppetHit(e, a[1], a[2], a[3]); return undefined; }
-      if (e.nid) { e.lastBy = co.dmgBy; e.noCredit = co.dmgBy === 2; }   // убийство засчитывается тому, кто стрелял
+      if (e.nid) { e.lastBy = co.dmgBy; e.noCredit = co.dmgBy !== co.slot; }   // убийство засчитывается тому, кто стрелял
     }
     return o.apply(this, a);
   });
@@ -610,7 +654,10 @@
     get session() { return cur; },
     status() {
       const s = cur; if (!s) return null;
-      return { mode: s.mode, host: s.host, slot: s.slot, ready: s.ready, peerReady: s.peerReady, solo: s.solo, avatar: !!s.av, shown: !!(s.av && s.av.n.g.visible), remote: { x: s.rem.x, z: s.rem.z, w: s.rem.w, hp: s.rem.hp, dead: s.rem.dead, got: s.rem.got }, enemies: s.byId.size, puppets: Array.from(s.byId.values()).filter((e) => e.puppet).length, wave: s.wave ? s.wave.wave : (s.waveNo || 0), emote: s.emo ? s.emo.id : null };
+      const ms = Array.from(s.remotes.values()), m0 = ms[0];
+      return { mode: s.mode, host: s.host, slot: s.slot, ready: s.ready, peerReady: s.peerReady, solo: s.solo, avatar: !!(m0 && m0.av), shown: !!(m0 && m0.av && m0.av.n.g.visible), remote: m0 ? { x: m0.rem.x, z: m0.rem.z, w: m0.rem.w, hp: m0.rem.hp, dead: m0.rem.dead, got: m0.rem.got } : null,
+        remotes: ms.map((m) => ({ slot: m.slot, name: m.name, shown: !!(m.av && m.av.n.g.visible), got: m.rem.got, x: m.rem.x, z: m.rem.z, emote: m.emo ? m.emo.id : null, hp: m.rem.hp })),
+        enemies: s.byId.size, puppets: Array.from(s.byId.values()).filter((e) => e.puppet).length, wave: s.wave ? s.wave.wave : (s.waveNo || 0), emote: m0 && m0.emo ? m0.emo.id : null };
     }
   };
 }());

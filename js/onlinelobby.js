@@ -48,7 +48,7 @@
   const COLOR_NAMES = ['Red', 'Orange', 'Yellow', 'Green', 'Blue', 'Indigo', 'Purple', 'White'];
 
   function srvHTML(id) {
-    return '<section class="ol-srv" data-srv="' + id + '"><div class="srv-h"><h3>SIGNALING SERVERS</h3><b class="srv-count" translate="no"></b></div>' +
+    return '<section class="ol-srv" data-srv="' + id + '"><div class="srv-h"><h3>SIGNALING SERVERS</h3><b class="srv-count"></b></div>' +
       '<p class="cn-priv">Public servers only pass the short connection messages. The game, chat and voice go directly between players. Without servers the manual codes below always work.</p>' +
       '<div class="srv-row"><label class="cn-lan"><input type="checkbox" class="srv-on"><span>USE SIGNALING SERVERS (off = manual mode only)</span></label>' +
         '<button type="button" class="ol-btn" data-act="srv-probe">CHECK SERVERS</button></div>' +
@@ -263,7 +263,6 @@
   }
 
   // ------------------------------------------------------------------ диагностика ручного соединения: счётчики кандидатов (без адресов) и причина
-  const candLine = (d) => 'CANDIDATES — YOU: HOST ' + d.local.host + ', MDNS ' + d.local.mdns + ', PUBLIC ' + d.local.srflx + ', RELAY ' + d.local.relay + ' · FRIEND: HOST ' + d.remote.host + ', MDNS ' + d.remote.mdns + ', PUBLIC ' + d.remote.srflx + ', RELAY ' + d.remote.relay;
   function candPlain(d) {
     const el = $('#cn-diag-c'); if (!el) return;
     el.textContent = '';
@@ -271,7 +270,7 @@
     parts.forEach((p) => {
       const s = document.createElement('span'); s.className = 'cd-g';
       const t = document.createElement('em'); t.textContent = p[0]; s.appendChild(t);
-      [['HOST', p[1].host], ['MDNS', p[1].mdns], ['PUBLIC', p[1].srflx], ['RELAY', p[1].relay]].forEach((c) => { const k = document.createElement('span'); k.textContent = c[0]; const n = document.createElement('b'); n.textContent = String(c[1]); s.appendChild(k); s.appendChild(n); });
+      [['LOCAL ADDR.', p[1].host], ['MDNS', p[1].mdns], ['PUBLIC ADDR.', p[1].srflx], ['RELAY', p[1].relay]].forEach((c) => { const k = document.createElement('span'); k.textContent = c[0]; const n = document.createElement('b'); n.textContent = String(c[1]); s.appendChild(k); s.appendChild(n); });
       el.appendChild(s);
     });
   }
@@ -733,7 +732,7 @@
     const mine = RM.hosting && RM.hosting.pub ? RM.adOf() : null;
     const rows = (mine ? [Object.assign({ mine: true, age: 0 }, mine)] : []).concat(rooms);
     if (!rows.length) {
-      const p = document.createElement('p'); p.className = 'pb-empty'; p.textContent = ok && on ? (RM.gossip.peers ? 'NO PUBLIC ROOMS RIGHT NOW — CREATE ONE OR TRY QUICK PLAY' : 'LOOKING FOR OTHER PLAYERS…') : 'PUBLIC ROOMS ARE OFF'; box.appendChild(p);
+      const p = document.createElement('p'); p.className = 'pb-empty'; p.textContent = !on ? 'PUBLIC ROOMS ARE OFF' : (!ok ? 'PRESS REFRESH TO LOOK FOR PUBLIC ROOMS' : (RM.gossip.peers ? 'NO PUBLIC ROOMS RIGHT NOW — CREATE ONE OR TRY QUICK PLAY' : 'LOOKING FOR OTHER PLAYERS…')); box.appendChild(p);
       return;
     }
     rows.forEach((r) => {

@@ -70,6 +70,7 @@
     s = s || get().stats;
     return Math.floor(s.missionsDone * 120 + s.kills * 4 + s.headshots * 2 + s.hits * 0.5 + s.playSec / 60 + s.matches * 60 + s.msgSent * 0.5 + s.sandboxStarts * 5);
   }
+  const rankOf = (lv) => RANKS[Math.min(RANKS.length - 1, Math.floor((Math.max(1, lv | 0) - 1) / 4))];
   function levelInfo() {
     const x = xp(), lv = 1 + Math.floor(Math.sqrt(x / 40)), lo = 40 * (lv - 1) * (lv - 1), hi = 40 * lv * lv;
     return { level: Math.min(999, lv), xp: x, lo, hi, pct: Math.max(0, Math.min(1, (x - lo) / (hi - lo))), rank: RANKS[Math.min(RANKS.length - 1, Math.floor((lv - 1) / 4))] };
@@ -84,15 +85,26 @@
   }
   function setColor(c) { if (COLORS.indexOf(c) < 0) return false; get().color = c; changed(); save(); return true; }
 
-  // ------------------------------------------------------------------ экспорт / импорт (JSON-текст: работает и там, где скачивание файлов запрещено)
-  function exportJSON() { return JSON.stringify(get()); }
-  function importJSON(text) {
-    let o;
-    try { o = JSON.parse(String(text || '').trim()); } catch (e) { return { ok: false, err: 'IMPORT_BAD' }; }
-    if (!o || typeof o !== 'object' || o.v !== 1 || !o.stats || typeof o.stats !== 'object') return { ok: false, err: 'IMPORT_BAD' };
-    P = sanitize(o); dirty = true; save(); changed();
-    return { ok: true };
+  // ------------------------------------------------------------------ профиль для показа другим игрокам (по DataChannel, тип 'profile'): только безопасный белый список, без адресов
+  function shareable() {
+    const p = get(), d = derived(), lv = levelInfo();
+    const o = { name: p.name, color: p.color, level: lv.level, stats: {}, fav: '' };
+    NUMS.forEach((k) => { o.stats[k] = clampN(p.stats[k]); });
+    let best = 0; Object.keys(p.shotsBy).forEach((k) => { if (/^[a-z0-9]{2,12}$/.test(k) && p.shotsBy[k] > best) { best = p.shotsBy[k]; o.fav = k; } });
+    void d;
+    return o;
   }
+  // чужой профиль из сети: валидация и санитайзинг (числа в пределах, имя по правилам, цвет #rrggbb, строки короткие); при любой ошибке — null
+  function cleanShared(src) {
+    if (!src || typeof src !== 'object' || Array.isArray(src)) return null;
+    const nm = validName(src.name); if (!nm.ok) return null;
+    const o = { name: nm.name, color: typeof src.color === 'string' && /^#[0-9a-f]{6}$/i.test(src.color) ? src.color.toLowerCase() : '#ff3b30', level: Math.max(1, Math.min(999, clampN(src.level) || 1)), stats: {}, fav: '' };
+    const st = src.stats && typeof src.stats === 'object' ? src.stats : {};
+    NUMS.forEach((k) => { o.stats[k] = clampN(st[k], 1e9); });
+    if (typeof src.fav === 'string' && /^[a-z0-9]{2,12}$/.test(src.fav)) o.fav = src.fav;
+    return o;
+  }
+  function levelOf(pf) { const x = xp(pf.stats), lv = Math.min(999, 1 + Math.floor(Math.sqrt(x / 40))); return { level: Math.max(lv, 1), rank: rankOf(lv) }; }
   function reset() { P = fresh(); dirty = true; save(); changed(); }
 
   // ------------------------------------------------------------------ отображение
@@ -106,16 +118,18 @@
     const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60);
     return h ? '<span>' + num(h) + ' hr ' + num(String(m).padStart(2, '0')) + ' min</span>' : '<span>' + num(m) + ' min</span>';
   }
-  function derived() {
-    const s = get().stats, p = get();
+  function derived(src) {
+    const p = src || get(), s = p.stats;
     let fav = '', best = 0;
-    Object.keys(p.shotsBy).forEach((k) => { if (p.shotsBy[k] > best) { best = p.shotsBy[k]; fav = k; } });
+    if (p.fav !== undefined) fav = p.fav;
+    else Object.keys(p.shotsBy).forEach((k) => { if (p.shotsBy[k] > best) { best = p.shotsBy[k]; fav = k; } });
     return { acc: s.shots ? Math.round(s.hits / s.shots * 100) : 0, kd: s.deaths ? (s.kills / s.deaths).toFixed(2) : String(s.kills), fav: fav ? ({ glock: 'GLOCK 17', ak: 'AK-47', shotgun: 'SHOTGUN', sniper: 'SNIPER' }[fav] || fav.toUpperCase()) : '' };
   }
   function row(label, valueHTML) { return '<div class="pf-row"><span>' + label + '</span>' + valueHTML + '</div>'; }
   // карточка статистики: кладётся в экран «ПРОФИЛЬ» онлайн-лобби
-  function renderStats() {
-    const p = get(), s = p.stats, d = derived();
+  function renderStats() { return renderStatsOf(get()); }
+  function renderStatsOf(p) {
+    const s = p.stats, d = derived(p);
     const sec = (title, rows) => '<section class="pf-sec"><h4>' + title + '</h4>' + rows.join('') + '</section>';
     return '<div class="pf-grid">' +
       sec('MISSIONS', [row('COMPLETED', num(s.missionsDone)), row('FAILED / ABORTED', num(s.missionsFailed)), row('STARTED', num(s.missionsStarted)), row('SANDBOX SESSIONS', num(s.sandboxStarts))]) +
@@ -205,7 +219,7 @@
   }
 
   window.NexaProfile = {
-    COLORS, RANKS, NAME_MSG, get, count, setName, setColor, validName, publicInfo, level: levelInfo, xp, avatar, renderStats, exportJSON, importJSON, reset, save, derived, sanitize,
+    COLORS, RANKS, NAME_MSG, get, count, setName, setColor, validName, publicInfo, level: levelInfo, xp, avatar, renderStats, renderStatsOf, shareable, cleanShared, levelOf, rankOf, reset, save, derived, sanitize,
     onChange(f) { listeners.push(f); }, offChange(f) { listeners = listeners.filter((x) => x !== f); }, text: (c) => NAME_MSG[c] || String(c || '')
   };
   init();

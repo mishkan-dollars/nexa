@@ -1454,3 +1454,67 @@ body.in-online .terminal { animation: none !important; transform: none !importan
 .ol-tag .tg-l { border-color: rgba(255,255,255,.35); }
 .pk-sb.on, .pk-m.on { background: #1e1e1e; }
 .nx-in input { border-color: #f2f2f2; } .nx-in button { background: #f2f2f2; } .nx-tag small { color: #ef4b45; }
+
+/* ---- онлайн-лобби: комната из нескольких игроков, публичные комнаты, серверы сигналинга, карточка профиля, эмоции, подключение по ссылке ---- */
+.ol[data-tab="public"] .ol-pane[data-pane="public"] { display: block; }
+.ol-tag { pointer-events: auto; cursor: pointer; }
+.ol-tag:hover .tg-n, .ol-tag:focus-visible .tg-n { text-decoration: underline; }
+.ol-fig svg { filter: none; }
+.ol-plat { opacity: .55; } .ol-plat.used { opacity: 1; }
+.ol-fig.dancing svg, .ol-tag.dancing .tg-n { animation: olDance .55s ease-in-out infinite alternate; transform-origin: 50% 100%; }
+.ol-tag.dancing .tg-n { animation-name: olDanceT; }
+@keyframes olDance { from { transform: rotate(-4deg) translateY(0); } to { transform: rotate(4deg) translateY(-3%); } }
+@keyframes olDanceT { from { transform: translateY(0); } to { transform: translateY(-3px); } }
+.ol-emob { display: inline-flex; align-items: center; gap: 8px; background: rgba(20,22,28,.85); border: 1px solid #4a505b; color: #fff; border-radius: 8px; padding: 8px 14px; font-size: 17px; letter-spacing: .12em; }
+.ol-emob:hover { background: #2a2e36; border-color: #fff; } .ol-emob.on { background: #ef4b45; border-color: #ef4b45; color: #000; }
+.ol-roster { display: grid; gap: 4px; padding-bottom: 8px; border-bottom: 1px solid rgba(255,255,255,.1); max-height: 30%; overflow-y: auto; }
+.ol-roster[hidden] { display: none; }
+.ro-h { margin: 0; font-size: 13px; letter-spacing: .2em; color: #9aa2ad; }
+.ro-row { display: flex; gap: 6px; align-items: center; }
+.ro-p { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; background: #14161b; border: 1px solid #2a2d34; color: #fff; border-radius: 6px; padding: 3px 8px; text-align: left; }
+.ro-p:hover { border-color: #8a909c; } .ro-p b { text-transform: none; font-size: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; } .ro-p small { color: #9aa2ad; font-size: 13px; }
+.ro-b { padding: 3px 8px; font-size: 13px; }
+.ol-card.c-pb .cd-a { background: #ddb56b; color: #000; }
+.ol-modal select, .ol-modal input[type="text"] { width: 100%; background: #0b0d11; border: 1px solid #343944; color: #fff; border-radius: 6px; padding: 8px 10px; font-size: 18px; text-transform: none; margin: 4px 0 8px; }
+/* публичные комнаты */
+.pb-top { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; margin-bottom: 8px; } .pb-top h3, .pb-priv h3, .srv-h h3 { margin: 0; font-size: 24px; letter-spacing: .12em; }
+.pb-top .pf-btns { margin: 0; } .pb-top .ol-btn.big { width: auto; }
+.pb-list { display: grid; gap: 6px; margin: 8px 0 14px; }
+.pb-row { display: grid; grid-template-columns: minmax(80px, 1.4fr) minmax(90px, 1.2fr) auto auto auto auto; gap: 10px; align-items: center; background: #0b0d11; border: 1px solid #23262d; border-radius: 8px; padding: 6px 10px; }
+.pb-row.mine { border-color: #5be08d; }
+.pb-row > b { text-transform: none; font-size: 18px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pb-host { display: flex; align-items: center; gap: 6px; background: transparent; border: 0; color: #cfd5de; padding: 0; text-align: left; } .pb-host:hover em { text-decoration: underline; } .pb-host em { font-style: normal; text-transform: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 16px; }
+.pb-mode { font-size: 14px; letter-spacing: .1em; color: #ddb56b; } .pb-n { font-size: 17px; } .pb-age { font-size: 13px; color: #7d8592; min-width: 36px; text-align: right; }
+.pb-empty { margin: 14px 4px; color: #9aa2ad; font-size: 16px; letter-spacing: .06em; }
+.pb-priv { margin: 8px 0 14px; display: grid; gap: 6px; }
+@media (max-width: 640px) { .pb-row { grid-template-columns: 1fr auto auto; } .pb-mode, .pb-age { display: none; } }
+/* серверы сигналинга */
+.ol-srv { background: #0b0d11; border: 1px solid #23262d; border-radius: 10px; padding: 12px 14px; margin: 12px 0; display: grid; gap: 8px; }
+.srv-h { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; flex-wrap: wrap; } .srv-count { font-size: 19px; letter-spacing: .1em; color: #5be08d; }
+.ol-srv.is-off .srv-count { color: #9aa2ad; }
+.srv-row { display: flex; gap: 10px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+.srv-list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 4px 12px; }
+.srv { display: grid; grid-template-columns: 12px minmax(0, 1fr) auto auto; gap: 8px; align-items: center; font-size: 15px; padding: 2px 0; border-bottom: 1px dashed #1c1f25; }
+.srv i { width: 11px; height: 11px; border-radius: 50%; background: #50555f; display: block; }
+.srv b { text-transform: none; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .srv em { font-style: normal; color: #7d8592; font-size: 12px; letter-spacing: .1em; } .srv span { font-size: 13px; letter-spacing: .1em; color: #9aa2ad; min-width: 84px; text-align: right; }
+.srv.st-online i { background: #4ade80; box-shadow: 0 0 8px #4ade80; } .srv.st-online span { color: #4ade80; }
+.srv.st-connecting i { background: #ffd60a; } .srv.st-connecting span { color: #ffd60a; }
+.srv.st-down i { background: #ff5a4f; } .srv.st-down span { color: #ff8a82; }
+.srv.st-reserve i { background: #32ade6; } .srv.st-reserve span { color: #6fc7ee; }
+.srv.st-off i { background: #2a2d34; } .srv.st-off { opacity: .55; }
+/* ручной режим, диагностика, этот компьютер */
+.cn-room, .cn-local { margin-bottom: 12px; }
+.cn-manual { margin: 12px 0; } .cn-manual summary { cursor: pointer; font-size: 18px; letter-spacing: .12em; color: #cfd5de; padding: 8px 0; }
+.cn-diag { margin-top: 12px; padding: 12px 14px; border: 1px solid #7a3430; border-radius: 10px; background: rgba(255,90,79,.06); display: grid; gap: 8px; } .cn-diag .ol-btn.big { width: auto; justify-self: start; }
+.cn-diag .cd-g { display: inline-flex; gap: 6px; align-items: baseline; margin-right: 18px; font-size: 14px; letter-spacing: .08em; } .cn-diag .cd-g em { font-style: normal; color: #fff; } .cn-diag .cd-g b { color: #ffd60a; margin-right: 6px; }
+/* карточка профиля */
+.cd-box { width: min(900px, 100%); } .cd-id { display: flex; align-items: center; gap: 12px; } .cd-nm b { display: block; font-size: 30px; text-transform: none; letter-spacing: .04em; } .cd-nm small { color: #9aa2ad; letter-spacing: .1em; font-size: 16px; } .cd-nm small b { display: inline; font-size: 16px; color: #fff; }
+.cd-body { margin: 6px 0 10px; }
+/* эмоции */
+.em-box { width: min(560px, 100%); } .em-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; margin-bottom: 8px; }
+.em-b { display: grid; justify-items: center; gap: 4px; background: #14161b; border: 2px solid #2a2d34; color: #fff; border-radius: 8px; padding: 10px 8px; } .em-b:hover:not(:disabled) { border-color: #fff; } .em-b b { font-size: 16px; letter-spacing: .05em; text-align: center; text-transform: none; } .em-b small { color: #5be08d; letter-spacing: .12em; font-size: 12px; } .em-b.lock { opacity: .5; } .em-b.lock small { color: #ff8a82; }
+.em-b .em-ico { width: 56px; height: 56px; stroke: #fff; fill: #fff; stroke-width: 2.2; stroke-linecap: round; }
+/* согласие и экран «Подключение к другу…» */
+.cs-list { margin: 8px 0 12px; padding-left: 20px; display: grid; gap: 6px; font-size: 16px; line-height: 1.3; color: #cfd5de; text-transform: none; letter-spacing: .02em; }
+.jn-box { width: min(520px, 100%); display: grid; gap: 10px; } .jn-box h3 { margin: 0; font-size: 26px; letter-spacing: .1em; } .jn-st { margin: 0; font-size: 22px; letter-spacing: .08em; } .jn-st.bad { color: #ff8a82; }
+.ol:not([data-tab="play"]) .ol-tag, .ol:not([data-tab="play"]) .ol-invite { display: none; }
