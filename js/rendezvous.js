@@ -86,7 +86,7 @@
   }
   const cleanList = (l) => Array.from(new Set((l || []).map((x) => String(x).trim()).filter((x) => x && validServer(x)))).slice(0, 5000);
   // ---- обнаружение релеев во время работы (NIP-66 kind 30166, NIP-65 kind 10002): адреса не вшиты, а берутся у проверенных релеев
-  const DISC_TTL = 14 * 86400000, DISC_MAX = 3000, DISC_USE = 2500;
+  const DISC_TTL = 14 * 86400000, DISC_MAX = 6000, DISC_USE = 5000;
   const BAD_HOST = /(^|\.)(workers\.dev|onrender\.com|fly\.dev|trycloudflare\.com|ts\.net|duckdns\.org|onion|local|localhost|internal|example\.\w+)$/;
   function cleanRelay(u) {
     let x; try { x = new URL(String(u).trim()); } catch (e) { return ''; }
@@ -119,29 +119,64 @@
       ev.tags.forEach((x) => { if (x[0] === 'r' && x[1]) add(x[1]); });
     }
   }
-  const DS = { running: false };
-  function discover(force) {
-    if (DS.running || !serversOn()) return Promise.resolve(0);
-    if (!force && Date.now() - DISC.t < 6 * 3600000 && Object.keys(DISC.list).length > 50) return Promise.resolve(0);
-    DS.running = true;
-    const base = (SV.NOSTR_VERIFIED || []).filter((u) => { const r = store[u]; return !r || r.ok || !fresh(r); });
-    const src = (paramList('discrelay') || paramList('relay') || base).slice(0, 4);
-    let added = 0;
-    const add = (u) => { const c = cleanRelay(u); if (!c) return; if (!DISC.list[c]) added += 1; DISC.list[c] = Date.now(); };
-    const one = (url) => new Promise((res) => {
-      let ws; const fin = () => { clearTimeout(tm); try { ws && ws.close(); } catch (e) { /* ok */ } res(); };
-      const tm = setTimeout(fin, 9000);
+  const DS = { running: false, rounds: 0, last: 0 };
+  // один релей: по каждому виду событий листаем назад по времени (until), пока приходят новые страницы
+  function pageRelay(url, add, budget) {
+    return new Promise((res) => {
+      let ws, done = false, total = 0;
+      const fin = () => { if (done) return; done = true; clearTimeout(tm); try { ws && ws.close(); } catch (e) { /* ok */ } res(); };
+      const tm = setTimeout(fin, budget || 20000);
       try { ws = new WebSocket(url); } catch (e) { fin(); return; }
-      let eose = 0, n = 0;
-      ws.onopen = () => { try { ws.send(JSON.stringify(['REQ', 'nxd1', { kinds: [30166], limit: 700 }])); ws.send(JSON.stringify(['REQ', 'nxd2', { kinds: [10002], limit: 700 }])); } catch (e) { fin(); } };
+      const plan = []; [30166, 10002].forEach((k) => plan.push({ kind: k, until: 0, page: 0 }));
+      let cur = null, n = 0, oldest = 0, pend = 0;
+      const next = () => {
+        cur = plan.shift(); if (!cur) { fin(); return; }
+        n = 0; oldest = 0; pend = 1;
+        const f = { kinds: [cur.kind], limit: 700 }; if (cur.until) f.until = cur.until;
+        try { ws.send(JSON.stringify(['REQ', 'nxd', f])); } catch (e) { fin(); }
+      };
+      ws.onopen = next;
       ws.onmessage = (m) => {
         let j; try { j = JSON.parse(m.data); } catch (e) { return; }
         if (!Array.isArray(j)) return;
-        if (j[0] === 'EVENT' && n < 1500) { n += 1; discEvent(j[2], add); } else if (j[0] === 'EOSE' && (eose += 1) >= 2) fin();
+        if (j[0] === 'EVENT' && j[2] && total < 6000) { n += 1; total += 1; const t = j[2].created_at | 0; if (t && (!oldest || t < oldest)) oldest = t; discEvent(j[2], add); }
+        else if (j[0] === 'EOSE' || j[0] === 'CLOSED') {
+          try { ws.send(JSON.stringify(['CLOSE', 'nxd'])); } catch (e) { /* ok */ }
+          if (n >= 200 && oldest && cur.page < 5 && total < 6000) plan.unshift({ kind: cur.kind, until: oldest - 1, page: cur.page + 1 });
+          next();
+        }
       };
       ws.onerror = fin; ws.onclose = fin;
     });
-    return Promise.all(src.map(one)).then(() => { DS.running = false; DISC.t = Date.now(); saveDisc(); seAt = 0; emitServers(); return added; }, () => { DS.running = false; return 0; });
+  }
+  // раунды: сначала проверенные релеи, затем найденные и ответившие; повторяем, пока приток новых адресов не иссякнет (потолок 4 раунда)
+  function discover(force) {
+    if (DS.running || !serversOn()) return Promise.resolve(0);
+    if (!force && Date.now() - DISC.t < 6 * 3600000 && Object.keys(DISC.list).length > 50) return Promise.resolve(0);
+    DS.running = true; DS.rounds = 0;
+    const used = new Set();
+    let added = 0;
+    const add = (u) => { const c = cleanRelay(u); if (!c) return; if (!DISC.list[c]) { added += 1; roundNew += 1; } DISC.list[c] = Date.now(); };
+    let roundNew = 0;
+    const pickSrc = (first) => {
+      let list;
+      if (first) list = (paramList('discrelay') || paramList('relay') || (SV.NOSTR_VERIFIED || []).filter((u) => { const r = store[u]; return !r || r.ok || !fresh(r); })).slice(0, 6);
+      else list = Object.keys(DISC.list).filter((u) => !used.has(u) && store[u] && store[u].ok && fresh(store[u])).slice(0, 6);
+      return list.filter((u) => !used.has(u));
+    };
+    const round = async (first) => {
+      const src = pickSrc(first); if (!src.length) return;
+      src.forEach((u) => used.add(u)); roundNew = 0; DS.rounds += 1;
+      await Promise.all(src.map((u) => pageRelay(u, add)));
+      saveDisc(); seAt = 0; emitServers();
+    };
+    return (async () => {
+      try {
+        await round(true);
+        for (let i = 0; i < 3 && roundNew >= 20; i += 1) { await probe(false, 48); await round(false); }
+      } catch (e) { /* ok */ }
+      DS.running = false; DISC.t = Date.now(); saveDisc(); seAt = 0; emitServers(); return added;
+    })();
   }
   // [{url, type:'tracker'|'nostr'}]: параметры ?tracker= / ?relay= (через запятую) или localStorage 'nexaTrackers' / 'nexaRelays' заменяют списки по умолчанию
   let seCache = null, seAt = 0;
