@@ -791,7 +791,7 @@
       const deny = () => { sendLink(L, { type: 'bye' }); linkGone(L, 'PEER_LEFT'); };
       if (ad && ad.active && (!L.pk || ad.banned(L.pk))) { deny(); return; }
       if (L.pk) {
-        if (!L.helloGot) {
+        if (first) {
           const w = (JOINS[L.pk] || []).filter((t) => now() - t < 60000);
           if (L.pk === (window.Toys && Toys.ident.pk) || w.length >= JOIN_MAX) { JOINS[L.pk] = w; deny(); return; }
           w.push(now()); JOINS[L.pk] = w;
