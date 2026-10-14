@@ -1,14 +1,18 @@
-// NEXA/OS: «ОНЛАЙН ЛОББИ» — отдельный экран (view 'ONLINE') в духе лобби Fortnite: главный игрок на светящейся платформе по центру, напарник на платформе сзади,
-// тусклые пустые платформы, слева внизу режим + серая кнопка «МИССИЯ / ПЕСОЧНИЦА С ДРУГОМ» и большая жёлтая «ИГРАТЬ», справа — уровень, внизу карусель карточек.
-// Вкладки: PLAY / PROFILE / CHAT / CONNECTION / TELEGRAM. Подключение вручную (Offer/Answer) — вкладка CONNECTION, чат и голос — боковая панель.
-// 3D-сцена: стикмены игры (Run.prototype.npc через THREE, загружается лениво); на слабых устройствах и без WebGL — лёгкий CSS-фолбэк. Стили — конец styles.css (блок «ОНЛАЙН ЛОББИ»).
+// NEXA/OS: «ОНЛАЙН ЛОББИ» — отдельный экран (view 'ONLINE') в духе лобби Fortnite: главный игрок на платформе по центру, остальные игроки комнаты (до NexaNet.MAX_PLAYERS)
+// на платформах сзади, пустые платформы тусклые; слева внизу режим + серая кнопка «МИССИЯ / ПЕСОЧНИЦА» и большая жёлтая «ИГРАТЬ», справа — уровень, внизу карусель карточек.
+// Вкладки: PLAY / PUBLIC / PROFILE / CHAT / CONNECTION / TELEGRAM. Подключение: ссылка комнаты «в один клик» через серверы сигналинга (js/rendezvous.js), публичные комнаты,
+// быстрая игра, приватная комната по имени, режим «этот компьютер» (вкладки одного браузера) и ЗАПАСНОЙ ручной обмен кодами (всегда доступен). Чат и голос — боковая панель.
+// Эмоции (танцы EmoteCore) на платформах — у всех игроков, танец и музыка синхронизируются по сети (cev emote/emoteoff, как в coop.js). Нажатие на ник/аватар игрока открывает
+// карточку его профиля (данные приходят по DataChannel). 3D-сцена: стикмены игры (Run.prototype.npc через THREE, лениво); без свечения и колец у игроков (кольца и свет — только
+// у платформ). Лёгкий CSS-фолбэк без WebGL. Все тексты — английские исходники; переводы RU/DE — js/i18n-net.js. Данные из сети выводятся только через textContent.
 (function () {
   'use strict';
-  const NN = window.NexaNet, PF = window.NexaProfile;
+  const NN = window.NexaNet, PF = window.NexaProfile, RM = window.NexaRoom;
   if (!NN || !PF) return;
-  const TG = NN.TELEGRAM;
+  const TG = NN.TELEGRAM, MAXP = NN.MAX_PLAYERS;
   const ctx = { audio: null, setView: null, render: null, startCoop: null };
-  const L = { tab: 'play', mode: 'sandbox', mission: 1, peerReady: false, ready: false, cd: 0, cdT: 0, cdSpec: null, unread: 0, t0: 0, pick: false, notes: {}, joinFromUrl: false, lastStats: 0, copied: 0 };
+  const L = { tab: 'play', mode: 'sandbox', mission: 1, ready: false, readyMap: {}, readyList: [], cd: 0, cdT: 0, cdSpec: null, unread: 0, t0: 0, pick: false, notes: {}, joinFromUrl: false, lastStats: 0, copied: 0,
+    pubSession: false, joinUi: null, roomLink: '', dances: {}, cards: {}, srvSeen: false };
   let root = null, tickT = 0;
   const $ = (s) => (root ? root.querySelector(s) : null);
   const $$ = (s) => (root ? Array.from(root.querySelectorAll(s)) : []);
@@ -19,6 +23,14 @@
   const missionsMap = () => (window.Missions && Missions._core && Missions._core.MISSIONS) || {};
   const missionTitle = (id) => { const m = missionsMap()[id]; return m && m.title ? m.title : 'MISSION'; };
   const validMission = (id) => { id = id | 0; return id >= 1 && id <= 47 && !!missionsMap()[id]; };
+  const mySlot = () => (NN.connected ? NN.slot || 1 : 1);
+  // список игроков для платформ: [я, остальные по слотам]
+  function party() {
+    const p = PF.get(), lv = PF.level();
+    const me = { slot: mySlot(), name: p.name, color: p.color, level: lv.level, me: true, pid: NN.PID };
+    return [me].concat(NN.connected ? NN.players : []);
+  }
+  const isHostSide = () => !NN.connected || NN.isHost;
 
   // ------------------------------------------------------------------ разметка
   const IC = {
@@ -27,19 +39,30 @@
     mic: '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><rect x="9" y="3" width="6" height="12" rx="3" fill="currentColor"/><path d="M5.5 11a6.5 6.5 0 0013 0M12 17.5V21" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>',
     tg: '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M21 4L3 11l5.5 2L10 19l3-3.5 5 3.8z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M8.5 13L17 7.5" stroke="currentColor" stroke-width="1.8" fill="none"/></svg>',
     modes: '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M4 8h16M4 16h16M8 4v16M16 4v16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/></svg>',
-    // серьёзная стойка: прямо, руки скрещены на груди (светлее тела, чтобы читались), голова чуть вверх; у напарника руки сзади/вдоль тела
+    emo: '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><circle cx="12" cy="5" r="2.4" fill="currentColor"/><path d="M12 8v6M12 10l-5-2M12 10l5 2M12 14l-3 7M12 14l3 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>',
+    // серьёзная стойка: прямо, руки скрещены на груди (светлее тела, чтобы читались), голова чуть вверх; у остальных руки сзади/вдоль тела
     fig: '<svg viewBox="0 0 80 160" aria-hidden="true"><circle cx="40" cy="15" r="10.5" stroke-width="2"/><path d="M40 35v46M35 82l-2 63M45 82l2 63" fill="none" stroke-width="11"/><path d="M31 41l-7 20 24-8M49 41l7 20-24-8" fill="none" stroke="#2a2d34" stroke-width="7"/></svg>',
     fig2: '<svg viewBox="0 0 80 160" aria-hidden="true"><circle cx="40" cy="15" r="10.5" stroke-width="2"/><path d="M40 35v46M35 82l-2 63M45 82l2 63" fill="none" stroke-width="11"/><path d="M30 41l-3 28M50 41l3 28" fill="none" stroke="#2a2d34" stroke-width="7"/></svg>'
   };
+  const range = (n) => Array.from({ length: n }, (_, i) => i);
+  const COLOR_NAMES = ['Red', 'Orange', 'Yellow', 'Green', 'Blue', 'Indigo', 'Purple', 'White'];
+
+  function srvHTML(id) {
+    return '<section class="ol-srv" data-srv="' + id + '"><div class="srv-h"><h3>SIGNALING SERVERS</h3><b class="srv-count" translate="no"></b></div>' +
+      '<p class="cn-priv">Public servers only pass the short connection messages. The game, chat and voice go directly between players. Without servers the manual codes below always work.</p>' +
+      '<div class="srv-row"><label class="cn-lan"><input type="checkbox" class="srv-on"><span>USE SIGNALING SERVERS (off = manual mode only)</span></label>' +
+        '<button type="button" class="ol-btn" data-act="srv-probe">CHECK SERVERS</button></div>' +
+      '<ul class="srv-list" role="list"></ul></section>';
+  }
 
   function shell() {
-    const tabs = [['play', 'PLAY'], ['profile', 'PROFILE'], ['chat', 'CHAT'], ['connect', 'CONNECTION']];
+    const tabs = [['play', 'PLAY'], ['public', 'PUBLIC'], ['profile', 'PROFILE'], ['chat', 'CHAT'], ['connect', 'CONNECTION']];
     return '<div class="ol" id="ol" data-i18n="net" data-tab="play" data-state="idle">' +
       '<div class="ol-bg" aria-hidden="true"><i class="ol-moon"></i><i class="ol-haze"></i></div>' +
       '<div class="ol-stage" id="ol-stage"><div class="ol-floor"></div>' +
-        [0, 1, 2].map((i) => '<div class="ol-plat p' + i + '"><i></i></div>').join('') +
-        [0, 1].map((i) => '<div class="ol-fig f' + i + '" hidden>' + (i ? IC.fig2 : IC.fig) + '</div>').join('') +
-        [0, 1].map((i) => '<div class="ol-tag t' + i + '" hidden><span class="tg-l" translate="no"></span><span class="tg-n" translate="no"></span><span class="tg-s"></span></div>').join('') +
+        range(MAXP).map((i) => '<div class="ol-plat p' + i + '"><i></i></div>').join('') +
+        range(MAXP).map((i) => '<div class="ol-fig f' + i + '" hidden>' + (i ? IC.fig2 : IC.fig) + '</div>').join('') +
+        range(MAXP).map((i) => '<div class="ol-tag t' + i + '" hidden data-act="card" data-slot=""><span class="tg-l" translate="no"></span><span class="tg-n" translate="no"></span><span class="tg-s"></span></div>').join('') +
         '<button type="button" class="ol-invite" data-act="tab" data-v="connect" hidden><b>+</b><span>INVITE A FRIEND</span></button>' +
       '</div>' +
       '<header class="ol-top">' +
@@ -53,6 +76,11 @@
       '<div class="ol-cd" id="ol-cd" hidden><div><small>THE MATCH STARTS IN</small><b translate="no">3</b></div></div>' +
       '<div class="ol-toast" id="ol-toast" role="status" aria-live="polite"></div>' +
       '<div class="ol-modal" id="ol-pick" hidden role="dialog" aria-modal="true" aria-label="Choose a mode"></div>' +
+      '<div class="ol-modal" id="ol-card" hidden role="dialog" aria-modal="true" aria-label="Player profile"></div>' +
+      '<div class="ol-modal" id="ol-emo" hidden role="dialog" aria-modal="true" aria-label="Emotes"></div>' +
+      '<div class="ol-modal" id="ol-consent" hidden role="dialog" aria-modal="true" aria-label="Public play"></div>' +
+      '<div class="ol-modal" id="ol-pubnew" hidden role="dialog" aria-modal="true" aria-label="Create a public room"></div>' +
+      '<div class="ol-modal" id="ol-join" hidden role="dialog" aria-modal="true" aria-label="Connecting"></div>' +
     '</div>';
   }
 
@@ -65,38 +93,62 @@
         '<button type="button" class="ol-grey" data-act="pick" id="bl-pick"><span class="g-i">' + IC.modes + '</span><span class="g-t"><b>MISSION / SANDBOX WITH A FRIEND</b><small id="bl-sub"></small></span></button>' +
         '<button type="button" class="ol-play" data-act="play" id="bl-play"><span id="bl-play-t">PLAY</span></button>' +
         '<p class="ol-hint" id="bl-hint"></p></div>' +
-      '<div class="ol-br"><div class="ol-lvl" id="ol-lvl"><i></i><span><small>LVL</small><b translate="no">1</b></span></div><div class="ol-badge" id="ol-badge" title="Rank"><b translate="no">S</b><small>SUBJECT</small></div></div>' +
+      '<div class="ol-br"><button type="button" class="ol-emob" data-act="emotes" id="ol-emob" title="B">' + IC.emo + '<span id="ol-emob-t">EMOTES</span></button>' +
+        '<div class="ol-lvl" id="ol-lvl"><i></i><span><small>LVL</small><b translate="no">1</b></span></div><div class="ol-badge" id="ol-badge" title="Rank"><b translate="no">S</b><small>SUBJECT</small></div></div>' +
       '<div class="ol-car" id="ol-car">' +
-        '<button type="button" class="ol-card c-sb on" data-act="mode" data-v="sandbox"><i class="cd-a">3</i><span><small>2 PLAYERS</small><b>CO-OP SANDBOX</b></span></button>' +
+        '<button type="button" class="ol-card c-sb on" data-act="mode" data-v="sandbox"><i class="cd-a">3</i><span><small>CO-OP</small><b>CO-OP SANDBOX</b></span></button>' +
         '<button type="button" class="ol-card c-ms" data-act="pick"><i class="cd-a">47</i><span><small>STORY</small><b>CO-OP MISSIONS</b></span></button>' +
         '<button type="button" class="ol-card c-pf" data-act="tab" data-v="profile"><i class="cd-a">★</i><span><small>STATS</small><b>YOUR PROFILE</b></span></button>' +
-        '<button type="button" class="ol-card c-cn" data-act="tab" data-v="connect"><i class="cd-a">⇄</i><span><small>NO SERVER</small><b>CONNECT WITH A FRIEND</b></span></button>' +
+        '<button type="button" class="ol-card c-pb" data-act="tab" data-v="public"><i class="cd-a">⌖</i><span><small>QUICK PLAY</small><b>PUBLIC ROOMS</b></span></button>' +
+        '<button type="button" class="ol-card c-cn" data-act="tab" data-v="connect"><i class="cd-a">⇄</i><span><small>P2P</small><b>CONNECT WITH A FRIEND</b></span></button>' +
         '<a class="ol-card c-tg" href="' + TG + '" target="_blank" rel="noopener noreferrer"><i class="cd-a">' + IC.tg + '</i><span><small>OFFICIAL</small><b>TELEGRAM CHANNEL</b></span></a>' +
       '</div>' +
     '</section>' +
     // -------- чат + голос (одна панель: справа на PLAY, на всю вкладку на CHAT)
     '<aside class="ol-comm" id="ol-comm"><div class="ol-voice" id="ol-voice">' +
         '<div class="v-row"><button type="button" class="ol-btn v-mic" data-act="mic" id="v-mic">' + IC.mic + '<span id="v-mic-t">TURN MICROPHONE ON</span></button>' +
-        '<label class="v-vol"><span>FRIEND VOLUME</span><input type="range" min="0" max="100" value="100" id="v-vol" aria-label="Friend volume"></label></div>' +
+        '<label class="v-vol"><span>FRIEND VOLUME</span><input type="range" min="0" max="100" value="100" id="v-vol" aria-label="Friend volume"></label>' +
+        '<label class="cn-lan"><input type="checkbox" id="v-in" checked><span>HEAR OTHER PLAYERS\' VOICE</span></label></div>' +
         '<div class="v-ind"><span class="v-who" id="v-me"><i></i><em>YOU</em></span><span class="v-who" id="v-peer"><i></i><em>FRIEND</em></span></div>' +
         '<p class="v-note" id="v-note"></p></div>' +
+      '<div class="ol-roster" id="ol-roster"></div>' +
       '<div class="ol-chat"><div class="ol-log" id="ol-log" role="log" aria-live="polite"></div>' +
         '<form class="ol-send" id="ol-send" autocomplete="off"><input type="text" id="ol-msg" maxlength="200" placeholder="Type a message…" aria-label="Chat message" enterkeyhint="send"><button type="submit" class="ol-btn">SEND</button></form>' +
         '<p class="v-note" id="ol-chat-note"></p>' +
         '<a class="ol-tglink" href="' + TG + '" target="_blank" rel="noopener noreferrer">' + IC.tg + '<span>OFFICIAL TELEGRAM CHANNEL</span></a></div></aside>' +
+    // -------- PUBLIC: публичные комнаты, быстрая игра, приватная комната по имени
+    '<section class="ol-pane ol-sheet" data-pane="public"><div class="sh-in">' +
+      '<div class="pb-top"><h3>PUBLIC ROOMS</h3><div class="pf-btns"><button type="button" class="ol-btn" data-act="pub-refresh">REFRESH</button>' +
+        '<button type="button" class="ol-btn big" data-act="quick" id="pb-quick">QUICK PLAY</button><button type="button" class="ol-btn" data-act="pub-new">CREATE A PUBLIC ROOM</button></div></div>' +
+      '<p class="v-note" id="pub-note"></p>' +
+      '<div class="pb-list" id="pub-list" role="list"></div>' +
+      '<div class="pb-priv"><h3>PRIVATE ROOM BY NAME</h3><div class="pf-nm"><input type="text" id="pr-name" maxlength="24" spellcheck="false" autocomplete="off" aria-label="Room name" placeholder="room-name"><button type="button" class="ol-btn" data-act="pr-create">CREATE</button><button type="button" class="ol-btn" data-act="pr-join">JOIN</button></div>' +
+        '<p class="cn-priv">Anyone who knows the room name can join — pick a long, unusual name and share it only with friends.</p><p class="v-note" id="pr-note"></p></div>' +
+      srvHTML('pub') +
+      '<p class="cn-priv">Strangers in public rooms and the signaling servers can technically see your network address (WebRTC); a VPN hides it. Public chat is not moderated: you can mute or report any player.</p>' +
+    '</div></section>' +
     // -------- PROFILE
     '<section class="ol-pane ol-sheet" data-pane="profile"><div class="sh-in">' +
       '<div class="pf-head"><span id="pf-av"></span><div class="pf-id"><label for="pf-name">NICKNAME</label><div class="pf-nm"><input type="text" id="pf-name" maxlength="16" spellcheck="false" autocomplete="off" aria-label="Nickname"><button type="button" class="ol-btn" data-act="name">SAVE</button></div><p class="v-note" id="pf-note"></p></div>' +
         '<div class="pf-lv"><div class="pf-lvl"><small>LVL</small><b id="pf-lv" translate="no">1</b></div><div class="pf-xp"><span id="pf-rank">SUBJECT</span><div class="pf-bar"><i id="pf-bari"></i></div><em translate="no" id="pf-xpt"></em></div></div></div>' +
       '<div class="pf-sw" id="pf-sw" role="group" aria-label="Color">' + PF.COLORS.map((c, i) => '<button type="button" class="pf-c" data-act="color" data-v="' + c + '" style="--c:' + c + '" aria-label="' + COLOR_NAMES[i] + '" title="' + COLOR_NAMES[i] + '"></button>').join('') + '</div>' +
       '<div id="ol-stats"></div>' +
-      '<details class="pf-io"><summary>EXPORT / IMPORT PROFILE</summary><textarea id="pf-json" rows="4" spellcheck="false" aria-label="Profile JSON" placeholder="Profile JSON"></textarea>' +
-        '<div class="pf-btns"><button type="button" class="ol-btn" data-act="pf-export">EXPORT</button><button type="button" class="ol-btn" data-act="pf-import">IMPORT</button><button type="button" class="ol-btn danger" data-act="pf-reset" id="pf-reset">RESET STATS</button></div><p class="v-note" id="pf-io-note"></p></details>' +
+      '<div class="pf-btns"><button type="button" class="ol-btn danger" data-act="pf-reset" id="pf-reset">RESET STATS</button></div>' +
     '</div></section>' +
     // -------- CONNECTION
     '<section class="ol-pane ol-sheet" data-pane="connect"><div class="sh-in">' +
       '<ol class="cn-steps" id="cn-steps"><li>INVITE</li><li>ANSWER</li><li>LINK</li><li>PLAY</li></ol>' +
       '<div class="cn-bar"><b id="cn-state">NOT CONNECTED</b><span id="cn-time" translate="no"></span><button type="button" class="ol-btn danger" data-act="disconnect" id="cn-dis" hidden>DISCONNECT</button></div>' +
+      '<article class="cn-card cn-room" id="cn-room"><h3>ONE-CLICK INVITE LINK</h3><p class="cn-p">Create a room and send the link. Your friend opens it and connects automatically — no codes. Several friends can join one link (up to 6 players).</p>' +
+        '<button type="button" class="ol-btn big" data-act="room-create" id="rm-create">CREATE ROOM LINK</button>' +
+        '<div class="cn-out" id="rm-out" hidden><label for="rm-link">ROOM LINK</label><textarea id="rm-link" readonly rows="2" spellcheck="false"></textarea>' +
+          '<div class="pf-btns"><button type="button" class="ol-btn" data-act="copy" data-v="rm-link">COPY LINK</button><button type="button" class="ol-btn danger" data-act="room-close">CLOSE ROOM</button></div>' +
+          '<p class="v-note" id="rm-status"></p></div><p class="v-note" id="rm-note"></p></article>' +
+      srvHTML('cn') +
+      '<article class="cn-card cn-local" id="cn-local"><h3>THIS COMPUTER</h3><p class="cn-p">Two tabs or windows of the same browser (not private windows): no codes, no internet, no servers. Open the room in one tab, join it in the other.</p>' +
+        '<div class="pf-btns"><button type="button" class="ol-btn" data-act="local-host" id="lc-host">OPEN A ROOM HERE</button><button type="button" class="ol-btn" data-act="local-join" id="lc-join">JOIN A ROOM HERE</button></div><p class="v-note" id="lc-note"></p></article>' +
+      '<details class="cn-manual" open><summary>MANUAL CONNECTION (works without servers)</summary>' +
+      '<p class="cn-priv" id="cn-hint">Do all steps within 1–2 minutes: every code is single-use. If it does not connect, press TRY AGAIN and start over with a new invitation.</p>' +
       '<div class="cn-cols">' +
         '<article class="cn-card" id="cn-host"><h3>HOST</h3><p class="cn-p">You are player 1. Create an invitation and send the link to your friend.</p>' +
           '<button type="button" class="ol-btn big" data-act="host-create" id="h-create">CREATE INVITATION</button>' +
@@ -110,6 +162,8 @@
           '<div class="cn-out" id="g-out" hidden><label for="g-code">YOUR ANSWER CODE — SEND IT TO THE HOST</label><textarea id="g-code" readonly rows="3" spellcheck="false"></textarea>' +
             '<div class="pf-btns"><button type="button" class="ol-btn" data-act="copy" data-v="g-code">COPY CODE</button></div></div><p class="v-note" id="g-note"></p></article>' +
       '</div>' +
+      '<div class="cn-diag" id="cn-diag" hidden><p class="v-note bad" id="cn-diag-t"></p><p class="v-note" id="cn-diag-c" translate="no"></p><button type="button" class="ol-btn big" data-act="manual-retry">TRY AGAIN</button></div>' +
+      '</details>' +
       '<div class="cn-foot"><label class="cn-lan"><input type="checkbox" id="cn-lan"><span>SAME WI-FI / LAN MODE (less private, helps when both of you are on one network)</span></label>' +
         '<p class="cn-priv" id="cn-priv">Your IP address is never shown in the game. With a direct P2P link your friend\'s browser can technically see your network address (a WebRTC property); a VPN hides it.</p>' +
         '<p class="cn-priv">The invitation code carries your connection data in encoded form — send it only to your friend. On itch.io the game frame needs allow="microphone" for voice chat.</p></div>' +
@@ -131,9 +185,10 @@
     if (L.mode === 'mission' && validMission(L.mission)) return ['MISSION', String(L.mission).padStart(2, '0'), missionTitle(L.mission)];
     return ['SANDBOX', '', ''];
   }
+  const guestsReady = () => { const g = NN.players; return g.length > 0 && g.every((q) => !!L.readyMap[q.slot]); };
   function updPlay() {
     if (!root) return;
-    const host = !NN.connected || NN.isHost, mt = modeText();
+    const host = isHostSide(), mt = modeText();
     const sub = $('#bl-sub');
     sub.innerHTML = mt[1] ? '<span>MISSION</span> <b translate="no">' + mt[1] + '</b> — <span translate="no">' + esc(mt[2]) + '</span>' : '<span>SANDBOX</span> — <span>WAVES OF ENEMIES</span>';
     $('#bl-mode').textContent = mt[1] ? 'CO-OP MISSION' : 'CO-OP SANDBOX';
@@ -145,7 +200,7 @@
     let label = 'PLAY', dis = false, hn = '';
     if (L.cd) { label = 'STARTING…'; dis = true; }
     else if (!NN.connected) { label = 'PLAY'; hn = 'SOLO — OPEN CONNECTION TO PLAY WITH A FRIEND'; }
-    else if (NN.isHost) { if (!L.peerReady) { dis = true; hn = 'WAITING FOR YOUR FRIEND TO PRESS READY'; } else hn = 'YOUR FRIEND IS READY'; }
+    else if (NN.isHost) { if (!NN.players.length) { hn = 'SOLO — OPEN CONNECTION TO PLAY WITH A FRIEND'; } else if (!guestsReady()) { dis = true; hn = NN.players.length > 1 ? 'WAITING FOR ALL PLAYERS TO PRESS READY' : 'WAITING FOR YOUR FRIEND TO PRESS READY'; } else hn = NN.players.length > 1 ? 'ALL PLAYERS ARE READY' : 'YOUR FRIEND IS READY'; }
     else { label = L.ready ? 'CANCEL' : 'READY'; hn = L.ready ? 'WAITING FOR THE HOST TO START' : 'PRESS READY WHEN YOU ARE SET'; }
     tx.textContent = label; btn.disabled = dis; btn.classList.toggle('is-ready', !NN.isHost && NN.connected && L.ready);
     hint.textContent = hn;
@@ -164,16 +219,20 @@
     $('#cn-dis').hidden = !(open || st === 'waiting-answer' || st === 'answering' || st === 'connecting' || st === 'creating');
     const idx = { idle: 0, creating: 0, 'waiting-answer': 1, answering: 1, connecting: 2, open: 3, lost: 3, closed: 0, failed: 0 }[st] || 0;
     $$('#cn-steps li').forEach((li, i) => { li.classList.toggle('done', i < idx); li.classList.toggle('on', i === idx); });
-    $('#q-title').textContent = open ? (NN.peer ? NN.peer.name : 'FRIEND') : (STATE_TXT[st] || STATE_TXT.idle);
-    $('#q-title').setAttribute('translate', open && NN.peer ? 'no' : 'yes');
+    const qt = $('#q-title');
+    if (open) { qt.textContent = 'PARTY ' + NN.count + '/' + MAXP; qt.setAttribute('translate', 'yes'); }
+    else { qt.textContent = STATE_TXT[st] || STATE_TXT.idle; qt.setAttribute('translate', 'yes'); }
     $('#q-sub').textContent = open ? (st === 'lost' ? 'CONNECTION UNSTABLE…' : 'CONNECTED') : (st === 'idle' || st === 'closed' || st === 'failed' ? 'TAP TO CONNECT WITH A FRIEND' : 'TAP TO CONTINUE CONNECTING');
     root.classList.toggle('is-open', open);
-    $('#h-create').disabled = open;
-    $('#h-create').textContent = NN.offerCode && NN.role === 'host' ? 'CREATE NEW INVITATION' : 'CREATE INVITATION';
-    $('#h-connect').disabled = !(NN.role === 'host' && st === 'waiting-answer');
+    const full = open && NN.count >= MAXP;
+    $('#h-create').disabled = (open && !NN.isHost) || full;
+    $('#h-create').textContent = NN.offerCode && NN.role === 'host' ? 'CREATE NEW INVITATION' : (open && NN.isHost ? 'INVITE ANOTHER PLAYER' : 'CREATE INVITATION');
+    $('#h-connect').disabled = !(NN.role === 'host' && NN.pending && NN.offerCode && st !== 'idle');
     $('#g-answer').disabled = open;
+    $('#rm-create').disabled = (open && !NN.isHost) || full;
     $('#cn-lan').checked = NN.lan;
-    updTimer();
+    if (open) { const d = $('#cn-diag'); if (d) d.hidden = true; }
+    updTimer(); updRoster(); updRoom();
   }
   function fmtTime(s) { return String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0'); }
   function updTimer() {
@@ -203,8 +262,34 @@
     setTimeout(() => { d.classList.add('out'); setTimeout(() => d.remove(), 500); }, 3600);
   }
 
+  // ------------------------------------------------------------------ диагностика ручного соединения: счётчики кандидатов (без адресов) и причина
+  const candLine = (d) => 'CANDIDATES — YOU: HOST ' + d.local.host + ', MDNS ' + d.local.mdns + ', PUBLIC ' + d.local.srflx + ', RELAY ' + d.local.relay + ' · FRIEND: HOST ' + d.remote.host + ', MDNS ' + d.remote.mdns + ', PUBLIC ' + d.remote.srflx + ', RELAY ' + d.remote.relay;
+  function candPlain(d) {
+    const el = $('#cn-diag-c'); if (!el) return;
+    el.textContent = '';
+    const parts = [['YOU', d.local], ['FRIEND', d.remote]];
+    parts.forEach((p) => {
+      const s = document.createElement('span'); s.className = 'cd-g';
+      const t = document.createElement('em'); t.textContent = p[0]; s.appendChild(t);
+      [['HOST', p[1].host], ['MDNS', p[1].mdns], ['PUBLIC', p[1].srflx], ['RELAY', p[1].relay]].forEach((c) => { const k = document.createElement('span'); k.textContent = c[0]; const n = document.createElement('b'); n.textContent = String(c[1]); s.appendChild(k); s.appendChild(n); });
+      el.appendChild(s);
+    });
+  }
+  function showDiag(code) {
+    const box = $('#cn-diag'); if (!box) return;
+    const d = NN.diag(); if (!d) return;
+    box.hidden = false;
+    const none = d.local.srflx + d.remote.srflx === 0;
+    const t = $('#cn-diag-t');
+    t.textContent = '';
+    const main = document.createElement('span'); main.textContent = NN.text(code || 'CONNECT_TIMEOUT'); t.appendChild(main);
+    const why = document.createElement('span');
+    why.textContent = ' ' + NN.text(d.local.mdns + d.remote.mdns > 0 && none ? 'DIAG_MDNS' : (none ? 'DIAG_NO_STUN' : (d.local.srflx === 0 || d.remote.srflx === 0 ? 'DIAG_ONE_SIDE' : 'DIAG_NAT')));
+    t.appendChild(why);
+    candPlain(d);
+  }
+
   // ------------------------------------------------------------------ чат
-  const COLOR_NAMES = ['Red', 'Orange', 'Yellow', 'Green', 'Blue', 'Indigo', 'Purple', 'White'];
   const SYS = { FRIEND_JOINED: '{0} joined the party', HOST_READY: 'Connected to host {0}', FRIEND_LEFT: '{0} left the party' };
   function lineEl(m) {
     const d = document.createElement('div');
@@ -247,7 +332,30 @@
     nt.className = 'v-note' + (v.err ? ' bad' : ''); nt.textContent = code ? NN.text(code) : '';
   }
 
-  // ------------------------------------------------------------------ профиль
+  // ------------------------------------------------------------------ список игроков (клик по нику/аватару — карточка профиля)
+  function updRoster() {
+    const box = $('#ol-roster'); if (!box) return;
+    const list = party();
+    box.textContent = '';
+    if (list.length < 2) { box.hidden = true; return; }
+    box.hidden = false;
+    const h = document.createElement('p'); h.className = 'ro-h'; h.textContent = 'PLAYERS'; box.appendChild(h);
+    list.forEach((q) => {
+      const row = document.createElement('div'); row.className = 'ro-row';
+      const a = document.createElement('button'); a.type = 'button'; a.className = 'ro-p'; a.dataset.act = 'card'; a.dataset.slot = String(q.slot);
+      const av = document.createElement('span'); av.innerHTML = PF.avatar(q.name, q.color, 24);
+      const nm = document.createElement('b'); nm.setAttribute('translate', 'no'); nm.textContent = (q.slot === 1 ? '♛ ' : '') + q.name;
+      const lv = document.createElement('small'); lv.setAttribute('translate', 'no'); lv.textContent = String(q.level);
+      a.appendChild(av); a.appendChild(nm); a.appendChild(lv); row.appendChild(a);
+      if (!q.me) {
+        const mu = document.createElement('button'); mu.type = 'button'; mu.className = 'ol-btn ro-b'; mu.dataset.act = 'mute'; mu.dataset.slot = String(q.slot);
+        mu.textContent = NN.isMuted(q.slot) ? 'UNMUTE' : 'MUTE'; row.appendChild(mu);
+      }
+      box.appendChild(row);
+    });
+  }
+
+  // ------------------------------------------------------------------ профиль (свой)
   function updProfile(force) {
     if (!root) return;
     const p = PF.get(), lv = PF.level();
@@ -261,33 +369,107 @@
     $('#ol-stats').innerHTML = PF.renderStats();
   }
 
-  // ------------------------------------------------------------------ сцена: CSS-слой и подписи
+  // ------------------------------------------------------------------ профили других игроков по сети ('profile' / 'profile?')
+  const PR = {};                               // pid -> {pf, t}
+  const pidOf = (slot) => { const q = NN.players.find((x) => x.slot === slot); return q ? q.pid || ('s' + slot) : ''; };
+  let pfSig = '';
+  function sendProfile(to) {
+    if (!NN.connected) return;
+    let pf; try { pf = PF.shareable(); } catch (e) { return; }
+    NN.sendAction({ type: 'profile', pf }, to ? { to } : undefined);
+  }
+  function profileTick(force) {
+    if (!NN.connected) return;
+    let sig = ''; try { sig = JSON.stringify(PF.shareable()); } catch (e) { return; }
+    if (!force && sig === pfSig) return;
+    pfSig = sig;
+    if (NN.isHost) sendProfile(); else sendProfile(1);     // Хост — всем гостям, гость — Хосту (остальные берут по запросу)
+  }
+  function onProfile(p) {
+    const pf = PF.cleanShared(p.pf); if (!pf) return;
+    const k = pidOf(p.from); if (!k) return;
+    PR[k] = { pf, t: Date.now() };
+    if (L.cards.open === p.from) renderCard(p.from);
+  }
+  function onProfileReq(p) { sendProfile(p.from); }
+
+  // ------------------------------------------------------------------ карточка профиля игрока
+  function openCard(slot, extra) {
+    const el = $('#ol-card'); if (!el) return;
+    L.cards.open = slot; L.cards.extra = extra || null;
+    renderCard(slot);
+    el.hidden = false;
+    if (!extra && slot !== mySlot()) { try { NN.sendAction({ type: 'profile?' }, { to: slot }); } catch (e) { /* ok */ } }
+    const f = el.querySelector('[data-act="card-close"]'); if (f) try { f.focus({ preventScroll: true }); } catch (e) { /* ok */ }
+  }
+  function renderCard(slot) {
+    const el = $('#ol-card'); if (!el) return;
+    const ex = L.cards.extra, me = !ex && slot === mySlot();
+    let q, pf = null;
+    if (ex) { q = { name: ex.host, color: ex.col, level: ex.lv, slot: 0 }; pf = ex.pf || null; }
+    else if (me) { q = party()[0]; pf = PF.shareable(); }
+    else { q = NN.players.find((x) => x.slot === slot); if (q) { const c = PR[pidOf(slot)]; pf = c ? c.pf : null; } }
+    if (!q) { el.hidden = true; return; }
+    const box = document.createElement('div'); box.className = 'pk-box cd-box';
+    const hd = document.createElement('div'); hd.className = 'pk-h';
+    const t = document.createElement('div'); t.className = 'cd-id';
+    const av = document.createElement('span'); av.innerHTML = PF.avatar(pf ? pf.name : q.name, pf ? pf.color : q.color, 54);
+    const nm = document.createElement('div'); nm.className = 'cd-nm';
+    const b = document.createElement('b'); b.setAttribute('translate', 'no'); b.textContent = pf ? pf.name : q.name;
+    const lv = pf ? PF.levelOf(pf) : { level: q.level, rank: PF.rankOf(q.level) };
+    const s = document.createElement('small'); s.innerHTML = '<span>LVL</span> <b translate="no">' + esc(lv.level) + '</b> · <span>' + esc(lv.rank) + '</span>';
+    nm.appendChild(b); nm.appendChild(s); t.appendChild(av); t.appendChild(nm);
+    const x = document.createElement('button'); x.type = 'button'; x.className = 'ol-ic'; x.dataset.act = 'card-close'; x.setAttribute('aria-label', 'Close'); x.textContent = '×';
+    hd.appendChild(t); hd.appendChild(x); box.appendChild(hd);
+    const body = document.createElement('div'); body.className = 'cd-body';
+    if (pf) body.innerHTML = PF.renderStatsOf(pf);
+    else { const p = document.createElement('p'); p.className = 'v-note'; p.textContent = ex ? 'FULL PROFILE LOADS WHEN YOU JOIN OR THE SWARM ANSWERS' : 'LOADING PROFILE…'; body.appendChild(p); }
+    box.appendChild(body);
+    const act = document.createElement('div'); act.className = 'pf-btns';
+    if (!me && !ex) {
+      const mu = document.createElement('button'); mu.type = 'button'; mu.className = 'ol-btn'; mu.dataset.act = 'mute'; mu.dataset.slot = String(slot); mu.textContent = NN.isMuted(slot) ? 'UNMUTE' : 'MUTE'; act.appendChild(mu);
+      const rp = document.createElement('button'); rp.type = 'button'; rp.className = 'ol-btn danger'; rp.dataset.act = 'report'; rp.dataset.slot = String(slot); rp.textContent = 'REPORT'; act.appendChild(rp);
+      if (NN.isHost) { const kk = document.createElement('button'); kk.type = 'button'; kk.className = 'ol-btn danger'; kk.dataset.act = 'kick'; kk.dataset.slot = String(slot); kk.textContent = 'REMOVE FROM ROOM'; act.appendChild(kk); }
+    }
+    const cl = document.createElement('button'); cl.type = 'button'; cl.className = 'ol-btn'; cl.dataset.act = 'card-close'; cl.textContent = 'CLOSE'; act.appendChild(cl);
+    box.appendChild(act);
+    el.textContent = ''; el.appendChild(box);
+  }
+  function closeCard() { const el = $('#ol-card'); if (el) el.hidden = true; L.cards.open = null; L.cards.extra = null; }
+
+  // ------------------------------------------------------------------ сцена: CSS-слой и подписи (платформы по кругу: я в центре впереди, остальные дугой сзади)
+  const FB = [[50, 80, 26], [66, 63, 15], [34, 63, 15], [82, 55, 12], [18, 55, 12], [50, 51, 12]];   // CSS-фолбэк: центр платформы %, ширина %
   function updStage() {
     if (!root) return;
-    const p = PF.get(), lv = PF.level(), open = NN.connected, peer = NN.peer;
-    const tag = (i, name, color, lvl, status, cls, host) => {
-      const t = $('.ol-tag.t' + i); if (!t) return;
-      t.hidden = false;
-      t.querySelector('.tg-l').textContent = lvl;
-      t.querySelector('.tg-n').textContent = (host ? '♛ ' : '') + name;
-      const s = t.querySelector('.tg-s'); s.textContent = status; t.className = 'ol-tag t' + i + ' ' + cls;
-      t.style.setProperty('--c', color);
-    };
-    tag(0, p.name, p.color, lv.level, !open ? 'OFFLINE' : (NN.isHost ? 'HOST' : (L.ready ? 'READY' : 'NOT READY')), !open ? 's-off' : (NN.isHost || L.ready ? 's-ok' : 's-no'), open && NN.isHost);
-    const f1 = $('.ol-fig.f0'); if (f1) { f1.hidden = false; f1.style.setProperty('--c', p.color); }
-    const t1 = $('.ol-tag.t1'), f2 = $('.ol-fig.f1');
-    if (open && peer) {
-      tag(1, peer.name, peer.color, peer.level, NN.isHost ? (L.peerReady ? 'READY' : 'NOT READY') : 'HOST', NN.isHost ? (L.peerReady ? 's-ok' : 's-no') : 's-ok', !NN.isHost);
-      if (f2) { f2.hidden = false; f2.style.setProperty('--c', peer.color); }
-    } else { if (t1) t1.hidden = true; if (f2) f2.hidden = true; }
+    const list = party(), open = NN.connected;
+    const rdy = (q) => (q.me ? (NN.isHost ? true : L.ready) : (q.slot === 1 ? true : (NN.isHost ? !!L.readyMap[q.slot] : L.readyList.indexOf(q.slot) >= 0)));
+    for (let d = 0; d < MAXP; d += 1) {
+      const q = list[d], t = $('.ol-tag.t' + d), f = $('.ol-fig.f' + d);
+      if (!q) { if (t) t.hidden = true; if (f) f.hidden = true; continue; }
+      if (t) {
+        t.hidden = false;
+        t.dataset.slot = String(q.slot);
+        t.querySelector('.tg-l').textContent = q.level;
+        t.querySelector('.tg-n').textContent = (q.slot === 1 && open ? '♛ ' : '') + q.name;
+        let status, cls;
+        if (!open) { status = 'OFFLINE'; cls = 's-off'; }
+        else if (q.slot === 1) { status = 'HOST'; cls = 's-ok'; }
+        else { const r = rdy(q); status = r ? 'READY' : 'NOT READY'; cls = r ? 's-ok' : 's-no'; }
+        const s = t.querySelector('.tg-s'); s.textContent = status; t.className = 'ol-tag t' + d + ' ' + cls + (L.dances[q.slot] ? ' dancing' : '');
+        t.style.setProperty('--c', q.color);
+      }
+      if (f) { f.hidden = false; f.style.setProperty('--c', q.color); f.classList.toggle('dancing', !!L.dances[q.slot]); }
+    }
     const inv = $('.ol-invite'); if (inv) inv.hidden = open;
-    root.classList.toggle('has-peer', !!(open && peer));
+    root.classList.toggle('has-peer', !!(open && list.length > 1));
+    $$('.ol-plat').forEach((p, d) => p.classList.toggle('used', d < list.length));
     stSync();
+    layoutTags();
   }
 
   function refreshAll() {
     if (!root) return;
-    updTop(); updPlay(); updStatus(); updVoice(); renderLog(true); updProfile(true); updTab();
+    updTop(); updPlay(); updStatus(); updVoice(); renderLog(true); updProfile(true); updTab(); renderServers(); renderPublic(); updRoom(); updEmoBtn();
     $('#ol-msg').disabled = false;
     const lan = $('#cn-lan'); if (lan) lan.checked = NN.lan;
     const o = NN.offerCode;
@@ -301,10 +483,11 @@
     $$('.ol-tab[data-act="tab"]').forEach((b) => { const on = b.dataset.v === L.tab; b.classList.toggle('on', on); b.setAttribute('aria-selected', on ? 'true' : 'false'); });
     if (commVisible()) { L.unread = 0; const dot = $('.ol-dot'); if (dot) dot.hidden = true; const log = $('#ol-log'); if (log) log.scrollTop = log.scrollHeight; }
     if (L.tab === 'profile') updProfile(true);
+    if (L.tab === 'public') enterPublic();
     layoutTags();
   }
   function setTab(t) {
-    if (['play', 'profile', 'chat', 'connect'].indexOf(t) < 0) t = 'play';
+    if (['play', 'public', 'profile', 'chat', 'connect'].indexOf(t) < 0) t = 'play';
     L.tab = t; updTab();
   }
 
@@ -316,13 +499,13 @@
     try { if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(el.value).then(done, fb); else fb(); } catch (e) { fb(); }
   }
   async function hostCreate() {
-    L.t0 = Date.now(); NN.chat.clear(); renderLog(true);
-    $('#h-out').hidden = true; note('h-note', '');
+    L.t0 = Date.now(); if (!NN.connected) { NN.chat.clear(); renderLog(true); }
+    $('#h-out').hidden = true; note('h-note', ''); const dg = $('#cn-diag'); if (dg) dg.hidden = true;
     $('#h-create').disabled = true;
     const r = await NN.createOffer();
     if (!root) return;
     if (!r.ok) { note('h-note', r.err, 'bad'); $('#h-create').disabled = false; return; }
-    $('#h-out').hidden = false; $('#h-link').value = r.link;
+    $('#h-out').hidden = false; $('#h-link').value = r.link; $('#h-ans').value = '';
     const bits = [];
     if (r.forced) bits.push(NN.text('GATHER_FORCED'));
     if (r.onlyLocal) bits.push(NN.text('NO_PUBLIC'));
@@ -339,7 +522,7 @@
   async function guestAnswer(fromUrl) {
     const v = $('#g-in').value;
     L.t0 = Date.now(); NN.chat.clear(); renderLog(true);
-    $('#g-out').hidden = true; note('g-note', '');
+    $('#g-out').hidden = true; note('g-note', ''); const dg = $('#cn-diag'); if (dg) dg.hidden = true;
     $('#g-answer').disabled = true;
     const r = await NN.createAnswer(v);
     if (!root) return;
@@ -352,13 +535,27 @@
     noteSet($('#g-note'), bits.length ? bits : [fromUrl ? 'Invitation found in the link. Send the answer code to the host.' : 'Answer ready. Send the code to the host.'], r.onlyLocal ? 'bad' : 'ok');
     updStatus();
   }
+  // «Повторить»: новое приглашение (хост) или новый ответ из того же приглашения (друг)
+  function manualRetry() {
+    const dg = $('#cn-diag'); if (dg) dg.hidden = true;
+    if (NN.role === 'guest' || ($('#g-in').value.trim() && !NN.offerCode && NN.role !== 'host')) { if ($('#g-in').value.trim()) guestAnswer(false); else toast('PASTE THE HOST\'S LINK OR CODE', 'bad'); }
+    else hostCreate();
+  }
+  // галочка LAN влияет на уже созданный код — код пересоздаётся
+  function lanChanged(on) {
+    NN.setLan(on);
+    if (NN.state === 'waiting-answer' && NN.role === 'host' && NN.offerCode) { toast('LAN MODE CHANGED — NEW INVITATION CREATED'); hostCreate(); }
+    else if (NN.role === 'guest' && NN.answerCode && !NN.connected && $('#g-in').value.trim()) { toast('LAN MODE CHANGED — NEW ANSWER CREATED'); guestAnswer(false); }
+  }
 
-  function sendLobby() { if (NN.isHost && NN.connected) NN.sendAction({ type: 'lobby', mode: L.mode, mission: L.mission }); }
+  function lobbyMsg() { return { type: 'lobby', mode: L.mode, mission: L.mission, ready: NN.players.filter((q) => L.readyMap[q.slot]).map((q) => q.slot) }; }
+  function sendLobby() { if (NN.isHost && NN.connected) NN.sendAction(lobbyMsg()); }
   function setMode(mode, mission) {
     if (NN.connected && !NN.isHost) return;
     L.mode = mode === 'mission' && validMission(mission) ? 'mission' : 'sandbox';
     if (L.mode === 'mission') L.mission = mission | 0;
     sendLobby(); updPlay(); sfx('mouse');
+    if (RM && RM.hosting && RM.hosting.pub) RM.setMeta({ mode: L.mode, mission: L.mission });
   }
   function openPick() {
     if (NN.connected && !NN.isHost) return;
@@ -376,9 +573,9 @@
   function mkSeed() { try { const a = new Uint32Array(1); crypto.getRandomValues(a); return a[0] || 1; } catch (e) { return (Date.now() % 4294967295) || 1; } }
   function doPlay() {
     if (L.cd) return;
-    if (!NN.connected) { beginMatch({ mode: L.mode, mission: L.mission, seed: mkSeed(), role: 'solo', solo: true }, 1); return; }
+    if (!NN.connected || (NN.isHost && !NN.players.length)) { beginMatch({ mode: L.mode, mission: L.mission, seed: mkSeed(), role: 'solo', solo: true }, 1); return; }
     if (NN.isHost) {
-      if (!L.peerReady) return;
+      if (!guestsReady()) return;
       const spec = { mode: L.mode, mission: L.mission, seed: mkSeed(), role: 'host', solo: false };
       NN.sendAction({ type: 'start', mode: spec.mode, mission: spec.mission, seed: spec.seed });
       beginMatch(spec, 3);
@@ -387,7 +584,7 @@
     }
   }
   function beginMatch(spec, secs) {
-    L.cdSpec = spec; L.cd = secs; L.cdT = 0; closePick(); setTab('play');
+    L.cdSpec = spec; L.cd = secs; L.cdT = 0; closePick(); closeCard(); setTab('play'); danceStopLocal(true);
     const el = $('#ol-cd'); if (el) { el.hidden = false; el.querySelector('b').textContent = L.cd; }
     sfx('notification'); updPlay();
   }
@@ -407,6 +604,332 @@
     updPlay();
   }
 
+  // ------------------------------------------------------------------ серверы сигналинга: видимый список с состоянием каждого
+  const SRV_TXT = { online: 'ONLINE', connecting: 'CONNECTING', down: 'UNAVAILABLE', reserve: 'RESERVE', off: 'OFF', idle: 'NOT CHECKED' };
+  function renderServers() {
+    if (!root || !RM) return;
+    const list = RM.servers.list(), on = RM.servers.on;
+    const live = list.filter((x) => x.state === 'online').length;
+    $$('.ol-srv').forEach((blk) => {
+      blk.classList.toggle('is-off', !on);
+      const cnt = blk.querySelector('.srv-count');
+      cnt.textContent = (on ? 'ONLINE ' : 'OFF · ') + live + ' / ' + list.length;
+      const sw = blk.querySelector('.srv-on'); if (sw) sw.checked = on;
+      const ul = blk.querySelector('.srv-list'); ul.textContent = '';
+      list.forEach((s) => {
+        const li = document.createElement('li'); li.className = 'srv st-' + s.state;
+        const dot = document.createElement('i'); dot.setAttribute('aria-hidden', 'true');
+        const nm = document.createElement('b'); nm.setAttribute('translate', 'no'); nm.textContent = s.host;
+        const ty = document.createElement('em'); ty.setAttribute('translate', 'no'); ty.textContent = s.type;
+        const st = document.createElement('span'); st.textContent = SRV_TXT[s.state] || SRV_TXT.idle;
+        li.appendChild(dot); li.appendChild(nm); li.appendChild(ty); li.appendChild(st); ul.appendChild(li);
+      });
+      const btn = blk.querySelector('[data-act="srv-probe"]'); if (btn) btn.disabled = !on;
+    });
+  }
+  function srvProbe() {
+    if (!RM || !RM.servers.on) return;
+    const bs = $$('[data-act="srv-probe"]'); bs.forEach((b) => { b.disabled = true; });
+    RM.servers.probe().then(() => { if (root) renderServers(); });
+  }
+
+  // ------------------------------------------------------------------ комната по ссылке (хост)
+  function updRoom() {
+    if (!root || !RM) return;
+    const h = RM.hosting, out = $('#rm-out'); if (!out) return;
+    if (h && !h.pub && L.roomLink) {
+      out.hidden = false; $('#rm-link').value = L.roomLink;
+      const st = $('#rm-status'); st.className = 'v-note ok';
+      st.textContent = 'ROOM OPEN — PLAYERS ' + NN.count + '/' + MAXP;
+      $('#rm-create').textContent = 'NEW ROOM LINK';
+    } else if (!h) { out.hidden = true; $('#rm-create').textContent = 'CREATE ROOM LINK'; }
+  }
+  async function roomCreate(opts) {
+    if (!RM) return;
+    note('rm-note', '');
+    if (!RM.servers.on) { note('rm-note', 'SERVERS_OFF', 'bad'); return; }
+    $('#rm-create').disabled = true;
+    const r = await RM.hostRoom(opts || {});
+    if (!root) return;
+    $('#rm-create').disabled = false;
+    if (!r.ok) { note('rm-note', r.err, 'bad'); return; }
+    L.roomLink = r.link; L.t0 = Date.now(); L.pubSession = false;
+    updRoom(); updStatus();
+    const nt = $('#rm-note'); nt.className = 'v-note ok'; nt.textContent = 'Room link ready. Send it to your friends — they connect automatically while this page stays open.';
+  }
+
+  // ------------------------------------------------------------------ подключение по ссылке/публичной комнате (гость): экран «Подключение…»
+  function joinUi(kind, id) {
+    const el = $('#ol-join'); if (!el) return;
+    L.joinUi = { kind, id, stage: 'searching', t0: Date.now() };
+    el.hidden = false; renderJoin();
+  }
+  function renderJoin() {
+    const el = $('#ol-join'), j = L.joinUi; if (!el || !j) return;
+    const stages = { searching: j.kind === 'quick' ? 'LOOKING FOR PLAYERS…' : 'LOOKING FOR YOUR FRIEND…', connecting: 'CONNECTING TO YOUR FRIEND…', paired: 'PLAYER FOUND — CONNECTING…', hosting: 'WAITING FOR THE OTHER PLAYER…',
+      timeout: 'NO ANSWER YET', unavailable: 'SERVERS NOT REACHABLE', error: 'COULD NOT CONNECT', open: 'CONNECTED' };
+    const box = document.createElement('div'); box.className = 'pk-box jn-box';
+    const h = document.createElement('h3'); h.textContent = j.kind === 'quick' ? 'QUICK PLAY' : 'CONNECTING TO YOUR FRIEND…'; box.appendChild(h);
+    const s = document.createElement('p'); s.className = 'jn-st' + (j.stage === 'timeout' || j.stage === 'unavailable' || j.stage === 'error' ? ' bad' : ''); s.textContent = stages[j.stage] || stages.searching; box.appendChild(s);
+    const bar = document.createElement('div'); bar.className = 'pf-bar'; const bi = document.createElement('i'); bi.style.width = clamp(((Date.now() - j.t0) / 20000) * 100, 4, 100) + '%'; bar.appendChild(bi);
+    if (j.stage === 'searching' || j.stage === 'connecting' || j.stage === 'paired' || j.stage === 'hosting') box.appendChild(bar);
+    if (j.msg) { const m = document.createElement('p'); m.className = 'v-note bad'; m.textContent = NN.text(j.msg); box.appendChild(m); }
+    const p2 = document.createElement('p'); p2.className = 'cn-priv'; p2.textContent = 'The meeting servers and your friend can technically see your network address (WebRTC); a VPN hides it.'; box.appendChild(p2);
+    const act = document.createElement('div'); act.className = 'pf-btns';
+    if (j.stage === 'timeout' || j.stage === 'unavailable' || j.stage === 'error') {
+      if (j.kind === 'quick') { const b = document.createElement('button'); b.type = 'button'; b.className = 'ol-btn big'; b.dataset.act = 'pub-new'; b.textContent = 'CREATE A PUBLIC ROOM'; act.appendChild(b); }
+      else { const b = document.createElement('button'); b.type = 'button'; b.className = 'ol-btn big'; b.dataset.act = 'join-retry'; b.textContent = 'TRY AGAIN'; act.appendChild(b); }
+      const m = document.createElement('button'); m.type = 'button'; m.className = 'ol-btn'; m.dataset.act = 'join-manual'; m.textContent = 'MANUAL CONNECTION WITH CODES'; act.appendChild(m);
+    }
+    const c = document.createElement('button'); c.type = 'button'; c.className = 'ol-btn'; c.dataset.act = 'join-cancel'; c.textContent = j.stage === 'open' ? 'CLOSE' : 'CANCEL'; act.appendChild(c);
+    box.appendChild(act);
+    el.textContent = ''; el.appendChild(box);
+  }
+  function joinStage(stage, msg) {
+    if (!L.joinUi) return;
+    L.joinUi.stage = stage; L.joinUi.msg = msg || '';
+    if (stage === 'open') { const el = $('#ol-join'); if (el) el.hidden = true; L.joinUi = null; return; }
+    renderJoin();
+  }
+  function closeJoin() { const el = $('#ol-join'); if (el) el.hidden = true; L.joinUi = null; }
+  function startJoin(id, kind, pub) {
+    if (!RM) return;
+    L.pubSession = !!pub; L.joinId = id; L.joinKind = kind;
+    if (pub) { try { NN.voice.incoming(false); const c = $('#v-in'); if (c) c.checked = false; } catch (e) { /* ok */ } }
+    joinUi(kind === 'quick' ? 'quick' : 'join', id);
+    L.t0 = Date.now(); NN.chat.clear(); renderLog(true);
+    RM.joinRoom(id).then((r) => { if (r && !r.ok) joinStage('error', r.err); });
+  }
+
+  // ------------------------------------------------------------------ публичные комнаты
+  function consentModal(next) {
+    const el = $('#ol-consent'); if (!el) return;
+    L.consentNext = next;
+    el.innerHTML = '<div class="pk-box"><div class="pk-h"><h3>PUBLIC PLAY</h3><button type="button" class="ol-ic" data-act="consent-no" aria-label="Close">×</button></div>' +
+      '<p class="cn-p">Public rooms and quick play connect you to strangers through free public servers.</p>' +
+      '<ul class="cs-list"><li>The signaling servers and the other players can technically see your network address (WebRTC / P2P). To hide it you need a VPN.</li>' +
+      '<li>The public chat is not moderated. You can mute or report any player at any time.</li>' +
+      '<li>Strangers\' voice is off by default. Your nickname is visible to everyone in the room.</li>' +
+      '<li>No account or personal data is sent — only your nickname, color and level.</li></ul>' +
+      '<div class="pf-btns"><button type="button" class="ol-btn big" data-act="consent-yes">I UNDERSTAND — CONTINUE</button><button type="button" class="ol-btn" data-act="consent-no">CANCEL</button></div></div>';
+    el.hidden = false;
+  }
+  const needConsent = (next) => { if (!RM) return false; if (RM.consented()) return false; consentModal(next); return true; };
+  function enterPublic() {
+    renderServers(); renderPublic();
+    if (!RM || !RM.servers.on) return;
+    if (RM.consented()) { RM.gossip.start().then(() => { if (root) renderPublic(); }); }
+  }
+  function ageText(s) { return s < 5 ? 'NOW' : s + ' s'; }
+  function renderPublic() {
+    const box = $('#pub-list'); if (!box || !RM) return;
+    box.textContent = '';
+    const nt = $('#pub-note');
+    const on = RM.servers.on, ok = RM.consented();
+    if (!on) { nt.className = 'v-note bad'; nt.textContent = NN.text('SERVERS_OFF'); }
+    else if (!ok) { nt.className = 'v-note'; nt.textContent = NN.text('PUBLIC_OFF'); }
+    else { nt.className = 'v-note'; nt.textContent = ''; }
+    const rooms = ok && on ? RM.gossip.rooms() : [];
+    const mine = RM.hosting && RM.hosting.pub ? RM.adOf() : null;
+    const rows = (mine ? [Object.assign({ mine: true, age: 0 }, mine)] : []).concat(rooms);
+    if (!rows.length) {
+      const p = document.createElement('p'); p.className = 'pb-empty'; p.textContent = ok && on ? (RM.gossip.peers ? 'NO PUBLIC ROOMS RIGHT NOW — CREATE ONE OR TRY QUICK PLAY' : 'LOOKING FOR OTHER PLAYERS…') : 'PUBLIC ROOMS ARE OFF'; box.appendChild(p);
+      return;
+    }
+    rows.forEach((r) => {
+      const row = document.createElement('div'); row.className = 'pb-row' + (r.mine ? ' mine' : ''); row.setAttribute('role', 'listitem');
+      const t = document.createElement('b'); t.setAttribute('translate', 'no'); t.textContent = r.title; row.appendChild(t);
+      const h = document.createElement('button'); h.type = 'button'; h.className = 'pb-host'; h.dataset.act = 'pub-card'; h.dataset.rid = r.rid;
+      const av = document.createElement('span'); av.innerHTML = PF.avatar(r.host, r.col, 22); const hn = document.createElement('em'); hn.setAttribute('translate', 'no'); hn.textContent = r.host + ' · ' + r.lv;
+      h.appendChild(av); h.appendChild(hn); row.appendChild(h);
+      const m = document.createElement('span'); m.className = 'pb-mode'; m.textContent = r.mode === 'mission' ? 'MISSION ' + String(r.mission).padStart(2, '0') : 'SANDBOX'; row.appendChild(m);
+      const n = document.createElement('span'); n.className = 'pb-n'; n.setAttribute('translate', 'no'); n.textContent = r.n + '/' + r.max; row.appendChild(n);
+      const a = document.createElement('span'); a.className = 'pb-age'; a.textContent = ageText(r.age); row.appendChild(a);
+      const j = document.createElement('button'); j.type = 'button'; j.className = 'ol-btn'; j.dataset.act = 'pub-join'; j.dataset.rid = r.rid; j.textContent = r.mine ? 'YOUR ROOM' : 'JOIN'; j.disabled = !!r.mine || r.n >= r.max; row.appendChild(j);
+      box.appendChild(row);
+    });
+  }
+  function pubNewModal() {
+    const el = $('#ol-pubnew'); if (!el) return;
+    const ids = Object.keys(missionsMap()).map(Number).filter(validMission).sort((a, b) => a - b);
+    el.innerHTML = '<div class="pk-box"><div class="pk-h"><h3>CREATE A PUBLIC ROOM</h3><button type="button" class="ol-ic" data-act="pubnew-close" aria-label="Close">×</button></div>' +
+      '<label for="pn-title">ROOM NAME</label><input type="text" id="pn-title" maxlength="24" spellcheck="false" autocomplete="off">' +
+      '<label for="pn-mode">MODE</label><select id="pn-mode"><option value="sandbox">CO-OP SANDBOX</option>' + ids.map((i) => '<option value="m' + i + '">' + String(i).padStart(2, '0') + ' — ' + esc(missionTitle(i)) + '</option>').join('') + '</select>' +
+      '<p class="v-note">Enemies in story missions run separately on each device; the sandbox shares them.</p>' +
+      '<div class="pf-btns"><button type="button" class="ol-btn big" data-act="pubnew-go">CREATE</button><button type="button" class="ol-btn" data-act="pubnew-close">CANCEL</button></div></div>';
+    el.hidden = false;
+    const i = el.querySelector('#pn-title'); i.value = PF.get().name.slice(0, 16) + '\'s room';
+    const sel = el.querySelector('#pn-mode'); sel.value = L.mode === 'mission' ? 'm' + L.mission : 'sandbox';
+    try { i.focus({ preventScroll: true }); } catch (e) { /* ok */ }
+  }
+  async function pubNewGo() {
+    const el = $('#ol-pubnew'); if (!el || !RM) return;
+    const title = el.querySelector('#pn-title').value, mv = el.querySelector('#pn-mode').value;
+    const mode = mv === 'sandbox' ? 'sandbox' : 'mission', mission = mode === 'mission' ? Number(mv.slice(1)) : 1;
+    if (mode === 'mission' && !validMission(mission)) return;
+    el.hidden = true; closeJoin();
+    if (NN.connected && !NN.isHost) NN.close();
+    L.mode = mode; L.mission = mission;
+    const r = await RM.hostRoom({ pub: true, title, mode, mission });
+    if (!root) return;
+    if (!r.ok) { toast(NN.text(r.err), 'bad'); return; }
+    L.pubSession = true; L.roomLink = r.link;
+    try { NN.voice.incoming(false); const c = $('#v-in'); if (c) c.checked = false; } catch (e) { /* ok */ }
+    updPlay(); renderPublic(); updRoom(); toast('PUBLIC ROOM IS OPEN');
+    setTab('play');
+  }
+  function quickStart() {
+    if (!RM) return;
+    if (needConsent('quick')) return;
+    L.pubSession = true;
+    try { NN.voice.incoming(false); const c = $('#v-in'); if (c) c.checked = false; } catch (e) { /* ok */ }
+    joinUi('quick', '');
+    L.t0 = Date.now(); NN.chat.clear(); renderLog(true);
+    RM.quickPlay(L.mode === 'mission' ? 'mission' : 'sandbox', { mission: L.mission }).then((r) => { if (r && !r.ok) joinStage('error', r.err); });
+  }
+
+  // ------------------------------------------------------------------ эмоции (танцы) в лобби: колесо/кнопка, музыка EmoteCore, синхронизация с остальными игроками
+  const EC = () => window.EmoteCore;
+  const emoAvail = () => (EC() ? EC().tracks().filter(Boolean) : []);
+  const emoOwned = (id) => { try { return !!(window.Toys && Toys.owned && Toys.owned(id)); } catch (e) { return false; } };
+  const emoMusLvl = () => { const a = ctx.audio; const n = (v, d) => (typeof v === 'number' && isFinite(v) ? v : d); return a && a.musicEnabled !== false ? Math.min(1, n(a.musicVolume, 1) * n(a.masterVolume, 0.55) * 0.95 * 1.35) : 0; };
+  const DN = { ac: null, music: {}, list: {}, savedMusic: null, active: 0 };      // list: slot -> {id, tr, t, fig, pose, tmp, self}
+  function dnAC() {
+    if (DN.ac && DN.ac.state !== 'closed') { if (DN.ac.state === 'suspended') { try { DN.ac.resume(); } catch (e) { /* ok */ } } return DN.ac; }
+    const A = window.AudioContext || window.webkitAudioContext; if (!A) return null;
+    try { DN.ac = new A(); } catch (e) { DN.ac = null; }
+    return DN.ac;
+  }
+  function dnMusicOn(d) {
+    const e = EC(); if (!e) return;
+    if (DN.music[d.id]) { DN.music[d.id].users += 1; return; }
+    const ac = dnAC(); if (!ac) return;
+    try {
+      const M = e.makeMusic(ac, () => emoMusLvl(), d.tr); M.target = 1; M.play(0);
+      DN.music[d.id] = { M, users: 1 };
+      if (ctx.audio && ctx.audio.desiredMusic && !DN.savedMusic) { DN.savedMusic = ctx.audio.desiredMusic; try { ctx.audio.stopMusic(); } catch (er) { /* ok */ } }
+    } catch (er) { /* музыка не критична */ }
+  }
+  function dnMusicOff(d) {
+    const m = DN.music[d.id]; if (!m) return;
+    m.users -= 1;
+    if (m.users <= 0) { try { m.M.stop(); } catch (e) { /* ok */ } delete DN.music[d.id]; }
+    if (!Object.keys(DN.music).length && DN.savedMusic && ctx.audio) { try { ctx.audio.playMusic(DN.savedMusic); } catch (e) { /* ok */ } DN.savedMusic = null; }
+  }
+  const dispIndex = (slot) => party().findIndex((q) => q.slot === slot);
+  function mkFig(d) {
+    if (!ST.ready || d.fig || d.dead) return;
+    const e = EC(); if (!e || dispIndex(d.slot) < 0) return;
+    d.fig = e.makeFigure(THREE, { cast: false }); ST.scene.add(d.fig.group);
+    e.idlePose(0, d.pose, d.tr); d.fig.update(d.pose, null);
+  }
+  function danceStart(slot, id, self) {
+    const e = EC(); if (!e) return false;
+    const tr = e.track(String(id || '').slice(0, 20)); if (!tr) return false;
+    danceStop(slot, false);
+    const d = DN.list[slot] = { id: tr.id, tr, t: 0, bl: 0, fig: null, pose: new Float32Array(45), tmp: new Float32Array(45), self: !!self, slot, dead: false, ready: false, music: false };
+    L.dances[slot] = tr.id; DN.active += 1;
+    tr.load().then((ok) => {
+      if (d.dead) return;
+      if (!ok && !tr.ready()) { danceStop(slot, !!d.self); return; }
+      dnMusicOn(d); d.music = true;
+      const mu = DN.music[d.id]; if (mu && mu.users > 1 && mu.M.running && mu.M.running()) d.t = mu.M.time();     // музыка уже играет — подхватить её время (общий ритм)
+      d.ready = true; mkFig(d);
+    });
+    if (root) { updStage(); updEmoBtn(); }
+    return true;
+  }
+  function danceStop(slot, notify) {
+    const d = DN.list[slot]; if (!d) return;
+    d.dead = true; delete DN.list[slot]; delete L.dances[slot]; DN.active = Math.max(0, DN.active - 1);
+    if (d.fig) { try { d.fig.dispose(); } catch (e) { /* ok */ } }
+    if (d.music) dnMusicOff(d);
+    if (notify && d.self && NN.connected) NN.sendAction({ type: 'cev', k: 'emoteoff' });
+    if (root) { updStage(); updEmoBtn(); }
+  }
+  function danceStopLocal(notify) { danceStop(mySlot(), notify !== false); closeEmo(); }
+  function danceStopAll() {
+    Object.keys(DN.list).map(Number).forEach((s) => danceStop(s, false));
+    Object.keys(DN.music).forEach((k) => { try { DN.music[k].M.stop(); } catch (e) { /* ok */ } delete DN.music[k]; });
+    if (DN.savedMusic && ctx.audio) { try { ctx.audio.playMusic(DN.savedMusic); } catch (e) { /* ok */ } DN.savedMusic = null; }
+  }
+  function danceMine(id) {
+    const slot = mySlot();
+    if (DN.list[slot] && DN.list[slot].id === id) { danceStopLocal(true); return; }
+    if (!danceStart(slot, id, true)) return;
+    try { PF.count('emotes'); } catch (e) { /* ok */ }
+    if (NN.connected) NN.sendAction({ type: 'cev', k: 'emote', id });
+    closeEmo();
+  }
+  function updEmoBtn() {
+    const b = $('#ol-emob'); if (!b) return;
+    const on = !!DN.list[mySlot()];
+    b.classList.toggle('on', on); $('#ol-emob-t').textContent = on ? 'STOP' : 'EMOTES';
+  }
+  function openEmo() {
+    const el = $('#ol-emo'); if (!el) return;
+    if (DN.list[mySlot()]) { danceStopLocal(true); return; }
+    const tracks = emoAvail();
+    const box = document.createElement('div'); box.className = 'pk-box em-box';
+    const hd = document.createElement('div'); hd.className = 'pk-h'; const h3 = document.createElement('h3'); h3.textContent = 'EMOTES'; hd.appendChild(h3);
+    const x = document.createElement('button'); x.type = 'button'; x.className = 'ol-ic'; x.dataset.act = 'emo-close'; x.setAttribute('aria-label', 'Close'); x.textContent = '×'; hd.appendChild(x); box.appendChild(hd);
+    const grid = document.createElement('div'); grid.className = 'em-grid';
+    let any = false;
+    tracks.forEach((tr) => {
+      const own = emoOwned(tr.id); any = any || own;
+      const b = document.createElement('button'); b.type = 'button'; b.className = 'em-b' + (own ? '' : ' lock'); b.dataset.act = 'emote'; b.dataset.v = tr.id; b.disabled = !own;
+      let ico = ''; try { ico = window.Emote && Emote.thumbSvg ? Emote.thumbSvg(tr.id) : ''; } catch (e) { ico = ''; }
+      b.innerHTML = ico; const nm = document.createElement('b'); nm.setAttribute('translate', 'no'); nm.textContent = tr.name; b.appendChild(nm);
+      const sm = document.createElement('small'); sm.textContent = own ? 'DANCE' : 'LOCKED'; b.appendChild(sm);
+      grid.appendChild(b);
+    });
+    box.appendChild(grid);
+    const p = document.createElement('p'); p.className = 'v-note'; p.textContent = any ? 'Everyone in the room sees your dance and hears the music. Press B or Esc to stop.' : 'Buy emotes in the shop (TOYS) to dance here.'; box.appendChild(p);
+    el.textContent = ''; el.appendChild(box); el.hidden = false;
+    const f = el.querySelector('.em-b:not([disabled])') || x; try { f.focus({ preventScroll: true }); } catch (e) { /* ok */ }
+  }
+  function closeEmo() { const el = $('#ol-emo'); if (el) el.hidden = true; }
+  // входящее: cev emote/emoteoff от игрока p.from
+  function onCev(p) {
+    if (!root || (p.k !== 'emote' && p.k !== 'emoteoff')) return;
+    const slot = p.from | 0; if (slot < 1 || slot === mySlot()) return;
+    if (!NN.players.some((q) => q.slot === slot)) return;
+    if (p.k === 'emote') danceStart(slot, String(p.id || '').slice(0, 20), false);
+    else danceStop(slot, false);
+  }
+  // Хост: новому игроку показать, кто уже танцует (состояния других игроков Хост ретранслирует отдельным пакетом)
+  function sendDances(to) {
+    const list = Object.keys(L.dances).map(Number).map((s) => ({ s, id: L.dances[s] }));
+    if (list.length && NN.isHost) NN.sendAction({ type: 'dances', list }, { to });
+  }
+  function onDances(p) {
+    if (!root || !Array.isArray(p.list)) return;
+    p.list.slice(0, MAXP).forEach((q) => { const s = q && q.s | 0; if (s > 0 && s !== mySlot() && NN.players.some((x) => x.slot === s) && !DN.list[s]) danceStart(s, String(q.id || '').slice(0, 20), false); });
+  }
+  // любая клавиша (кроме модификаторов) прерывает свой танец; B — открыть/закрыть колесо
+  function onKey(e) {
+    if (!root || !root.isConnected) return;
+    const tag = e.target && e.target.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+    if (/^(Shift|Control|Alt|Meta|Tab|CapsLock)/.test(e.code) || /^F\d/.test(e.code)) return;
+    if (DN.list[mySlot()]) { e.preventDefault(); e.stopPropagation(); danceStopLocal(true); return; }
+    if (e.code === 'KeyB' && !e.repeat) { const el = $('#ol-emo'); if (el && !el.hidden) closeEmo(); else if (!L.pick) openEmo(); }
+  }
+
+  // ------------------------------------------------------------------ режим «этот компьютер» (вкладки одного браузера)
+  function localHost() {
+    const nt = $('#lc-note'); if (!NN.local) { note('lc-note', 'LOCAL_NO', 'bad'); return; }
+    NN.local.host(); L.t0 = Date.now(); NN.chat.clear(); renderLog(true);
+    nt.className = 'v-note ok'; nt.textContent = 'Room open on this computer. In another tab of this browser press "JOIN A ROOM HERE".';
+  }
+  function localJoin() {
+    const nt = $('#lc-note'); if (!NN.local) { note('lc-note', 'LOCAL_NO', 'bad'); return; }
+    L.t0 = Date.now(); NN.chat.clear(); renderLog(true);
+    nt.className = 'v-note'; nt.textContent = 'Looking for a room in the other tabs…';
+    NN.local.join().then((ok) => { if (!root) return; if (!ok) { nt.className = 'v-note bad'; nt.textContent = NN.text('LOCAL_NONE'); } else { nt.className = 'v-note ok'; nt.textContent = 'Connecting…'; } });
+  }
+
+  // ------------------------------------------------------------------ обработка кликов
   function onClick(e) {
     const a = e.target.closest ? e.target.closest('[data-act]') : null;
     if (!a || !root || !root.contains(a) || a.disabled) return;
@@ -429,24 +952,64 @@
       case 'host-create': hostCreate(); break;
       case 'host-connect': hostConnect(); break;
       case 'guest-answer': guestAnswer(false); break;
+      case 'manual-retry': manualRetry(); break;
+      case 'local-host': localHost(); break;
+      case 'local-join': localJoin(); break;
       case 'copy': copyFrom($('#' + v), 'COPIED'); break;
       case 'copy-code': { const l = $('#h-link'); if (l && l.value) { const t = document.createElement('textarea'); t.value = NN.offerCode; t.style.cssText = 'position:fixed;left:-999px;top:0'; document.body.appendChild(t); copyFrom(t, 'COPIED'); setTimeout(() => t.remove(), 300); } break; }
-      case 'disconnect': NN.close(); L.ready = L.peerReady = false; $('#h-out').hidden = true; $('#g-out').hidden = true; L.t0 = 0; refreshAll(); break;
+      case 'disconnect': if (RM) { RM.stopHost(); RM.stopJoin(); } if (NN.local) NN.local.stop(); NN.close(); L.ready = false; L.readyMap = {}; L.readyList = []; L.roomLink = ''; $('#h-out').hidden = true; $('#g-out').hidden = true; L.t0 = 0; danceStopAll(); refreshAll(); break;
       case 'name': {
         const r = PF.setName($('#pf-name').value);
         const nt = $('#pf-note'); nt.className = 'v-note ' + (r.ok ? 'ok' : 'bad'); nt.textContent = r.ok ? PF.text('NAME_OK') : PF.text(r.err);
-        if (r.ok) { updTop(); updProfile(true); updStage(); if (NN.connected) NN.sendAction({ type: 'hello', info: NN.localInfo() }); }
+        if (r.ok) { updTop(); updProfile(true); updStage(); if (NN.connected) { NN.sendAction({ type: 'hello', info: NN.localInfo() }); profileTick(true); } }
         break;
       }
-      case 'color': PF.setColor(v); updProfile(true); updStage(); stColors(); if (NN.connected) NN.sendAction({ type: 'hello', info: NN.localInfo() }); break;
-      case 'pf-export': { const t = $('#pf-json'); t.value = PF.exportJSON(); copyFrom(t, 'COPIED'); break; }
-      case 'pf-import': { const r = PF.importJSON($('#pf-json').value); const nt = $('#pf-io-note'); nt.className = 'v-note ' + (r.ok ? 'ok' : 'bad'); nt.textContent = r.ok ? 'Profile imported.' : 'The profile text is not valid.'; if (r.ok) { updTop(); updProfile(true); updStage(); } break; }
+      case 'color': PF.setColor(v); updProfile(true); updStage(); stColors(); if (NN.connected) { NN.sendAction({ type: 'hello', info: NN.localInfo() }); profileTick(true); } break;
       case 'pf-reset': {
         const b = $('#pf-reset');
         if (b.dataset.arm) { delete b.dataset.arm; b.textContent = 'RESET STATS'; PF.reset(); updTop(); updProfile(true); }
         else { b.dataset.arm = '1'; b.textContent = 'TAP AGAIN TO CONFIRM'; setTimeout(() => { if (b.isConnected && b.dataset.arm) { delete b.dataset.arm; b.textContent = 'RESET STATS'; } }, 3500); }
         break;
       }
+      // ---- карточки профилей
+      case 'card': { const s = Number(a.dataset.slot); if (s > 0) openCard(s); break; }
+      case 'card-close': closeCard(); break;
+      case 'mute': { const s = Number(a.dataset.slot); NN.setMuted(s, !NN.isMuted(s)); updRoster(); if (L.cards.open === s) renderCard(s); break; }
+      case 'report': { const s = Number(a.dataset.slot); NN.report(s); toast('PLAYER HIDDEN AND BLOCKED'); updRoster(); renderCard(s); break; }
+      case 'kick': { const s = Number(a.dataset.slot); NN.kick(s); closeCard(); break; }
+      // ---- серверы и комнаты
+      case 'srv-probe': srvProbe(); break;
+      case 'room-create': roomCreate(); break;
+      case 'room-close': if (RM) RM.stopHost(); L.roomLink = ''; updRoom(); break;
+      case 'pub-refresh': if (needConsent('refresh')) break; if (RM) { RM.gossip.start().then(() => { RM.gossip.refresh(); renderPublic(); }); } break;
+      case 'pub-join': { if (needConsent('join:' + a.dataset.rid)) break; closeCard(); if (NN.connected) NN.close(); startJoin(a.dataset.rid, 'join', true); break; }
+      case 'pub-card': {
+        const r = RM.gossip.rooms().find((x) => x.rid === a.dataset.rid) || (RM.hosting && RM.adOf());
+        if (r) { const ex = { host: r.host, col: r.col, lv: r.lv, rid: r.rid }; openCard(0, ex); RM.gossip.requestProfile(r.rid).then((pf) => { if (pf && L.cards.extra && L.cards.extra.rid === r.rid) { L.cards.extra.pf = pf; renderCard(0); } }); }
+        break;
+      }
+      case 'pub-new': if (needConsent('new')) break; closeJoin(); pubNewModal(); break;
+      case 'pubnew-close': { const el = $('#ol-pubnew'); if (el) el.hidden = true; break; }
+      case 'pubnew-go': pubNewGo(); break;
+      case 'quick': quickStart(); break;
+      case 'pr-create': case 'pr-join': {
+        const name = RM ? RM.roomName($('#pr-name').value) : '';
+        if (!name) { note('pr-note', 'ROOM_NAME_BAD', 'bad'); break; }
+        note('pr-note', '');
+        if (!RM.servers.on) { note('pr-note', 'SERVERS_OFF', 'bad'); break; }
+        if (act === 'pr-create') { RM.hostRoom({ id: name }).then((r) => { if (!r.ok) { note('pr-note', r.err, 'bad'); return; } L.pubSession = true; L.roomLink = r.link; const nt = $('#pr-note'); nt.className = 'v-note ok'; nt.textContent = 'Room "' + name + '" is open. Friends join with the same name.'; updRoom(); }); }
+        else { if (NN.connected) NN.close(); startJoin(name, 'join', true); }
+        break;
+      }
+      case 'consent-yes': { RM.consent(true); const el = $('#ol-consent'); if (el) el.hidden = true; const n = L.consentNext || ''; L.consentNext = ''; enterPublic(); if (n === 'quick') quickStart(); else if (n === 'new') pubNewModal(); else if (n === 'refresh') { RM.gossip.start().then(() => RM.gossip.refresh()); } else if (n.indexOf('join:') === 0) { if (NN.connected) NN.close(); startJoin(n.slice(5), 'join', true); } break; }
+      case 'consent-no': { const el = $('#ol-consent'); if (el) el.hidden = true; L.consentNext = ''; break; }
+      case 'join-cancel': if (RM) { RM.stopJoin(); RM.stopQuick(); } if (NN.state !== 'open') NN.close(); closeJoin(); break;
+      case 'join-retry': if (L.joinId) startJoin(L.joinId, L.joinKind || 'join', L.pubSession); break;
+      case 'join-manual': if (RM) { RM.stopJoin(); RM.stopQuick(); } closeJoin(); setTab('connect'); break;
+      // ---- эмоции
+      case 'emotes': openEmo(); break;
+      case 'emo-close': closeEmo(); break;
+      case 'emote': danceMine(v); break;
       default: break;
     }
   }
@@ -460,10 +1023,12 @@
       if (r.ok) { inp.value = ''; nt.textContent = ''; nt.className = 'v-note'; } else { nt.className = 'v-note bad'; nt.textContent = NN.text(r.err); }
     });
     $('#v-vol').addEventListener('input', (e) => NN.voice.setVolume(e.target.value / 100));
-    $('#cn-lan').addEventListener('change', (e) => NN.setLan(e.target.checked));
+    $('#v-in').addEventListener('change', (e) => NN.voice.incoming(e.target.checked));
+    $('#cn-lan').addEventListener('change', (e) => lanChanged(e.target.checked));
+    $$('.srv-on').forEach((c) => c.addEventListener('change', (e) => { if (RM) RM.servers.setOn(e.target.checked); renderServers(); renderPublic(); updRoom(); }));
     $('#pf-name').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); const b = root.querySelector('[data-act="name"]'); b && b.click(); } });
     ['#h-ans', '#g-in'].forEach((s) => $(s).addEventListener('paste', () => { const el = $(s); setTimeout(() => { if (!root) return; if (s === '#g-in' && el.value.trim() && /NX\d+O\./.test(el.value.replace(/\s+/g, ''))) guestAnswer(false); }, 30); }));
-    root.addEventListener('keydown', (e) => { if (e.key === 'Escape' && L.pick) { e.stopPropagation(); closePick(); } });
+    root.addEventListener('keydown', (e) => { if (e.key === 'Escape') { for (const id of ['#ol-card', '#ol-consent', '#ol-pubnew', '#ol-emo']) { const m = $(id); if (m && !m.hidden && !DN.list[mySlot()]) { e.stopPropagation(); m.hidden = true; return; } } if (L.pick) { e.stopPropagation(); closePick(); } } });
     root.addEventListener('pointermove', onPtr, { passive: true });
   }
 
@@ -472,31 +1037,76 @@
     NN.on('net:state', (s) => {
       if (s.state === 'creating' || s.state === 'answering') L.t0 = Date.now();
       if (s.state === 'open' || s.state === 'idle') { if (s.state === 'idle') L.t0 = 0; }
-      if (s.state === 'open') { L.t0 = 0; L.ready = false; L.peerReady = false; sfx('notification'); }
-      if (s.state === 'closed' || s.state === 'failed') { L.ready = L.peerReady = false; L.t0 = 0; }
+      if (s.state === 'open') { L.t0 = 0; sfx('notification'); }
+      if (s.state === 'closed' || s.state === 'failed') { L.ready = false; L.readyMap = {}; L.readyList = []; L.t0 = 0; }
       if (!root) return;
       updStatus(); updPlay(); updVoice();
       if (s.text && (s.state === 'failed' || s.state === 'closed' || s.state === 'lost')) { toast(s.text, 'bad'); const hn = $('#h-note'), gn = $('#g-note'); [hn, gn].forEach((n) => { if (n && n.isConnected && s.state !== 'lost') { n.className = 'v-note bad'; n.textContent = s.text; } }); }
-      if (s.state === 'open') { toast('FRIEND CONNECTED'); if (L.tab === 'connect') setTab('play'); }
+      if (s.state === 'failed' && (s.code === 'CONNECT_TIMEOUT' || s.code === 'ICE_FAILED')) showDiag(s.code);
+      if (s.state === 'open' && s.prev !== 'open' && s.prev !== 'lost') { toast('FRIEND CONNECTED'); if (L.tab === 'connect') setTab('play'); }
     });
-    NN.on('net:peer', () => { if (NN.isHost) sendLobby(); if (root) { updStage(); updPlay(); updStatus(); } });
-    NN.on('net:close', () => { if (NN.chat.history.length) NN.chat.sys('FRIEND_LEFT', NN.peer ? NN.peer.name : 'PLAYER'); L.cd = 0; L.cdSpec = null; const el = $('#ol-cd'); if (el) el.hidden = true; });
+    NN.on('net:peer', (q) => {
+      if (NN.isHost) { sendLobby(); sendDances(q.slot); }
+      sendProfile(q.slot);
+      if (root) { updStage(); updPlay(); updStatus(); }
+    });
+    NN.on('net:roster', () => { if (root) { updStage(); updPlay(); updStatus(); } });
+    NN.on('net:left', (p) => {
+      NN.chat.sys('FRIEND_LEFT', p.name); delete L.readyMap[p.slot]; danceStop(p.slot, false); delete PR[p.pid || ''];
+      if (NN.isHost) sendLobby();
+      if (root) { updStage(); updPlay(); updStatus(); toast(p.name + ' — ' + NN.text('PEER_LEFT')); }
+    });
+    NN.on('net:close', () => { if (NN.chat.history.length && !NN.isHost) NN.chat.sys('FRIEND_LEFT', 'HOST'); danceStopAll(); L.cd = 0; L.cdSpec = null; const el = $('#ol-cd'); if (el) el.hidden = true; });
     NN.on('net:chat', onChat);
     NN.on('net:voice', updVoice);
+    NN.on('net:mute', () => { if (root) { updRoster(); updVoice(); } });
     NN.on('net:tick', updTimer);
     NN.on('net:rtt', updTimer);
-    NN.on('lobby', (p) => { if (NN.isHost) return; L.mode = p.mode === 'mission' && validMission(p.mission) ? 'mission' : 'sandbox'; if (L.mode === 'mission') L.mission = p.mission | 0; updPlay(); });
-    NN.on('ready', (p) => { if (!NN.isHost) return; L.peerReady = !!p.on; updPlay(); if (root) toast(L.peerReady ? 'FRIEND IS READY' : 'FRIEND IS NOT READY'); });
+    NN.on('lobby', (p) => {
+      if (NN.isHost) return;
+      L.mode = p.mode === 'mission' && validMission(p.mission) ? 'mission' : 'sandbox'; if (L.mode === 'mission') L.mission = p.mission | 0;
+      L.readyList = Array.isArray(p.ready) ? p.ready.map(Number).filter((n) => n >= 2 && n <= MAXP).slice(0, MAXP) : [];
+      updPlay();
+    });
+    NN.on('ready', (p) => {
+      if (!NN.isHost) return;
+      const s = p.from | 0; if (s < 2) return;
+      L.readyMap[s] = !!p.on; sendLobby(); updPlay();
+      const q = NN.players.find((x) => x.slot === s);
+      if (root && q) toast(q.name + ' — ' + (p.on ? 'READY' : 'NOT READY'));
+    });
     NN.on('start', (p) => {
       if (NN.isHost || L.cd) return;
       const mode = p.mode === 'mission' && validMission(p.mission) ? 'mission' : 'sandbox';
       beginMatch({ mode, mission: mode === 'mission' ? p.mission | 0 : 1, seed: (p.seed >>> 0) || 1, role: 'guest', solo: false }, 3);
     });
+    NN.on('profile', onProfile); NN.on('profile?', onProfileReq);
+    NN.on('cev', onCev); NN.on('dances', onDances);
+    if (RM) {
+      RM.on('servers', () => { if (root) renderServers(); });
+      RM.on('rooms', () => { if (root) renderPublic(); });
+      RM.on('swarm', () => { if (root && L.tab === 'public') renderPublic(); });
+      RM.on('incoming', () => { if (root) updStatus(); });
+      RM.on('join', (j) => {
+        if (!root || !L.joinUi) return;
+        if (j.stage === 'open') { joinStage('open'); setTab('play'); toast('FRIEND CONNECTED'); return; }
+        joinStage(j.stage, j.err);
+      });
+      RM.on('quick', (q) => {
+        if (!root || !L.joinUi) return;
+        if (q.stage === 'paired') { L.joinUi.stage = 'paired'; renderJoin(); }
+        else if (q.stage === 'hosting') { L.joinUi.stage = 'hosting'; renderJoin(); L.roomLink = RM.roomLink(q.id); }
+        else if (q.stage === 'timeout' || q.stage === 'unavailable') joinStage(q.stage, q.err);
+      });
+    }
   }
 
   // ------------------------------------------------------------------ 3D-сцена
   const ST = { on: false, building: 0, ready: false, canvas: null, r: null, scene: null, cam: null, host: null, figs: [], raf: 0, last: 0, tok: 0, ptr: { x: 0, y: 0, sx: 0, sy: 0 }, w: 0, h: 0, plat: [], lost: false };
-  const PLAT = [[0, 1.25, 0.95], [-1.55, -0.8, 0.8], [1.55, -0.8, 0.8]];   // x, z, радиус: главный, левый (пустой), правый (напарник)
+  // x, z, радиус: [0] — главный игрок (центр спереди), далее дугой: справа, слева, дальние справа/слева, центр сзади (кольца и свечение — только у платформ)
+  const PLAT = [[0, 1.25, 0.95], [1.7, -0.55, 0.8], [-1.7, -0.55, 0.8], [3.15, -1.55, 0.7], [-3.15, -1.55, 0.7], [0, -2.5, 0.7]];
+  const POSES = ['cross', 'back', 'cross', 'hang', 'back', 'cross'];     // серьёзные позы: руки скрещены / за спиной / вдоль тела
+  const yawOf = (pi) => (pi === 0 ? -0.12 : -PLAT[pi][0] * 0.32);
   function onPtr(e) { if (e.isPrimary === false) return; ST.ptr.x = clamp(e.clientX / Math.max(1, innerWidth) * 2 - 1, -1, 1); ST.ptr.y = -clamp(e.clientY / Math.max(1, innerHeight) * 2 - 1, -1, 1); }
   const want3d = () => !/[?&]nolobby3d(?![A-Za-z0-9_])/.test(location.search) && !!(window.Missions && Missions._core && Missions._core.loadThree && Missions._core.geo && Missions._core.Run && Missions._core.Run.prototype.npc) &&
     !(isTouch() && (function () { try { return Missions.getQuality() === 'LOW'; } catch (e) { return false; } }()));
@@ -523,7 +1133,7 @@
       const keep = [];
       const hostObj = Object.create(C.Run.prototype);
       hostObj.q = { parts: low ? 8 : 12, shadows: false }; hostObj.scene = scene; hostObj.npcs = []; hostObj.time = 0;
-      // платформы: тёмный диск, светящееся кольцо и ореол; у главной — красный свет снизу
+      // платформы: тёмный диск, кольцо и ореол (у платформ они остаются); у главной — красный свет снизу
       const plats = [];
       PLAT.forEach((p, i) => {
         const g = new T.Group(); g.position.set(p[0], 0, p[1]);
@@ -540,14 +1150,14 @@
       const key = new T.DirectionalLight(0xffffff, 0.95); key.position.set(2.5, 5, 6); scene.add(key);
       const rim = new T.DirectionalLight(0xc8c8c8, 0.7); rim.position.set(-3, 3, -5); scene.add(rim);
       const pl = new T.PointLight(0xffffff, 0.35, 5, 2); pl.position.set(0, 0.5, PLAT[0][1] + 0.4); scene.add(pl);
-      // стикмены игры: тот же риг, что у врагов (actors.js); тело чуть светлее, чтобы читалось на тёмном фоне
-      const mkFig = (pi, yaw) => {
+      // стикмены игры: тот же риг, что у врагов (actors.js), чистый тёмный силуэт: без колец, обводок и свечения
+      const mkF = (pi) => {
+        const yaw = yawOf(pi);
         const n = C.Run.prototype.npc.call(hostObj, PLAT[pi][0], PLAT[pi][1], yaw);
-        n.yaw = yaw; n.g.rotation.y = yaw;
-        n.g.visible = false;   // без колец и свечения: чистый тёмный стикмен
-        return { n, pi, vis: false, t: Math.random() * 6, yaw };
+        n.yaw = yaw; n.g.rotation.y = yaw; n.g.visible = false;
+        return { n, pi, yaw };
       };
-      const figs = [mkFig(0, -0.12), mkFig(2, -0.5)];
+      const figs = PLAT.map((_, i) => mkF(i));
       hostObj.agm.body.color.setHex(0x0e0f12); hostObj.agm.body.emissive.setHex(0x16181d);
       Object.keys(hostObj.ag).forEach((k) => keep.push(hostObj.ag[k]));
       keep.push(hostObj.agm.body, hostObj.agm.gear, hostObj.agm.gun, hostObj.agm.flash);
@@ -555,6 +1165,7 @@
       Object.assign(ST, { canvas, r, scene, cam, host: hostObj, figs, plats, keep, ready: true, pl, lost: false });
       ok = true;
       stAttach(); stResize(); stSync(); stColors();
+      Object.keys(DN.list).forEach((s) => { const d = DN.list[s]; if (d.ready) mkFig(d); });
       if (!ST.raf) ST.raf = requestAnimationFrame(stTick);
     } catch (err) { console.warn('[online-lobby 3d]', err); }
     finally { ST.building = 0; if (!ok) ST.ready = false; }
@@ -567,16 +1178,11 @@
   }
   function stSync() {
     if (!ST.ready) return;
-    const open = NN.connected && NN.peer;
-    ST.figs[0].n.g.visible = true; ST.figs[1].n.g.visible = !!open;
-    ST.plats[2].ringMat.color.setHex(open ? 0xff9a3d : 0x3a3d44); ST.plats[2].ringMat.opacity = open ? 1 : 0.7;
-    ST.plats[2].glowMat.opacity = open ? 1 : 0.5;
-    stColors();
+    const list = party(), n = list.length;
+    ST.figs.forEach((f, i) => { f.n.g.visible = i < n && !(DN.list[list[i].slot] && DN.list[list[i].slot].fig); });
+    ST.plats.forEach((p, i) => { if (i === 0) return; const used = i < n; p.ringMat.color.setHex(used ? 0xff9a3d : 0x3a3d44); p.ringMat.opacity = used ? 1 : 0.7; p.glowMat.opacity = used ? 1 : 0.5; });
   }
-  function stColors() {
-    if (!ST.ready) return;
-    /* цвет игрока — только в нике и аватаре; у фигуры колец и свечения нет */
-  }
+  function stColors() { /* цвет игрока — только в нике и аватаре; у фигуры колец и свечения нет */ }
   function stResize() {
     if (!ST.ready || !root) return;
     const stage = $('#ol-stage'); if (!stage) return;
@@ -598,21 +1204,44 @@
     const stage = $('#ol-stage'); if (!stage) return;
     if (ST.ready && ST.cam && ST.w) {
       const T = THREE, v = new T.Vector3();
-      [0, 2].forEach((pi, i) => {
-        v.set(PLAT[pi][0], 2.1, PLAT[pi][1]).project(ST.cam);
-        const t = $('.ol-tag.t' + i); if (!t) return;
+      PLAT.forEach((pp, pi) => {
+        v.set(pp[0], 2.1, pp[1]).project(ST.cam);
+        const t = $('.ol-tag.t' + pi); if (!t) return;
         t.style.left = ((v.x * 0.5 + 0.5) * ST.w).toFixed(1) + 'px'; t.style.top = ((-v.y * 0.5 + 0.5) * ST.h).toFixed(1) + 'px';
       });
-      [0, 1, 2].forEach((pi) => {
-        v.set(PLAT[pi][0], 0, PLAT[pi][1]).project(ST.cam);
-        const e = $('.ol-plat.p' + pi);
-        if (pi === 2) { const inv = $('.ol-invite'); if (inv) { inv.style.left = ((v.x * 0.5 + 0.5) * ST.w).toFixed(1) + 'px'; inv.style.top = ((-v.y * 0.5 + 0.5) * ST.h - 70).toFixed(1) + 'px'; } }
-        void e;
-      });
+      const pi = Math.min(party().length, MAXP - 1);
+      v.set(PLAT[pi][0], 0, PLAT[pi][1]).project(ST.cam);
+      const inv = $('.ol-invite'); if (inv) { inv.style.left = ((v.x * 0.5 + 0.5) * ST.w).toFixed(1) + 'px'; inv.style.top = ((-v.y * 0.5 + 0.5) * ST.h - 70).toFixed(1) + 'px'; }
     } else {
-      [0, 1].forEach((i) => { const t = $('.ol-tag.t' + i); if (t) { t.style.left = ''; t.style.top = ''; } });
-      const inv = $('.ol-invite'); if (inv) { inv.style.left = ''; inv.style.top = ''; }
+      // CSS-фолбэк: те же платформы дугой, проценты от размера сцены
+      FB.forEach((p, d) => {
+        const pl = $('.ol-plat.p' + d), f = $('.ol-fig.f' + d), t = $('.ol-tag.t' + d);
+        const h = p[2] * 2.1;
+        if (pl) { pl.style.left = p[0] + '%'; pl.style.top = p[1] + '%'; pl.style.width = p[2] + '%'; }
+        if (f) { f.style.left = p[0] + '%'; f.style.bottom = (100 - p[1] + p[2] * 0.12) + '%'; f.style.height = h + '%'; }
+        if (t) { t.style.left = p[0] + '%'; t.style.top = clamp(p[1] - h - 1.5, 9, 90) + '%'; }
+      });
+      const inv = $('.ol-invite'); if (inv) { inv.style.left = FB[1][0] + '%'; inv.style.top = (FB[1][1] - 18) + '%'; }
     }
+  }
+  // позы: руки скрещены на груди / за спиной / вдоль тела; лёгкое дыхание; голова чуть вверх
+  function pose(fi, n, t, p) {
+    const T = THREE, v = ST.v || (ST.v = [new T.Vector3(), new T.Vector3()]), br = Math.sin(t * 1.5 + fi) * 0.004;
+    const kind = POSES[fi] || 'cross', H = ST.host;
+    if (kind === 'cross') {
+      H.solveArm(n.armL, n.elbL, [-0.2, 0.46, 0], v[0].set(0.14, 0.3 + br, 0.17), -1);
+      H.solveArm(n.armR, n.elbR, [0.2, 0.46, 0], v[1].set(-0.14, 0.27 + br, 0.2), 1);
+    } else if (kind === 'back') {
+      H.solveArm(n.armL, n.elbL, [-0.2, 0.46, 0], v[0].set(-0.05, 0.03 + br, -0.17), -1);
+      H.solveArm(n.armR, n.elbR, [0.2, 0.46, 0], v[1].set(0.05, 0.01 + br, -0.17), 1);
+    } else {
+      H.solveArm(n.armL, n.elbL, [-0.2, 0.46, 0], v[0].set(-0.27, 0.0 + br, 0.03), -1);
+      H.solveArm(n.armR, n.elbR, [0.2, 0.46, 0], v[1].set(0.27, 0.0 + br, 0.03), 1);
+    }
+    n.spine.scale.setScalar(1 + Math.sin(t * 1.5 + fi) * 0.006);      // дыхание
+    const look = fi === 0 ? p.sx : 0;
+    n.head.rotation.x = -0.1 - (fi === 0 ? p.sy * 0.14 : 0) + Math.sin(t * 0.9 + fi) * 0.01;     // подбородок чуть вверх
+    n.head.rotation.y = look * 0.45 + Math.sin(t * 0.4 + fi) * 0.04;
   }
   function stTick(now) {
     ST.raf = 0;
@@ -622,32 +1251,46 @@
     if (now - ST.last < 32) return;                         // ~30 кадров/с: лобби не должно греть телефон
     const dt = Math.min(0.1, (now - ST.last) / 1000); ST.last = now;
     stResize();
-    const T = THREE, C = Missions._core, p = ST.ptr;
+    const C = Missions._core, p = ST.ptr;
     p.sx += (p.x - p.sx) * 0.08; p.sy += (p.y - p.sy) * 0.08;
     ST.host.time += dt;
-    const t = ST.host.time, k = ST.k || 1;
+    const t = ST.host.time, k = ST.k || 1, list = party();
     ST.cam.position.set(p.sx * 0.35, 1.5 + p.sy * 0.12, PLAT[0][1] + 5.9 * k);
     ST.cam.lookAt(p.sx * 0.1, 0.92, 0.2);
     ST.figs.forEach((f, i) => {
+      const q = list[i], dancing = q && DN.list[q.slot] && DN.list[q.slot].fig;
+      f.n.g.visible = !!q && !dancing;
       if (!f.n.g.visible) return;
       C.Run.prototype.updateNpc.call(ST.host, f.n, dt);
-      const n = f.n;
-      if (i === 0) { // главный: руки скрещены на груди (IK), голова следит за курсором
-        const v = ST.v || (ST.v = [new T.Vector3(), new T.Vector3()]);
-        ST.host.solveArm(n.armL, n.elbL, [-0.2, 0.46, 0], v[0].set(0.13, 0.31 + Math.sin(t * 1.5) * 0.004, 0.17), -1);
-        ST.host.solveArm(n.armR, n.elbR, [0.2, 0.46, 0], v[1].set(-0.13, 0.27 + Math.sin(t * 1.5) * 0.004, 0.2), 1);
-        n.head.rotation.y = p.sx * 0.45 + Math.sin(t * 0.4) * 0.05; n.head.rotation.x = -p.sy * 0.18;
-        n.g.rotation.y = -0.12 + p.sx * 0.12;
-      } else { n.head.rotation.y = Math.sin(t * 0.6 + 1) * 0.3; n.g.rotation.y = -0.55 + Math.sin(t * 0.3) * 0.08; }
+      pose(i, f.n, t, p);
+      f.n.g.rotation.y = f.yaw + (i === 0 ? p.sx * 0.12 : Math.sin(t * 0.3 + i) * 0.05);
+    });
+    // танцоры (EmoteCore): фигура-танцор на платформе игрока, музыка тикает здесь же
+    const e = EC();
+    Object.keys(DN.list).forEach((s) => {
+      const d = DN.list[s], idx = dispIndex(d.slot);
+      if (!d.fig && d.ready && idx >= 0) mkFig(d);
+      const mu = DN.music[d.id];
+      if (mu && d.music && mu.tickAt !== now) { mu.tickAt = now; mu.M.tick(dt); }
+      if (!d.fig || idx < 0 || !e) return;
+      const tr = d.tr;
+      d.t += dt;
+      if (mu && mu.M.running && mu.M.running()) { let err = mu.M.time() - (tr.loop ? d.t % tr.dur : d.t); if (tr.loop) err -= tr.dur * Math.round(err / tr.dur); if (Math.abs(err) > 0.25) d.t += err; else d.t += err * Math.min(1, dt * 4); }
+      d.bl += dt;
+      e.sampleDance(d.t, d.pose, tr);
+      if (d.bl < 0.45) { e.idlePose(d.bl, d.tmp, tr); e.mixPose(d.tmp, d.pose, e.smooth(d.bl / 0.45), d.pose); }
+      d.fig.place(PLAT[idx][0], PLAT[idx][1], yawOf(idx)); d.fig.update(d.pose, null);
+      if (!tr.loop && d.t > tr.dur + 0.3) danceStop(d.slot, !!d.self);
     });
     const pulse = 0.82 + Math.sin(t * 2.2) * 0.18;
     ST.plats[0].ringMat.opacity = pulse; ST.plats[0].glowMat.opacity = 0.75 + pulse * 0.25; ST.pl.intensity = 0.7 + pulse * 0.4;
-    if (NN.connected && NN.peer) ST.plats[2].glowMat.opacity = 0.7 + Math.sin(t * 2 + 1) * 0.2;
+    for (let i = 1; i < list.length && i < ST.plats.length; i += 1) ST.plats[i].glowMat.opacity = 0.7 + Math.sin(t * 2 + i) * 0.2;
     ST.r.render(ST.scene, ST.cam);
   }
   function stDispose() {
     ST.tok += 1;
     if (ST.raf) { cancelAnimationFrame(ST.raf); ST.raf = 0; }
+    Object.keys(DN.list).forEach((s) => { const d = DN.list[s]; if (d.fig) { try { d.fig.dispose(); } catch (e) { /* ok */ } d.fig = null; } });
     if (ST.ready) {
       try { ST.keep.forEach((o) => o && o.dispose && o.dispose()); ST.r.dispose(); ST.r.forceContextLoss && ST.r.forceContextLoss(); } catch (e) { /* ok */ }
       if (ST.canvas && ST.canvas.parentNode) ST.canvas.parentNode.removeChild(ST.canvas);
@@ -663,10 +1306,15 @@
   function stStop() { ST.on = false; stDispose(); }
 
   // ------------------------------------------------------------------ жизненный цикл (вызывается из app.js)
+  let sec = 0;
   function onSecond() {
     if (!root || !root.isConnected) return;
-    updTimer(); cdTick();
+    updTimer(); cdTick(); sec += 1;
     if (L.tab === 'profile' && Date.now() - L.lastStats > 2000) { L.lastStats = Date.now(); const s = $('#ol-stats'); if (s) s.innerHTML = PF.renderStats(); updTop(); }
+    if (sec % 25 === 0) profileTick(false);
+    if (L.tab === 'public' || L.tab === 'connect') { if (sec % 3 === 0) renderServers(); if (L.tab === 'public' && sec % 4 === 0) renderPublic(); }
+    if (L.joinUi) renderJoin();
+    if (RM && RM.hosting) { updRoom(); if (RM.hosting.pub) renderPublic(); }
   }
   let inited = false;
   const api = {
@@ -676,28 +1324,30 @@
       netHooks();
       tickT = setInterval(onSecond, 1000);
       window.addEventListener('resize', () => { if (root) { stResize(); layoutTags(); updTab(); } });
+      window.addEventListener('keydown', onKey, true);
       PF.onChange(() => { /* обновление идёт по таймеру */ });
     },
     render: shell,
     afterRender(on) {
       document.body.classList.toggle('in-online', !!on);
-      if (!on) { if (root) { root = null; } stStop(); return; }
+      if (!on) { if (root) { root = null; } danceStopAll(); stStop(); return; }
       root = document.getElementById('ol');
       if (!root) return;
       bind(); refreshAll();
-      const pj = NN.pendingJoin();
+      const pj = NN.pendingJoin(), pr = RM ? RM.pendingRoom() : '';
       if (pj && !L.joinFromUrl) { L.joinFromUrl = true; setTab('connect'); $('#g-in').value = pj; NN.clearJoinFromUrl(); guestAnswer(true); }
+      else if (pr && !L.joinFromUrl) { L.joinFromUrl = true; RM.clearRoomFromUrl(); startJoin(pr, 'join', false); }
       stStart();
     },
     action(a) {
       if (a === 'online') { if (ctx.setView) ctx.setView('ONLINE'); if (ctx.render) ctx.render(); return true; }
       return false;
     },
-    // после загрузки: ссылка с ?join= сразу открывает лобби
-    boot() { if (NN.pendingJoin() && !L.joinFromUrl && ctx.setView) { ctx.setView('ONLINE'); ctx.render && ctx.render(); } },
+    // после загрузки: ссылка с ?join= / ?room= сразу открывает онлайн-лобби
+    boot() { if ((NN.pendingJoin() || (RM && RM.pendingRoom())) && !L.joinFromUrl && ctx.setView) { ctx.setView('ONLINE'); ctx.render && ctx.render(); } },
     get active() { return !!root; },
     get state() { return L; },
-    _st: ST
+    _st: ST, _dn: DN
   };
   window.OnlineLobby = api;
 }());
