@@ -324,8 +324,8 @@
       rg.root.visible = false; rg.handMag.visible = false; rg.handShell.visible = false;
       Object.keys(rg.models).forEach((k) => { rg.models[k].lh.visible = false; });
       const sw = Math.sin(ph) * 0.12 * mv;
-      hp[0].set(-0.27, -0.74, -0.1 - sw); body.localToWorld(hp[0]);
-      hp[1].set(0.27, -0.74, -0.1 + sw); body.localToWorld(hp[1]);
+      hp[0].set(-0.22, -0.5, -0.26 - sw * 0.7); body.localToWorld(hp[0]);
+      hp[1].set(0.22, -0.5, -0.26 + sw * 0.7); body.localToWorld(hp[1]);
     }
     if (this.pmHands) this.pmHands(dt, w);
     rg.hv = lerp(rg.hv, hvT, 1 - Math.exp(-dt * 12));

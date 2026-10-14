@@ -354,9 +354,10 @@
       if (R.dead && !A.dead) { A.dead = true; r.actorKill(n, false, null); }
       else if (!R.dead && A.dead) { A.dead = false; r.actorReset(n); A.kind = undefined; g.position.y = 0; }
       if (!A.dead) {
-        if (R.w !== A.kind) { A.kind = R.w; r.setGun(n, this.gunKind(R.w)); }
+        if (R.w !== A.kind) { A.kind = R.w; if (!r.setRealGun || !r.setRealGun(n, R.w)) r.setGun(n, this.gunKind(R.w)); }
         const recent = r.time - m.shotAt < 1.4 || R.aim > 0.35;
         n.armT = n.gunKind ? (recent ? 1 : 0) : 0;
+        if (R.rl && n.gunKind) { A.relT = Math.min(0.98, (A.relT || 0) + dt / 1.4); n.rel = A.relT; } else { A.relT = 0; n.rel = 0; }
         n.cvT = R.crouch ? 1 : 0;
         A.muz = Math.max(0, A.muz - dt);
         if (n.flashM) n.flashM.visible = A.muz > 0;
@@ -414,12 +415,12 @@
       this.sendT += dt;
       const L = this.lastPos;
       const x = q(p.x, 50), z = q(p.z, 50), a = q(p.yaw, 50), c = r.pm && r.pm.crouch ? 1 : 0, w = r.wp ? r.wp.id : '', h = r.cb ? Math.round(clamp(r.hp / (r.maxHp || 100), 0, 1) * 100) : 100, d = r.dead ? 1 : 0, aim = q(r.aimK || 0, 4);
-      const it = this.itemState(), same = x === L.x && z === L.z && a === L.a && c === L.c && w === L.w && h === L.h && d === L.d && aim === L.q && it[0] === L.it && it[1] === L.ia && !it[1];
+      const rl = r.rl ? 1 : 0, it = this.itemState(), same = rl === L.rl && x === L.x && z === L.z && a === L.a && c === L.c && w === L.w && h === L.h && d === L.d && aim === L.q && it[0] === L.it && it[1] === L.ia && !it[1];
       const gap = document.hidden ? 1 : same ? (L.mv ? 0.03 : 0.5) : this.nearGap();
       if (this.sendT < gap) return;      // рядом до 60 пакетов/с, далеко реже; в покое — 2/с; в скрытой вкладке — 1/с
       this.sendT = 0; L.mv = !same;
-      L.x = x; L.z = z; L.a = a; L.c = c; L.w = w; L.h = h; L.d = d; L.q = aim; L.it = it[0]; L.ia = it[1];
-      NN.sendAction({ type: 'pos', x, z, a, c, w, h, d, q: aim, it: it[0], ia: it[1], ip: it[2] });
+      L.x = x; L.z = z; L.a = a; L.c = c; L.w = w; L.h = h; L.d = d; L.q = aim; L.it = it[0]; L.ia = it[1]; L.rl = rl;
+      NN.sendAction({ type: 'pos', x, z, a, c, w, h, d, q: aim, r: rl, it: it[0], ia: it[1], ip: it[2] });
     }
     itemState() {
       const r = this.run, ty = r.ty;
@@ -494,7 +495,7 @@
       const m = this.rmFor(p.from); if (!m) return;
       const R = m.rem;
       R.x = num(p.x); R.z = num(p.z); R.yaw = num(p.a); R.crouch = !!p.c; R.w = typeof p.w === 'string' ? p.w.slice(0, 12) : ''; R.hp = clamp(num(p.h, 100), 0, 100); R.dead = !!p.d; R.aim = clamp(num(p.q), 0, 1);
-      R.it = p.it | 0; R.ia = p.ia | 0; R.ip = p.ip | 0;
+      R.rl = !!p.r; R.it = p.it | 0; R.ia = p.ia | 0; R.ip = p.ip | 0;
       R.p.x = R.x; R.p.z = R.z; R.p.yaw = R.yaw; R.p.moving = 0.5; R.got = true;
       const t = R.lastT ? performance.now() : 0, now = performance.now();
       if (t) { const g = now - t; R.gap = R.gap ? R.gap * 0.9 + Math.min(g, 400) * 0.1 : g; }

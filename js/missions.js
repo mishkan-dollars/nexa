@@ -317,8 +317,11 @@
         const m = new T.Mesh(new T.BoxGeometry(w, h, d), new T.MeshLambertMaterial({ color, fog: false, depthTest: false }));
         m.renderOrder = order; m.position.set(x, y, z); m.frustumCulled = false; (parent || body).add(m); return m;
       };
-      part(0.52, 0.62, 0.28, 0x0a0a0a, 990, 0, -0.64, -0.12);               // торс (верхний край ниже поля зрения на горизонте): чёрный стикмен
-      part(0.56, 0.05, 0.3, 0x1b1b1b, 991, 0, -0.9, -0.12);                 // ремень
+      const tor = this.fpTorso && this.fpTorso();                            // торс и таз из модели врага (actors.js), чуть позади камеры; без модели — плита
+      if (tor) body.add(tor); else {
+        part(0.52, 0.62, 0.28, 0x0a0a0a, 990, 0, -0.64, -0.12);             // торс (верхний край ниже поля зрения на горизонте): чёрный стикмен
+        part(0.56, 0.05, 0.3, 0x1b1b1b, 991, 0, -0.9, -0.12);               // ремень
+      }
       this.legs = [-1, 1].map((s) => {
         const g = new T.Group(); g.position.set(s * 0.13, -0.95, -0.1); body.add(g);
         part(0.17, 0.85, 0.2, 0x0c0c0c, 991, 0, -0.42, 0, g);

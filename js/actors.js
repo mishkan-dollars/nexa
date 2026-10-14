@@ -144,6 +144,7 @@
   // ------------------------------------------------------------------ оружие в руках врага
   Run.prototype.setGun = function (n, kind) {
     const T = THREE;
+    n.gkO = null; if (n.rm) Object.keys(n.rm).forEach((k) => { n.rm[k].visible = false; });
     n.gunKind = kind || null;
     n.gunG.visible = !!kind;
     Object.keys(n.gm).forEach((k) => { n.gm[k].visible = k === kind; });
@@ -160,6 +161,29 @@
       n.flashM = new T.Mesh(this.ag.flash, this.agm.flash); n.flashM.visible = false; n.flashM.frustumCulled = false; n.gunG.add(n.flashM);
     }
     const mz = GK[kind].muz; n.flashM.position.set(mz[0], mz[1], mz[2]);
+  };
+  // настоящая модель оружия игрока (та же сборка C.buildWeapon, что и от первого лица) в руках куклы; хват и цевьё берутся из якорей модели
+  const REALK = { glock: 'pistol', ak: 'rifle', shotgun: 'shotgun' };
+  Run.prototype.setRealGun = function (n, id) {
+    const W = C.WEAPONS && C.WEAPONS[id], T = THREE;
+    if (!W || !W.anch || !C.buildWeapon || !n.gunG) return false;
+    const kind = REALK[id] || 'rifle', gk = GK[kind], A = W.anch;
+    this.setGun(n, kind);
+    n.rm = n.rm || {};
+    let h = n.rm[id];
+    if (!h) {
+      const prg = this.apg || (this.apg = { mats: {}, M(c) { return this.mats[c] || (this.mats[c] = new T.MeshLambertMaterial({ color: c })); }, mk(geo, mt) { const m = new T.Mesh(geo, mt); m.frustumCulled = false; return m; }, skinMat: new T.MeshLambertMaterial({ color: 0x1a1a1a }) });
+      const mdl = C.buildWeapon(id, prg, A), g = mdl.g;
+      g.position.set(-A.grip[0], -A.grip[1], -A.grip[2]); if (mdl.rh) mdl.rh.visible = false;
+      h = new T.Group(); h.rotation.y = Math.PI; h.add(g); h.position.set(gk.rH[0], gk.rH[1], gk.rH[2]); n.gunG.add(h); n.rm[id] = h;
+      if (this.q.shadows) g.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+      const rel = (p) => [gk.rH[0] - (p[0] - A.grip[0]), gk.rH[1] + (p[1] - A.grip[1]), gk.rH[2] - (p[2] - A.grip[2])];
+      h.userData.gk = { rH: gk.rH, lH: rel(A.sup), muz: rel(A.muzzle) };
+    }
+    Object.keys(n.gm).forEach((k) => { n.gm[k].visible = false; });
+    Object.keys(n.rm).forEach((k) => { n.rm[k].visible = k === id; });
+    n.gkO = h.userData.gk; const mz = n.gkO.muz; if (n.flashM) n.flashM.position.set(mz[0], mz[1], mz[2]);
+    return true;
   };
   Run.prototype.actorStyle = function (n, type, gun) {
     const heavy = type === 'heavy' || type === 'boss';
@@ -237,6 +261,15 @@
     const c = Math.cos(phi + 0.2);
     return K * (c > 0 ? Math.pow(c, 1.2) : 0) + (Math.sin(phi) > 0 ? 0.22 * s * Math.max(0, -Math.sin(2 * phi)) : 0);
   }
+  // торс и таз врага для вида от первого лица: тот же материал, рисуется поверх мира (depthTest выключен)
+  Run.prototype.fpTorso = function () {
+    const T = THREE, A = actorGeo(this), g = new T.Group(), M = this.agm.body.clone();
+    M.fog = false; M.depthTest = false;
+    const add = (geo, y) => { const m = new T.Mesh(geo, M); m.position.y = y; m.renderOrder = 990; m.frustumCulled = false; g.add(m); };
+    add(A.pelvis, -0.06); add(A.chest, 0);
+    g.rotation.y = Math.PI; g.scale.set(1.2, 1, 1.1); g.position.set(0, -0.68, 0.1);
+    return g;
+  };
   // ------------------------------------------------------------------ анимация
   Run.prototype.updateNpc = function (n, dt) {
     const g = n.g, v = tv();
@@ -343,7 +376,7 @@
 
   // руки с оружием: оружие крепится к корпусу, обе кисти тянутся к хвату и цевью (IK)
   Run.prototype.actorArmsGun = function (n, s, ph, lk, dt, ps, id, t) {
-    const v = tv(), gk = GK[n.gunKind], G = n.gunG, pistol = n.gunKind === 'pistol';
+    const v = tv(), gk = n.gkO || GK[n.gunKind], G = n.gunG, pistol = n.gunKind === 'pistol';
     const bs = n.bash > 0 ? Math.sin(Math.PI * n.bash) : 0, kd = n.bashKind;
     let a = smooth(n.aimK) * (1 - (n.daze || 0));
     if (bs > 0 && kd !== 'shove' && kd !== 'kick' && kd !== 'ram') a = Math.max(a, bs * 0.9);
