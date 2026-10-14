@@ -10,6 +10,17 @@
   const rnd = (a, b) => a + Math.random() * (b - a);
   const sgn = () => (Math.random() < 0.5 ? -1 : 1);
   const easeOut = (k) => 1 - Math.pow(1 - k, 3); // резкий старт, мягкий финиш — «профессиональные» дёрганые движения
+  const easeOut4 = (k) => 1 - Math.pow(1 - k, 4);
+  const easeBack = (k, c) => { const m = k - 1; return 1 + (c + 1) * m * m * m + c * m * m; }; // рывок с лёгким перелётом
+  // профили перезарядки: amp — размах позы, yank — первый рывок оружия вниз-вбок, jolt — отдача в руках от событий, back — перелёт, cam — тряска камеры
+  const RLP = {
+    glock: { amp: 1.3, yank: 1.0, jolt: 0.8, back: 1.1, cam: 1 },
+    ak: { amp: 1.2, yank: 1.0, jolt: 1.1, back: 0.9, cam: 1.15 },
+    shotgun: { amp: 1.1, yank: 0.6, jolt: 1.2, back: 0.8, cam: 1.2 },
+    sniper: { amp: 1.1, yank: 0.8, jolt: 1.5, back: 0.7, cam: 1.3, bolt: 1.7 },
+    minigun: { amp: 0.8, yank: 0.5, jolt: 2, back: 0.5, cam: 1.5 }
+  };
+  const rlp = (id) => RLP[id] || RLP.ak;
 
   // ------------------------------------------------------------------ оружие
   // low — поза у бедра (x,y,z в системе тела, rx,ry); sprint — поза бега; relief — расстояние от глаза до целика в прицеливании
@@ -184,13 +195,19 @@
 
   // поза перезарядки: между ключевыми кадрами — резкий старт и мягкий финиш (рваные движения).
   // o[0..5] — смещение/поворот оружия, o[6] — руки видны, o[7] — в левой руке магазин/патрон, o[8] — ход затвора; o.a/o.b/o.k — цели левой руки (из кадров) и прогресс между ними
+  Run.prototype.rigJolt = function (z, rx, ry) { const j = this.rg && this.rg.j; if (j) { j.vz += z; j.vrx += rx; j.vry += ry; } };
   Run.prototype.rlPose = function (rl) {
-    const K = rl.def.rl, u = clamp(rl.shell ? rl.cyc : rl.t / rl.dur, 0, 1);
+    const K = rl.def.rl, u = clamp(rl.shell ? rl.cyc : rl.t / rl.dur, 0, 1), a0 = (K, i) => K[i][0];
     let i = 0;
     while (i < K.length - 2 && u >= K[i + 1][0]) i += 1;
-    const a = K[i], b = K[i + 1], k = easeOut(clamp((u - a[0]) / Math.max(0.001, b[0] - a[0]), 0, 1));
+    const P = rlp(rl.id), tt = clamp((u - a0(K, i)) / Math.max(0.001, K[i + 1][0] - K[i][0]), 0, 1);
+    const a = K[i], b = K[i + 1], k = easeOut4(tt), kp = easeBack(tt, P.back);
     const o = rl.out || (rl.out = []);
-    for (let j = 0; j < 6; j += 1) o[j] = lerp(a[j + 1], b[j + 1], k);
+    for (let j = 0; j < 6; j += 1) o[j] = lerp(a[j + 1], b[j + 1], kp) * P.amp;
+    if (!rl.shell) { // первый рывок: оружие резко вниз-вбок и кантом, затем гасится
+      const ye = Math.exp(-rl.t * 10) * Math.sin(Math.min(1, rl.t / 0.045) * 1.5708) * P.yank;
+      o[0] -= 0.05 * ye; o[1] -= 0.07 * ye; o[3] += 0.28 * ye; o[5] += 0.3 * ye;
+    }
     o[6] = lerp(a[8], b[8], k);
     o[7] = a[9] > 0.5 || b[9] > 0.5 ? 1 : 0;
     o[8] = lerp(a[10], b[10], k);

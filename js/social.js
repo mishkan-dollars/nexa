@@ -267,7 +267,7 @@
   }
   function rewardCheck() {
     const i = BOARD.rows.findIndex((r) => r.pk === me());
-    if (i >= 0 && i < 10 && T.rankReward) { const n = T.rankReward(i + 1); if (n) popup('RANKING REWARD: +' + n + ' KP (TOP ' + (i + 1) + ')'); }
+    if (i >= 0 && i < 10 && BOARD.rows[i].sc > 0 && T.rankReward) { const n = T.rankReward(i + 1); if (n) popup('RANKING REWARD: +' + n + ' KP (TOP ' + (i + 1) + ')'); }
   }
 
   // ------------------------------------------------------------------ кланы (владелец — по ключу; состав публикует владелец)
