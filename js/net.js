@@ -20,7 +20,7 @@
   const ICE_SERVERS = [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }];
   const MAX_PLAYERS = 6, MAX_BR = 10, MAX_VOICE = 4;                                   // см. ONLINE.md: 6 проверено по расчёту трафика Хоста; константу можно поднять до 8 на свой риск
   const FAST = { pos: 1, ping: 1, pong: 1, snap: 1, aim: 1 };            // типы пакетов по ненадёжному каналу 'act' (остальные — по 'rel')
-  const RELAY = { pos: 1, shot: 1, cev: 1, boom: 1, aim: 1 };            // гость -> Хост -> все остальные
+  const RELAY = { pos: 1, shot: 1, cev: 1, boom: 1, aim: 1, bl: 1, gr: 1 };            // гость -> Хост -> все остальные
   const DIRECT = { 'profile?': 1, profile: 1 };                          // адресные (поле to = слот получателя)
   const POS_MIN = 21;
   function encPos(p, from) {

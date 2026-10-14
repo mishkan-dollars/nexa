@@ -144,7 +144,7 @@
       this.on('net:left', (p) => this.removeRemote(p.slot, true)); this.on('net:roster', () => this.pruneRemotes());
       this.on('net:state', (s) => { if (s.state === 'lost') this.note('CONNECTION UNSTABLE…'); });
       this.on('hit', this.onHit); this.on('espawn', this.onSpawn); this.on('ekill', this.onKill); this.on('egone', this.onGone); this.on('snap', this.onSnap);
-      this.on('bl', this.onBlood); this.on('eshot', this.onEShot); this.on('hurt', this.onHurt); this.on('wave', this.onWave);
+      this.on('bl', this.onBlood); this.on('gr', this.onGrenade); this.on('eshot', this.onEShot); this.on('hurt', this.onHurt); this.on('wave', this.onWave);
       r.hooks.push((dt) => { try { this.tick(dt); } catch (e) { if (!this.errLogged) { this.errLogged = true; console.warn('[coop]', e); } } });
       this.buildUi();
     }
@@ -534,6 +534,21 @@
       const m = this.remotes.get(p.from | 0), r = this.run; if (!m || !m.av || !r.bloodSplatNpc || !m.av.n.g.visible) return;
       r.bloodSplatNpc(m.av.n, { x: clamp(num(p.x), -1, 1), z: clamp(num(p.z), -1, 1) }, clamp(num(p.a, 0.5), 0.1, 1.5));
     }
+    onGrenade(p) {
+      const r = this.run; if (!r.scene || !window.THREE) return;
+      const T = THREE, frag = !!p.k, m = new T.Mesh(new T.SphereGeometry(0.075, 8, 6), new T.MeshBasicMaterial({ color: frag ? 0x2a2a2a : 0xe0e0e0 }));
+      m.position.set(num(p.x), num(p.y), num(p.z)); r.scene.add(m);
+      (this.grs || (this.grs = [])).length < 8 && this.grs.push({ m, vx: clamp(num(p.vx), -30, 30), vy: clamp(num(p.vy), -30, 30), vz: clamp(num(p.vz), -30, 30), t: 0, life: frag ? 2.0 : 1.4 });
+    }
+    grenades(dt) {
+      if (!this.grs || !this.grs.length) return;
+      this.grs = this.grs.filter((g) => {
+        g.t += dt; g.vy -= 9.8 * dt; const p = g.m.position; p.x += g.vx * dt; p.y += g.vy * dt; p.z += g.vz * dt;
+        if (p.y < 0.08) { p.y = 0.08; g.vy = Math.abs(g.vy) * 0.35; g.vx *= 0.6; g.vz *= 0.6; }
+        if (g.t >= g.life) { this.run.scene.remove(g.m); g.m.geometry.dispose(); g.m.material.dispose(); return false; }
+        return true;
+      });
+    }
     onBoom(p) {
       const r = this.run; if (!r.blastFx || !r.scene) return;
       try { r.blastFx(num(p.x), num(p.y), num(p.z), clamp(num(p.r, 4), 0.5, 20), p.k); } catch (e) { /* только картинка */ }
@@ -735,6 +750,7 @@
       this.sendSnap(dt);
       this.puppets(dt);
       if (r.updateNpcBlood) r.updateNpcBlood(dt);
+      this.grenades(dt);
       if (this.story && !this.host) this.expireProv();
       this.cineSync();
       this.updateAvatars(dt);
@@ -824,7 +840,13 @@
     }
     return res;
   });
-  wrap1('throwGadget', function (o, a) { const co = this.__co; if (co) co.gt = { id: a[0], t: this.time }; return o.apply(this, a); });
+  wrap1('throwGadget', function (o, a) {
+    const co = this.__co; if (co) co.gt = { id: a[0], t: this.time };
+    const res = o.apply(this, a);
+    const th = this.gad && this.gad.thrown, g = th && th[th.length - 1];
+    if (co && !co.solo && NN.connected && g && g.id === a[0]) NN.sendAction({ type: 'gr', k: g.id === 'frag' ? 1 : 0, x: q(g.x, 100), y: q(g.y, 100), z: q(g.z, 100), vx: q(g.vx, 100), vy: q(g.vy, 100), vz: q(g.vz, 100) });
+    return res;
+  });
   wrap1('plantC4', function (o, a) { const co = this.__co; if (co) co.gt = { id: 'c4', t: this.time }; return o.apply(this, a); });
   wrap1('bloodSplatTorso', function (o, a) {
     const co = this.__co, d = a[0];
