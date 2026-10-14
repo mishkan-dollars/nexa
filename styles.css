@@ -1530,7 +1530,7 @@ body.in-online .terminal { animation: none !important; transform: none !importan
 
 /* ---- лобби v3: режим справа, чат выдвижной, KP, вкладки MODE и TRADES ---- */
 .ol { --car-h: 0px; }
-.ol[data-tab="mode"] .ol-pane[data-pane="mode"], .ol[data-tab="trade"] .ol-pane[data-pane="trade"] { display: block; }
+.ol[data-tab="mode"] .ol-pane[data-pane="mode"], .ol[data-tab="trade"] .ol-pane[data-pane="trade"], .ol[data-tab="abil"] .ol-pane[data-pane="abil"] { display: block; }
 .ol-kp { display: inline-flex; align-items: baseline; gap: 6px; flex: none; padding: 3px 10px; border: 1px solid #5a5226; border-radius: 6px; background: rgba(40,36,10,.55); color: #ffe600; font-size: 19px; letter-spacing: .06em; } .ol-kp small { color: #bfb35a; font-size: 12px; letter-spacing: .18em; }
 .ol-bl { left: auto; right: clamp(12px, 3vw, 48px); top: 70px; bottom: auto; width: min(300px, 46vw); }
 .ol-br { bottom: 16px; }
