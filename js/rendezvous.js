@@ -81,7 +81,7 @@
   function paramList(name) {
     try { const q = new URLSearchParams(location.search).getAll(name).join(','); return q ? q.split(',') : null; } catch (e) { return null; }
   }
-  const cleanList = (l) => Array.from(new Set((l || []).map((x) => String(x).trim()).filter((x) => x && validServer(x)))).slice(0, 24);
+  const cleanList = (l) => Array.from(new Set((l || []).map((x) => String(x).trim()).filter((x) => x && validServer(x)))).slice(0, 80);
   // [{url, type:'tracker'|'nostr'}]: параметры ?tracker= / ?relay= (через запятую) или localStorage 'nexaTrackers' / 'nexaRelays' заменяют списки по умолчанию
   function serverEntries() {
     let tr = paramList('tracker'), rl = paramList('relay');
@@ -102,26 +102,47 @@
   const HEALTH = new Map();
   const hl = (url, type) => { let h = HEALTH.get(url); if (!h) HEALTH.set(url, h = { url, type: type || 'tracker', state: 'idle', fails: 0, deadUntil: 0, lastOk: 0, why: '' }); return h; };
   const deadBase = () => (SV.DEAD_MS || 180000);
+  // результаты проверок (кто ответил и за сколько мс) хранятся в localStorage с временем; свежими считаются 30 минут
+  const FRESH = 30 * 60000;
+  let store = {};
+  try { const j = JSON.parse(lsGet('nexaSrvHealth') || '{}'); if (j && typeof j === 'object') store = j; } catch (e) { store = {}; }
+  const saveStore = () => { try { const k = Object.keys(store); if (k.length > 120) k.slice(0, k.length - 120).forEach((x) => { delete store[x]; }); lsSet('nexaSrvHealth', JSON.stringify(store)); } catch (e) { /* без хранилища */ } };
+  const fresh = (r) => !!r && now() - r.t < FRESH;
   function markDead(url, type, why, hard) {
     const h = hl(url, type);
-    h.fails += 1; h.state = 'down'; h.why = why || '';
+    h.fails += 1; h.state = 'down'; h.why = why || ''; h.checked = now();
     h.deadUntil = now() + (hard ? 30 * 60000 : Math.min(30 * 60000, deadBase() * Math.pow(2, Math.min(4, h.fails - 1))));
+    store[url] = { ok: false, ms: 0, t: now() }; saveStore();
     emit('servers', serverList());
   }
-  function markOk(url, type) { const h = hl(url, type); h.state = 'online'; h.fails = 0; h.deadUntil = 0; h.lastOk = now(); h.why = ''; emit('servers', serverList()); }
+  function markOk(url, type, ms) {
+    const h = hl(url, type); h.state = 'online'; h.fails = 0; h.deadUntil = 0; h.lastOk = now(); h.checked = now(); h.why = ''; if (ms >= 0) h.ms = ms;
+    store[url] = { ok: true, ms: Math.round(h.ms || 0), t: now() }; saveStore();
+    emit('servers', serverList());
+  }
+  // приоритет при выборе: свежо ответившие по задержке, затем непроверенные, свежо упавшие — в конец
+  const rankOf = (e) => { const r = store[e.url], h = HEALTH.get(e.url); if (h && h.state === 'online') return h.ms || 1; if (fresh(r)) return r.ok ? r.ms || 1 : 1e9; return 5000 + Math.random() * 1000; };
+  const ranked = (entries) => entries.map((e) => ({ e, k: rankOf(e) })).sort((a, b) => a.k - b.k).map((x) => x.e);
+  for (const u of Object.keys(store)) { const r = store[u]; if (fresh(r) && r.ok) { const h = hl(u, 'nostr'); h.state = 'online'; h.ms = r.ms; h.lastOk = r.t; h.checked = r.t; } }
   const isDead = (url) => { const h = HEALTH.get(url); return !!(h && h.state === 'down' && h.deadUntil > now()); };
   function serverList() {
     const on = serversOn(), act = activeSet();
     return serverEntries().map((e) => {
-      const h = HEALTH.get(e.url) || { state: 'idle', fails: 0 };
-      let st = 'reserve';
+      const h = HEALTH.get(e.url) || { state: 'idle', fails: 0 }, r = store[e.url];
+      let st = 'idle';
       if (!on) st = 'off';
-      else if (h.state === 'online') st = 'online';
       else if (h.state === 'connecting') st = 'connecting';
-      else if (h.state === 'down' && (h.deadUntil > now() || h.fails)) st = 'down';
-      if (st === 'reserve' && act.has(e.url)) st = 'connecting';
-      return { url: e.url, host: hostLabel(e.url), type: e.type, state: st, fails: h.fails || 0 };
+      else if (h.state === 'online' && (act.has(e.url) || fresh(r) || (h.lastOk && now() - h.lastOk < FRESH))) st = act.has(e.url) ? 'active' : 'online';
+      else if (h.state === 'down') st = 'down';
+      else if (fresh(r)) st = r.ok ? 'online' : 'down';
+      if (st === 'idle' && act.has(e.url)) st = 'connecting';
+      return { url: e.url, host: hostLabel(e.url), type: e.type, state: st, fails: h.fails || 0, ms: Math.round(h.ms || (r && r.ms) || 0), checked: st === 'active' || st === 'online' || st === 'down' };
     });
+  }
+  // честная сводка: всё считается по фактическим проверкам и соединениям
+  function summary() {
+    const l = serverList();
+    return { total: l.length, checked: l.filter((x) => x.checked).length, online: l.filter((x) => x.state === 'online' || x.state === 'active').length, active: l.filter((x) => x.state === 'active' || x.state === 'connecting').length, down: l.filter((x) => x.state === 'down').length };
   }
   const transports = new Set();
   function activeSet() { const s = new Set(); transports.forEach((t) => t.adapters.forEach((a) => { if (a.state === 'connecting' || a.state === 'open') s.add(a.url); })); return s; }
@@ -135,7 +156,7 @@
       try { ws = new WebSocket(this.url); } catch (e) { mt.fail(this, 'ws'); return; }
       this.ws = ws; this.t0 = now();
       this.timer = setTimeout(() => { if (this.state === 'connecting') mt.fail(this, 'timeout'); }, 6000);
-      ws.onopen = () => { clearTimeout(this.timer); this.state = 'open'; markOk(this.url, 'tracker'); mt.h.status(); mt.h.open(this);
+      ws.onopen = () => { clearTimeout(this.timer); this.state = 'open'; markOk(this.url, 'tracker', now() - this.t0); mt.h.status(); mt.h.open(this);
         this.silent = setTimeout(() => { if (this.state === 'open' && !this.got) mt.fail(this, 'silent'); }, 15000); };
       ws.onerror = () => { if (this.state === 'connecting') mt.fail(this, 'error'); };
       ws.onclose = () => { if (this.state !== 'closed' && this.state !== 'failed') mt.fail(this, 'closed'); };
@@ -163,7 +184,7 @@
       const mt = this.mt; let ws;
       if (!window.NexaSchnorr) { mt.fail(this, 'nocrypto', true); return; }
       try { ws = new WebSocket(this.url); } catch (e) { mt.fail(this, 'ws'); return; }
-      this.ws = ws;
+      this.ws = ws; this.t0 = now();
       this.timer = setTimeout(() => { if (this.state === 'connecting') mt.fail(this, 'timeout'); }, 7000);
       ws.onopen = () => {
         const f = { kinds: [SV.KIND || 27777], '#t': [this.mt.hashHex], since: Math.floor(Date.now() / 1000) - 20, limit: 20 };
@@ -177,7 +198,7 @@
         let m; try { m = JSON.parse(e.data); } catch (er) { return; }
         if (!Array.isArray(m) || typeof m[0] !== 'string') return;
         this.got = true;
-        if (this.state === 'connecting') { clearTimeout(this.timer); this.state = 'open'; markOk(this.url, 'nostr'); mt.h.status(); mt.h.open(this); this.pump(); }
+        if (this.state === 'connecting') { clearTimeout(this.timer); this.state = 'open'; markOk(this.url, 'nostr', now() - this.t0); mt.h.status(); mt.h.open(this); this.pump(); }
         if (m[0] === 'EVENT' && m[1] === this.sub) this.onEvent(m[2]);
         else if (m[0] === 'OK') { if (m[2] === false) { const why = String(m[3] || ''); if (/pow|auth|restrict|paid|payment|blocked|not allowed|whitelist|invalid: .*kind/i.test(why)) mt.fail(this, 'refused:' + why.slice(0, 40), true); else this.rej = (this.rej || 0) + 1; if (this.rej > 6) mt.fail(this, 'rejecting', true); } }
         else if (m[0] === 'NOTICE' && /pow|paid|payment|auth|rate|too many/i.test(String(m[1] || ''))) mt.fail(this, 'notice', true);
@@ -233,7 +254,7 @@
       if (this.closed) return;
       const act = this.adapters.filter((a) => a.state === 'connecting' || a.state === 'open').length;
       let free = LIVE_MAX() - act;
-      for (const e of this.entries) {
+      for (const e of ranked(this.entries)) {
         if (free <= 0) break;
         if (this.adapters.some((a) => a.url === e.url && (a.state === 'connecting' || a.state === 'open'))) continue;
         if (isDead(e.url)) continue;
@@ -267,17 +288,20 @@
 
   // проверка здоровья всех серверов списка (кнопка «Проверить»): короткое соединение, не больше LIVE_MAX одновременно
   let probing = null;
-  function probe() {
+  // проверка живости: короткое соединение пачками по 8, таймаут 4 с; force — всех, иначе только тех, у кого нет свежего результата (limit — не больше N лучших кандидатов)
+  function probe(force, limit) {
     if (probing) return probing;
-    const list = serverEntries().filter((e) => !activeSet().has(e.url));
-    list.forEach((e) => { const h = hl(e.url, e.type); if (h.state !== 'online') h.state = 'connecting'; h.deadUntil = 0; });
+    const act = activeSet();
+    let list = serverEntries().filter((e) => !act.has(e.url) && (force || !fresh(store[e.url])));
+    if (limit) list = ranked(list).slice(0, limit);
+    list.forEach((e) => { const h = hl(e.url, e.type); h.state = 'connecting'; h.deadUntil = 0; });
     emit('servers', serverList());
     let i = 0;
     const one = (e) => new Promise((res) => {
-      let ws, done = false;
-      const fin = (ok, why) => { if (done) return; done = true; try { ws && ws.close(); } catch (er) { /* ok */ } if (ok) markOk(e.url, e.type); else markDead(e.url, e.type, why || 'probe'); res(); };
+      let ws, done = false; const t0 = now();
+      const fin = (ok, why) => { if (done) return; done = true; try { ws && ws.close(); } catch (er) { /* ok */ } if (ok) markOk(e.url, e.type, now() - t0); else markDead(e.url, e.type, why || 'probe'); res(); };
       try { ws = new WebSocket(e.url); } catch (er) { fin(false, 'ws'); return; }
-      const tm = setTimeout(() => fin(false, 'timeout'), 6000);
+      const tm = setTimeout(() => fin(false, 'timeout'), 4000);
       ws.onopen = () => {
         if (e.type === 'tracker') { clearTimeout(tm); fin(true); return; }
         try { ws.send(JSON.stringify(['REQ', 'nxp' + NN.util.rndHex(3), { kinds: [SV.KIND || 27777], '#t': ['0'.repeat(40)], limit: 1 }])); } catch (er) { fin(false, 'send'); }
@@ -287,9 +311,19 @@
       ws.onclose = () => { clearTimeout(tm); fin(false, 'closed'); };
     });
     const worker = async () => { while (i < list.length) { const e = list[i]; i += 1; await one(e); } };
-    probing = Promise.all(Array.from({ length: Math.min(LIVE_MAX(), list.length) }, worker)).then(() => { probing = null; emit('servers', serverList()); return serverList(); });
+    probing = Promise.all(Array.from({ length: Math.min(8, list.length) }, worker)).then(() => { probing = null; MON.last = now(); emit('servers', serverList()); return serverList(); });
     return probing;
   }
+  // фоновый монитор: сразу и раз в 4 минуты. Работает только если игрок согласился на публичный режим или комнаты уже используются (до этого сторонних серверов не трогаем)
+  const MON = { t: 0, last: 0 };
+  const inUse = () => !!(hostR || joinR || quickR || G.on);
+  const monitorOk = () => serversOn() && (consented() || inUse());
+  function monitorTick() { if (!monitorOk()) return; probe(false, consented() ? 0 : 12); }   // без согласия, только при использовании комнат: не больше 12 серверов
+  const monitor = {
+    start() { if (MON.t || !monitorOk()) return; monitorTick(); MON.t = setInterval(monitorTick, 4 * 60000); },
+    stop() { clearInterval(MON.t); MON.t = 0; },
+    get running() { return !!MON.t; }
+  };
 
   // ------------------------------------------------------------------ Rendezvous: один «рой» (тема) на трекерах
   // opts.mode: 'answerer' (хост: только отвечает), 'offerer' (гость: только предлагает), 'both' (рой/очередь). Обработчики:
@@ -427,7 +461,7 @@
     if (!id) return { ok: false, err: 'ROOM_NAME_BAD' };
     if (!serversOn()) return { ok: false, err: 'SERVERS_OFF' };
     if (typeof RTCPeerConnection !== 'function') return { ok: false, err: 'UNSUPPORTED' };
-    NN.begin('host');
+    NN.begin('host'); monitor.start();
     Object.assign(H, { id, pub: !!opts.pub, title: String(opts.title || '').slice(0, 24), mode: opts.mode === 'mission' ? 'mission' : 'sandbox', mission: Math.max(1, Math.min(47, opts.mission | 0 || 1)) });
     H.startedAt = now();
     const r = hostR = new Rendezvous('room/' + id, {
@@ -467,7 +501,7 @@
     if (!id) { emit('join', { stage: 'error', err: 'ROOM_BAD' }); return { ok: false, err: 'ROOM_BAD' }; }
     if (!serversOn()) { emit('join', { stage: 'error', err: 'SERVERS_OFF' }); return { ok: false, err: 'SERVERS_OFF' }; }
     if (typeof RTCPeerConnection !== 'function') { emit('join', { stage: 'error', err: 'UNSUPPORTED' }); return { ok: false, err: 'UNSUPPORTED' }; }
-    NN.begin('guest');
+    NN.begin('guest'); monitor.start();
     J.id = id; J.t0 = now(); J.stage = 'searching'; J.got = false;
     const to = (opts.timeoutMs || 20000);
     const fire = (stage, extra) => { J.stage = stage; emit('join', Object.assign({ stage, id, ms: now() - J.t0, up: joinR && joinR.up }, extra || {})); };
@@ -646,6 +680,7 @@
   }
   async function gossipStart() {
     if (!serversOn()) return;
+    monitor.start();
     if (G.on) { G.listeners += 1; return; }
     G.on = true; G.listeners = 1;
     const rz = G.rz = new Rendezvous('lobby', {
@@ -703,9 +738,9 @@
   window.NexaRoom = {
     DEFAULT_TRACKERS: SV.TRACKERS, trackers: trackerList, validTracker, Rendezvous, MultiTransport, infoHash, sha1js,
     servers: {
-      list: serverList, probe, entries: serverEntries, health: HEALTH, get on() { return serversOn(); },
+      list: serverList, summary, probe, monitor, entries: serverEntries, health: HEALTH, get on() { return serversOn(); },
       setOn(v) { lsSet('nexaServersOn', v ? '1' : '0'); if (!v) { stopHost(); stopJoin(); stopQuick(); gossipStop(true); } emit('servers', serverList()); },
-      get live() { return serverList().filter((x) => x.state === 'online').length; }
+      get live() { return summary().online; }
     },
     hostRoom, joinRoom, stopHost, stopJoin, quickPlay, stopQuick, roomLink, pendingRoom, clearRoomFromUrl, roomName, newRoomId,
     gossip: {

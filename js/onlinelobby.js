@@ -604,15 +604,18 @@
   }
 
   // ------------------------------------------------------------------ серверы сигналинга: видимый список с состоянием каждого
-  const SRV_TXT = { online: 'ONLINE', connecting: 'CONNECTING', down: 'UNAVAILABLE', reserve: 'RESERVE', off: 'OFF', idle: 'NOT CHECKED' };
+  const SRV_TXT = { active: 'IN USE', online: 'ONLINE', connecting: 'CONNECTING', down: 'UNAVAILABLE', reserve: 'RESERVE', off: 'OFF', idle: 'NOT CHECKED' };
   function renderServers() {
     if (!root || !RM) return;
-    const list = RM.servers.list(), on = RM.servers.on;
-    const live = list.filter((x) => x.state === 'online').length;
+    const list = RM.servers.list(), on = RM.servers.on, sm = RM.servers.summary();
     $$('.ol-srv').forEach((blk) => {
       blk.classList.toggle('is-off', !on);
-      const cnt = blk.querySelector('.srv-count');
-      cnt.textContent = (on ? 'ONLINE ' : 'OFF · ') + live + ' / ' + list.length;
+      const cnt = blk.querySelector('.srv-count'); cnt.textContent = '';
+      [['TOTAL', sm.total], ['CHECKED', sm.checked], ['ONLINE', sm.online], ['IN USE', sm.active], ['UNAVAILABLE', sm.down]].forEach((c) => {
+        const sp = document.createElement('span'); sp.className = 'sm-' + c[0].replace(/ /g, '').toLowerCase();
+        const em = document.createElement('em'); em.textContent = c[0]; const n = document.createElement('b'); n.setAttribute('translate', 'no'); n.textContent = String(c[1]);
+        sp.appendChild(em); sp.appendChild(n); cnt.appendChild(sp);
+      });
       const sw = blk.querySelector('.srv-on'); if (sw) sw.checked = on;
       const ul = blk.querySelector('.srv-list'); ul.textContent = '';
       list.forEach((s) => {
@@ -621,7 +624,8 @@
         const nm = document.createElement('b'); nm.setAttribute('translate', 'no'); nm.textContent = s.host;
         const ty = document.createElement('em'); ty.setAttribute('translate', 'no'); ty.textContent = s.type;
         const st = document.createElement('span'); st.textContent = SRV_TXT[s.state] || SRV_TXT.idle;
-        li.appendChild(dot); li.appendChild(nm); li.appendChild(ty); li.appendChild(st); ul.appendChild(li);
+        const ms = document.createElement('small'); ms.setAttribute('translate', 'no'); ms.textContent = s.ms && (s.state === 'online' || s.state === 'active') ? s.ms + ' ms' : '';
+        li.appendChild(dot); li.appendChild(nm); li.appendChild(ty); li.appendChild(ms); li.appendChild(st); ul.appendChild(li);
       });
       const btn = blk.querySelector('[data-act="srv-probe"]'); if (btn) btn.disabled = !on;
     });
@@ -629,7 +633,7 @@
   function srvProbe() {
     if (!RM || !RM.servers.on) return;
     const bs = $$('[data-act="srv-probe"]'); bs.forEach((b) => { b.disabled = true; });
-    RM.servers.probe().then(() => { if (root) renderServers(); });
+    RM.servers.probe(true).then(() => { if (root) renderServers(); });
   }
 
   // ------------------------------------------------------------------ комната по ссылке (хост)
@@ -717,7 +721,7 @@
   function enterPublic() {
     renderServers(); renderPublic();
     if (!RM || !RM.servers.on) return;
-    if (RM.consented()) { RM.gossip.start().then(() => { if (root) renderPublic(); }); }
+    if (RM.consented()) { RM.servers.monitor.start(); RM.gossip.start().then(() => { if (root) renderPublic(); }); }
   }
   function ageText(s) { return s < 5 ? 'NOW' : s + ' s'; }
   function renderPublic() {
@@ -1329,10 +1333,11 @@
     render: shell,
     afterRender(on) {
       document.body.classList.toggle('in-online', !!on);
-      if (!on) { if (root) { root = null; } danceStopAll(); stStop(); return; }
+      if (!on) { if (root) { root = null; } danceStopAll(); stStop(); if (RM && !RM.hosting && !RM.joining) RM.servers.monitor.stop(); return; }
       root = document.getElementById('ol');
       if (!root) return;
       bind(); refreshAll();
+      if (RM && RM.consented()) RM.servers.monitor.start();
       const pj = NN.pendingJoin(), pr = RM ? RM.pendingRoom() : '';
       if (pj && !L.joinFromUrl) { L.joinFromUrl = true; setTab('connect'); $('#g-in').value = pj; NN.clearJoinFromUrl(); guestAnswer(true); }
       else if (pr && !L.joinFromUrl) { L.joinFromUrl = true; RM.clearRoomFromUrl(); startJoin(pr, 'join', false); }

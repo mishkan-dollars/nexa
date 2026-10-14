@@ -1518,3 +1518,11 @@ body.in-online .terminal { animation: none !important; transform: none !importan
 .cs-list { margin: 8px 0 12px; padding-left: 20px; display: grid; gap: 6px; font-size: 16px; line-height: 1.3; color: #cfd5de; text-transform: none; letter-spacing: .02em; }
 .jn-box { width: min(520px, 100%); display: grid; gap: 10px; } .jn-box h3 { margin: 0; font-size: 26px; letter-spacing: .1em; } .jn-st { margin: 0; font-size: 22px; letter-spacing: .08em; } .jn-st.bad { color: #ff8a82; }
 .ol:not([data-tab="play"]) .ol-tag, .ol:not([data-tab="play"]) .ol-invite { display: none; }
+.srv-count { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 14px; letter-spacing: .08em; } .srv-count span { display: inline-flex; gap: 6px; align-items: baseline; } .srv-count em { font-style: normal; color: #9aa2ad; font-size: 12px; } .srv-count b { font-size: 20px; color: #fff; }
+.srv-count .sm-online b { color: #4ade80; } .srv-count .sm-inuse b { color: #6fc7ee; } .srv-count .sm-unavailable b { color: #ff8a82; }
+.ol-srv.is-off .srv-count b { color: #7d8592; }
+.srv-list { max-height: 260px; overflow-y: auto; padding-right: 4px; }
+.srv { grid-template-columns: 12px minmax(0, 1fr) auto auto auto; } .srv small { color: #6fc7ee; font-size: 12px; min-width: 52px; text-align: right; }
+.srv.st-online i { background: #7fcf94; box-shadow: none; } .srv.st-online span { color: #7fcf94; }
+.srv.st-active i { background: #4ade80; box-shadow: 0 0 8px #4ade80; } .srv.st-active span { color: #4ade80; }
+.srv.st-idle i { background: #50555f; }
