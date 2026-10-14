@@ -30,7 +30,10 @@
     SERVERS_OFF: 'Signaling servers are switched off. Use the manual connection with codes.',
     ROOM_GONE: 'The room is no longer available.',
     QUICK_TIMEOUT: 'No players found right now. Create a public room and wait for others.',
-    PUBLIC_OFF: 'Public rooms need your consent first.'
+    PUBLIC_OFF: 'Public rooms need your consent first.',
+    TRADE_GONE: 'That player is no longer in your room.',
+    TRADE_AMT: 'Enter a whole amount from 1 to 1000000.',
+    TRADE_FUNDS: 'Not enough KP.'
   });
 
   // ------------------------------------------------------------------ SHA-1 (запасной вариант без crypto.subtle: file://, старые браузеры)

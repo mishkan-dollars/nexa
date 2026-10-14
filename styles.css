@@ -1527,3 +1527,23 @@ body.in-online .terminal { animation: none !important; transform: none !importan
 .srv.st-active i { background: #4ade80; box-shadow: 0 0 8px #4ade80; } .srv.st-active span { color: #4ade80; }
 .srv.st-idle i { background: #50555f; }
 .srv { grid-template-columns: 12px minmax(0, 1fr) auto auto auto; grid-auto-flow: row; } .srv .srv-why { grid-column: 2 / -1; font-style: normal; font-size: 12px; letter-spacing: .06em; color: #ffb36b; text-transform: uppercase; margin-top: -2px; }
+
+/* ---- лобби v3: режим справа, чат выдвижной, KP, вкладки MODE и TRADES ---- */
+.ol { --car-h: 0px; }
+.ol[data-tab="mode"] .ol-pane[data-pane="mode"], .ol[data-tab="trade"] .ol-pane[data-pane="trade"] { display: block; }
+.ol-kp { display: inline-flex; align-items: baseline; gap: 6px; flex: none; padding: 3px 10px; border: 1px solid #5a5226; border-radius: 6px; background: rgba(40,36,10,.55); color: #ffe600; font-size: 19px; letter-spacing: .06em; } .ol-kp small { color: #bfb35a; font-size: 12px; letter-spacing: .18em; }
+.ol-bl { left: auto; right: clamp(12px, 3vw, 48px); top: 70px; bottom: auto; width: min(300px, 46vw); }
+.ol-br { bottom: 16px; }
+.ol-toast { bottom: 20px; }
+.ol-chatbtn { position: absolute; left: clamp(12px, 3vw, 48px); top: 70px; z-index: 3; pointer-events: auto; display: inline-flex; align-items: center; gap: 8px; background: rgba(12,14,18,.86); border: 1px solid #4a505b; color: #fff; border-radius: 8px; padding: 8px 14px; font-size: 18px; letter-spacing: .14em; }
+.ol-chatbtn b { font-size: 18px; line-height: 1; } .ol-chatbtn.on, .ol-chatbtn:hover { background: #2a2e36; border-color: #fff; } .ol-chatbtn .ol-dot { position: static; }
+.ol[data-tab="play"] .ol-comm { display: none; }
+.ol.chat-open[data-tab="play"] .ol-comm { display: flex; position: absolute; left: clamp(12px, 3vw, 48px); right: auto; top: 118px; bottom: 16px; width: min(320px, 72vw); padding: 10px; background: rgba(8,10,14,.9); border: 1px solid rgba(255,255,255,.12); border-radius: 8px; pointer-events: auto; z-index: 4; overflow: hidden; animation: olSlide .18s ease-out; }
+@keyframes olSlide { from { opacity: 0; transform: translateY(-10px); } }
+.md-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; } .md-tab { background: #14161b; border: 2px solid #2a2d34; color: #cfd5de; border-radius: 8px; padding: 9px 16px; font-size: 18px; letter-spacing: .1em; } .md-tab.on { background: #f2f2f2; color: #0a0a0a; border-color: #f2f2f2; font-weight: 700; }
+.md-body { display: grid; gap: 10px; margin-bottom: 14px; } .md-gfx { display: grid; gap: 4px; } .md-gfx label { font-size: 14px; letter-spacing: .16em; color: #9aa2ad; } .md-gfx .ol-btn.on { background: #1d5a36; border-color: #5be08d; }
+.tr-bal { display: inline-flex; align-items: baseline; gap: 8px; } .tr-bal small { color: #9aa2ad; letter-spacing: .14em; font-size: 13px; } .tr-bal b { font-size: 34px; color: #ffe600; } .tr-bal em { font-style: normal; color: #bfb35a; }
+.tr-row { grid-template-columns: minmax(120px, 1.6fr) 110px auto; } .tr-row input { background: #0b0d11; border: 1px solid #343944; color: #fff; border-radius: 6px; padding: 6px 8px; font-size: 18px; width: 100%; }
+@media (max-width: 720px) { .ol-bl { width: min(260px, 58vw); top: 62px; } .ol-chatbtn { top: 62px; padding: 6px 10px; font-size: 16px; } .ol-kp { font-size: 16px; padding: 2px 7px; } }
+@media (max-height: 520px) and (orientation: landscape) { .ol-bl { top: 56px; } .ol-chatbtn { top: 56px; } .ol.chat-open[data-tab="play"] .ol-comm { top: 100px; } }
+@media (max-width: 720px) and (orientation: portrait) { .ol-bl { left: 8px; right: 8px; width: auto; top: auto; bottom: 8px; } .ol-chatbtn { top: 62px; } }

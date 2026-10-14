@@ -13,6 +13,9 @@
   const ctx = { audio: null, setView: null, render: null, startCoop: null };
   const L = { tab: 'play', mode: 'sandbox', mission: 1, ready: false, readyMap: {}, readyList: [], cd: 0, cdT: 0, cdSpec: null, unread: 0, t0: 0, pick: false, notes: {}, joinFromUrl: false, lastStats: 0, copied: 0,
     pubSession: false, joinUi: null, roomLink: '', dances: {}, cards: {}, srvSeen: false };
+  const BR = { on: false, host: false, t0: 0, state: '', findT: 0 };
+  const TRD = { sent: {}, seen: new Set(), hseen: new Set(), route: {} };
+  L.msub = 'story';
   let root = null, tickT = 0;
   const $ = (s) => (root ? root.querySelector(s) : null);
   const $$ = (s) => (root ? Array.from(root.querySelectorAll(s)) : []);
@@ -563,6 +566,160 @@
     else if (NN.role === 'guest' && NN.answerCode && !NN.connected && $('#g-in').value.trim()) { toast('LAN MODE CHANGED — NEW ANSWER CREATED'); guestAnswer(false); }
   }
 
+  // ------------------------------------------------------------------ вкладка MODE: сюжетные / песочница / королевская битва
+  const brWait = () => { try { const m = /[?&]brwait=(\d{1,3})/.exec(location.search); return m ? Number(m[1]) : 60; } catch (e) { return 60; } };
+  const brLeft = () => Math.ceil(brWait() - (Date.now() - BR.t0) / 1000);
+  function mkp(tag, cls, txt) { const e = document.createElement(tag); if (cls) e.className = cls; if (txt !== undefined) e.textContent = txt; return e; }
+  function renderMode() {
+    const body = $('#md-body'); if (!body) return;
+    const sub = L.msub || 'story', host = isHostSide();
+    $$('.md-tab').forEach((b) => b.classList.toggle('on', b.dataset.v === sub));
+    let q = ''; try { q = Missions.getQualitySaved(); } catch (e) { q = ''; }
+    $$('[data-act="gfx"]').forEach((b) => b.classList.toggle('on', b.dataset.v === q));
+    body.textContent = '';
+    if (!host) body.appendChild(mkp('p', 'v-note', 'ONLY THE HOST CHOOSES THE MODE'));
+    if (sub === 'story') {
+      const ids = Object.keys(missionsMap()).map(Number).filter(validMission).sort((a, b) => a - b);
+      const grid = mkp('div', 'pk-grid');
+      ids.forEach((i) => {
+        const b = mkp('button', 'pk-m' + (L.mode === 'mission' && L.mission === i ? ' on' : '')); b.type = 'button'; b.dataset.act = 'mission-sel'; b.dataset.v = String(i); b.disabled = !host;
+        const n = mkp('b', '', String(i).padStart(2, '0')); n.setAttribute('translate', 'no'); const t = mkp('span', '', missionTitle(i)); t.setAttribute('translate', 'no'); b.appendChild(n); b.appendChild(t); grid.appendChild(b);
+      });
+      body.appendChild(grid);
+      body.appendChild(mkp('p', 'cn-priv', 'Story missions online: every player must reach the end of a stage before the team moves on. Enemies in story missions still run on each device.'));
+    } else if (sub === 'sandbox') {
+      const b = mkp('button', 'pk-sb' + (L.mode === 'sandbox' ? ' on' : '')); b.type = 'button'; b.dataset.act = 'mode-sel'; b.dataset.v = 'sandbox'; b.disabled = !host;
+      b.appendChild(mkp('b', '', 'CO-OP SANDBOX')); b.appendChild(mkp('small', '', 'WAVES OF ENEMIES FOR TWO')); body.appendChild(b);
+      body.appendChild(mkp('p', 'cn-priv', 'The host controls the enemies; the nearest player is their target.'));
+    } else {
+      const on = BR.on, real = NN.connected ? NN.count : 1;
+      body.appendChild(mkp('p', 'cn-p', 'Battle royale for up to 10 players. Press READY: the game looks for players; after 60 seconds empty seats are filled with bots and the battle starts.'));
+      const st = mkp('p', 'jn-st', ''); st.id = 'br-st';
+      st.textContent = !on ? 'NOT SEARCHING' : BR.state === 'joining' && !NN.connected ? 'JOINING A BATTLE LOBBY…' : BR.host ? 'WAITING FOR PLAYERS ' + real + '/10 — STARTS IN ' + Math.max(0, brLeft()) + ' S' : (L.brt >= 0 && NN.connected ? 'BATTLE LOBBY ' + real + '/10 — STARTS IN ' + Math.max(0, L.brt) + ' S' : 'LOOKING FOR A BATTLE…');
+      body.appendChild(st);
+      const bt = mkp('button', 'ol-btn big', on ? 'CANCEL' : 'READY'); bt.type = 'button'; bt.dataset.act = on ? 'br-cancel' : 'br-ready'; bt.disabled = !on && !host; body.appendChild(bt);
+      body.appendChild(mkp('p', 'cn-priv', 'Up to 10 real players per battle (direct P2P). Bots take the empty seats. Real players: the host and up to 9 guests.'));
+      if (L.mode !== 'br') { const b = mkp('button', 'ol-btn', 'SELECT BATTLE ROYALE'); b.type = 'button'; b.dataset.act = 'mode-sel'; b.dataset.v = 'br'; b.disabled = !host; body.appendChild(b); }
+    }
+  }
+  const tickBR = () => { if (L.tab === 'mode' && L.msub === 'br') renderMode(); updPlay(); };
+  function brReady() {
+    if (!RM || BR.on) return;
+    if (needConsent('br')) return;
+    RM.stopHost(); RM.stopJoin(); if (NN.connected) NN.close();
+    BR.on = true; BR.host = false; BR.state = 'searching'; BR.t0 = Date.now(); L.mode = 'br'; L.brt = -1;
+    updPlay(); renderMode();
+    RM.gossip.start().then(() => { RM.gossip.refresh(); });
+    BR.find0 = Date.now(); clearTimeout(BR.findT); BR.findT = setTimeout(brDecide, 1500);
+  }
+  const brFind = () => { try { const m = /[?&]brfind=(\d{1,2})/.exec(location.search); return m ? Number(m[1]) : 10; } catch (e) { return 10; } };
+  async function brDecide() {
+    if (!BR.on || !RM) return;
+    const r = RM.gossip.rooms().find((x) => x.mode === 'br' && x.n < x.max);
+    if (r) { BR.state = 'joining'; startJoin(r.rid, 'join', true); renderMode(); return; }
+    if (Date.now() - BR.find0 < brFind() * 1000) { BR.findT = setTimeout(brDecide, 1000); return; }      // сначала ищем уже открытую битву (рой находит комнаты за несколько секунд)
+    BR.host = true; BR.state = 'waiting'; BR.t0 = Date.now();
+    const res = await RM.hostRoom({ pub: true, title: 'BATTLE ROYALE', mode: 'br', max: NN.MAX_BR });
+    if (!BR.on) { RM.stopHost(); return; }
+    if (!res.ok) { BR.on = false; BR.host = false; toast(NN.text(res.err), 'bad'); } else { L.roomLink = res.link; L.pubSession = true; try { NN.voice.incoming(false); } catch (e) { /* ok */ } }
+    updPlay(); renderMode();
+  }
+  function brCancel() {
+    BR.on = false; BR.host = false; BR.state = ''; clearTimeout(BR.findT);
+    if (RM) { RM.stopHost(); RM.stopJoin(); }
+    closeJoin(); if (NN.connected) NN.close();
+    updPlay(); renderMode();
+  }
+  function brStart() {
+    const real = NN.connected ? NN.count : 1, bots = clamp(NN.MAX_BR - real, 0, NN.MAX_BR - 1);
+    const spec = { mode: 'br', mission: 1, seed: mkSeed(), role: 'host', solo: real < 2, bots };
+    if (real >= 2) NN.sendAction({ type: 'start', mode: 'br', mission: 1, seed: spec.seed, bots });
+    BR.on = false; BR.host = false; BR.state = ''; if (RM) RM.stopHost();
+    beginMatch(spec, 3);
+  }
+
+  // ------------------------------------------------------------------ вкладка TRADES: передача KP игрокам комнаты (хост — авторитет, дубли и отрицательные суммы отклоняются)
+  const validAmt = (n) => Number.isInteger(n) && n >= 1 && n <= 1000000;
+  const validTid = (t) => typeof t === 'string' && /^[0-9a-f]{12}$/.test(t);
+  function renderTrade() {
+    const box = $('#tr-list'); if (!box) return;
+    updKP(); box.textContent = '';
+    const list = NN.connected ? NN.players : [];
+    if (!list.length) { box.appendChild(mkp('p', 'pb-empty', 'NO OTHER PLAYERS IN YOUR ROOM')); return; }
+    list.forEach((q) => {
+      const row = mkp('div', 'pb-row tr-row'); row.setAttribute('role', 'listitem');
+      const a = mkp('button', 'pb-host'); a.type = 'button'; a.dataset.act = 'card'; a.dataset.slot = String(q.slot);
+      const av = mkp('span'); av.innerHTML = PF.avatar(q.name, q.color, 26); const nm = mkp('em', '', q.name + ' · ' + q.level); nm.setAttribute('translate', 'no'); a.appendChild(av); a.appendChild(nm); row.appendChild(a);
+      const inp = mkp('input'); inp.type = 'number'; inp.min = '1'; inp.max = '1000000'; inp.step = '1'; inp.id = 'tr-amt-' + q.slot; inp.setAttribute('aria-label', 'Amount'); inp.value = '10'; row.appendChild(inp);
+      const b = mkp('button', 'ol-btn', 'SEND'); b.type = 'button'; b.dataset.act = 'trade'; b.dataset.slot = String(q.slot); row.appendChild(b);
+      box.appendChild(row);
+    });
+  }
+  function openTrade(slot) {
+    const q = NN.players.find((x) => x.slot === slot), inp = $('#tr-amt-' + slot), nt = $('#tr-note');
+    const amt = inp ? Math.floor(Number(inp.value)) : 0;
+    nt.className = 'v-note bad';
+    if (!q) { nt.textContent = NN.text('TRADE_GONE'); return; }
+    if (!validAmt(amt)) { nt.textContent = NN.text('TRADE_AMT'); return; }
+    if (amt > kp()) { nt.textContent = NN.text('TRADE_FUNDS'); return; }
+    nt.textContent = ''; nt.className = 'v-note';
+    L.tradeAsk = { slot, amt };
+    const el = $('#ol-trade'); el.textContent = '';
+    const box = mkp('div', 'pk-box jn-box'); box.appendChild(mkp('h3', '', 'CONFIRM TRANSFER'));
+    const p = mkp('p', 'jn-st'); const b1 = mkp('b', '', String(amt)); b1.setAttribute('translate', 'no'); const ar = mkp('span', '', ' KP → '); const b2 = mkp('b', '', q.name); b2.setAttribute('translate', 'no'); p.appendChild(b1); p.appendChild(ar); p.appendChild(b2); box.appendChild(p);
+    box.appendChild(mkp('p', 'cn-priv', 'This cannot be undone. KP is sent only to a player who is in your room right now.'));
+    const act = mkp('div', 'pf-btns'); const y = mkp('button', 'ol-btn big', 'CONFIRM'); y.type = 'button'; y.dataset.act = 'trade-yes'; const n = mkp('button', 'ol-btn', 'CANCEL'); n.type = 'button'; n.dataset.act = 'trade-no'; act.appendChild(y); act.appendChild(n); box.appendChild(act);
+    el.appendChild(box); el.hidden = false;
+  }
+  function tradeConfirm() {
+    const a = L.tradeAsk, el = $('#ol-trade'); if (el) el.hidden = true; L.tradeAsk = null;
+    if (!a || !window.Toys) return;
+    const q = NN.players.find((x) => x.slot === a.slot);
+    if (!NN.connected || !q) { toast(NN.text('TRADE_GONE'), 'bad'); return; }
+    if (!validAmt(a.amt) || a.amt > kp()) { toast(NN.text('TRADE_FUNDS'), 'bad'); return; }
+    const tid = NN.util.rndHex(6);
+    if (!Toys.addCredits(-a.amt)) { toast(NN.text('TRADE_FUNDS'), 'bad'); return; }
+    TRD.sent[tid] = { slot: a.slot, amt: a.amt, name: q.name };
+    updKP();
+    if (NN.isHost) trRoute(1, a.slot, a.amt, tid); else NN.sendAction({ type: 'trq', dst: a.slot, amt: a.amt, tid });
+    toast('TRANSFER SENT — WAITING FOR CONFIRMATION');
+  }
+  function trResult(src, tid, ok, amt) { if (src === 1) onTrf({ tid, ok, amt }); else NN.sendAction({ type: 'trf', tid, ok, amt }, { to: src }); }
+  function trRoute(src, dst, amt, tid) {                       // только хост
+    const key = src + ':' + tid;
+    if (TRD.hseen.has(key)) return;
+    TRD.hseen.add(key); if (TRD.hseen.size > 500) TRD.hseen.clear();
+    if (!validTid(tid) || !validAmt(amt) || dst === src || !window.Toys) { trResult(src, tid, false, 0); return; }
+    if (dst === 1) { if (!Toys.addCredits(amt)) { trResult(src, tid, false, 0); return; } toastFrom(src, amt); updKP(); trResult(src, tid, true, amt); return; }
+    if (!NN.players.some((q) => q.slot === dst)) { trResult(src, tid, false, 0); return; }
+    TRD.route[tid] = { src, dst, amt };
+    NN.sendAction({ type: 'trd', src, amt, tid }, { to: dst });
+  }
+  function toastFrom(src, amt) { const q = src === 1 ? null : NN.players.find((x) => x.slot === src); if (root) toast('+' + amt + ' KP — ' + (q ? q.name : 'HOST')); }
+  function onTrf(p) {
+    const e = TRD.sent[p.tid]; if (!e) return;
+    delete TRD.sent[p.tid];
+    if (p.ok) { if (root) toast('SENT ' + e.amt + ' KP — ' + e.name); }
+    else { if (window.Toys) Toys.addCredits(e.amt); if (root) toast('TRANSFER FAILED — KP RETURNED', 'bad'); }
+    updKP(); renderTrade();
+  }
+  function tradeHooks() {
+    NN.on('trq', (p) => { if (NN.isHost) trRoute(p.from | 0, p.dst | 0, p.amt, p.tid); });
+    NN.on('trd', (p) => {
+      if ((p.from | 0) !== 1 || NN.isHost || !validTid(p.tid) || !validAmt(p.amt) || TRD.seen.has(p.tid)) return;
+      TRD.seen.add(p.tid); if (TRD.seen.size > 500) TRD.seen.clear();
+      if (window.Toys && Toys.addCredits(p.amt)) { toastFrom(p.src | 0, p.amt); updKP(); }
+      NN.sendAction({ type: 'tra', src: p.src | 0, tid: p.tid, amt: p.amt });
+    });
+    NN.on('tra', (p) => {
+      if (!NN.isHost) return;
+      const r = TRD.route[p.tid]; if (!r || r.dst !== (p.from | 0)) return;
+      delete TRD.route[p.tid]; trResult(r.src, p.tid, true, r.amt);
+    });
+    NN.on('trf', (p) => { if ((p.from | 0) === 1 && !NN.isHost) onTrf(p); });
+    NN.on('net:left', (p) => { if (!NN.isHost) return; Object.keys(TRD.route).forEach((t) => { const r = TRD.route[t]; if (r.dst === p.slot) { delete TRD.route[t]; trResult(r.src, t, false, 0); } }); });
+  }
+
   function lobbyMsg() { return { type: 'lobby', mode: L.mode, mission: L.mission, brt: BR.on && BR.host ? Math.max(0, brLeft()) : -1, ready: NN.players.filter((q) => L.readyMap[q.slot]).map((q) => q.slot) }; }
   function sendLobby() { if (NN.isHost && NN.connected) NN.sendAction(lobbyMsg()); }
   function setMode(mode, mission) {
@@ -842,23 +999,32 @@
     if (!Object.keys(DN.music).length && DN.savedMusic && ctx.audio) { try { ctx.audio.playMusic(DN.savedMusic); } catch (e) { /* ok */ } DN.savedMusic = null; }
   }
   const dispIndex = (slot) => party().findIndex((q) => q.slot === slot);
+  const STAND = new Float32Array([0, 0.902, 0, 0.016, 1.361, -0.012, 0.025, 1.55, -0.033, -0.146, 1.33, -0.011, 0.174, 1.319, -0.011, -0.2838, 1.1213, -0.1767, 0.2722, 1.0843, -0.1698,
+    -0.159, 1.102, 0.139, 0.168, 1.145, 0.148, -0.1, 0.905, 0, 0.1, 0.898, 0, -0.119, 0.463, -0.0825, 0.1113, 0.6074, 0.3435, -0.171, 0.067, -0.267, 0.217, 0.207, 0.195]);
+  const IN_T = 0.8, OUT_T = 0.6;
+  DN.fade = [];
+  function flatSkin(g) {      // тот же тёмный цвет, что у стикмена в стойке: цвет не меняется при танце
+    const mats = [];
+    g.traverse((o) => { if (o.isMesh && o.material) { const m = o.material.clone(); if (m.color) m.color.setHex(0x0e0f12); if (m.emissive) m.emissive.setHex(0x16181d); m.map = null; o.material = m; mats.push(m); } });
+    return mats;
+  }
   function mkFig(d) {
     if (!ST.ready || d.fig || d.dead) return;
     const e = EC(); if (!e || dispIndex(d.slot) < 0) return;
-    d.fig = e.makeFigure(THREE, { cast: false }); ST.scene.add(d.fig.group);
-    e.idlePose(0, d.pose, d.tr); d.fig.update(d.pose, null);
+    d.fig = e.makeFigure(THREE, { cast: false }); d.mats = flatSkin(d.fig.group); ST.scene.add(d.fig.group);
+    d.pose.set(STAND); d.first = new Float32Array(45); e.sampleDance(0, d.first, d.tr); d.ph = 'in'; d.bl = 0;
+    d.fig.update(d.pose, null);
   }
+  function dropFig(x) { try { x.fig.dispose(); } catch (e) { /* ok */ } (x.mats || []).forEach((m) => { try { m.dispose(); } catch (e) { /* ok */ } }); }
   function danceStart(slot, id, self) {
     const e = EC(); if (!e) return false;
     const tr = e.track(String(id || '').slice(0, 20)); if (!tr) return false;
     danceStop(slot, false);
-    const d = DN.list[slot] = { id: tr.id, tr, t: 0, bl: 0, fig: null, pose: new Float32Array(45), tmp: new Float32Array(45), self: !!self, slot, dead: false, ready: false, music: false };
+    const d = DN.list[slot] = { id: tr.id, tr, t: 0, bl: 0, fig: null, pose: new Float32Array(45), tmp: new Float32Array(45), self: !!self, slot, dead: false, ready: false, music: false, ph: '' };
     L.dances[slot] = tr.id; DN.active += 1;
     tr.load().then((ok) => {
       if (d.dead) return;
       if (!ok && !tr.ready()) { danceStop(slot, !!d.self); return; }
-      dnMusicOn(d); d.music = true;
-      const mu = DN.music[d.id]; if (mu && mu.users > 1 && mu.M.running && mu.M.running()) d.t = mu.M.time();     // музыка уже играет — подхватить её время (общий ритм)
       d.ready = true; mkFig(d);
     });
     if (root) { updStage(); updEmoBtn(); }
@@ -867,7 +1033,8 @@
   function danceStop(slot, notify) {
     const d = DN.list[slot]; if (!d) return;
     d.dead = true; delete DN.list[slot]; delete L.dances[slot]; DN.active = Math.max(0, DN.active - 1);
-    if (d.fig) { try { d.fig.dispose(); } catch (e) { /* ok */ } }
+    if (d.fig) DN.fade.push({ fig: d.fig, mats: d.mats, pose: Float32Array.from(d.pose), slot, t: 0, idx: dispIndex(slot) });      // плавно вернуться в стойку
+    d.fig = null;
     if (d.music) dnMusicOff(d);
     if (notify && d.self && NN.connected) NN.sendAction({ type: 'cev', k: 'emoteoff' });
     if (root) { updStage(); updEmoBtn(); }
@@ -875,6 +1042,7 @@
   function danceStopLocal(notify) { danceStop(mySlot(), notify !== false); closeEmo(); }
   function danceStopAll() {
     Object.keys(DN.list).map(Number).forEach((s) => danceStop(s, false));
+    DN.fade.forEach(dropFig); DN.fade = [];
     Object.keys(DN.music).forEach((k) => { try { DN.music[k].M.stop(); } catch (e) { /* ok */ } delete DN.music[k]; });
     if (DN.savedMusic && ctx.audio) { try { ctx.audio.playMusic(DN.savedMusic); } catch (e) { /* ok */ } DN.savedMusic = null; }
   }
@@ -1063,7 +1231,7 @@
     $$('.srv-on').forEach((c) => c.addEventListener('change', (e) => { if (RM) RM.servers.setOn(e.target.checked); renderServers(); renderPublic(); updRoom(); }));
     $('#pf-name').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); const b = root.querySelector('[data-act="name"]'); b && b.click(); } });
     ['#h-ans', '#g-in'].forEach((s) => $(s).addEventListener('paste', () => { const el = $(s); setTimeout(() => { if (!root) return; if (s === '#g-in' && el.value.trim() && /NX\d+O\./.test(el.value.replace(/\s+/g, ''))) guestAnswer(false); }, 30); }));
-    root.addEventListener('keydown', (e) => { if (e.key === 'Escape') { for (const id of ['#ol-card', '#ol-consent', '#ol-pubnew', '#ol-emo']) { const m = $(id); if (m && !m.hidden && !DN.list[mySlot()]) { e.stopPropagation(); m.hidden = true; return; } } if (L.pick) { e.stopPropagation(); closePick(); } } });
+    root.addEventListener('keydown', (e) => { if (e.key === 'Escape') { for (const id of ['#ol-card', '#ol-consent', '#ol-pubnew', '#ol-emo', '#ol-trade']) { const m = $(id); if (m && !m.hidden && !DN.list[mySlot()]) { e.stopPropagation(); m.hidden = true; return; } } if (L.pick) { e.stopPropagation(); closePick(); } } });
     root.addEventListener('pointermove', onPtr, { passive: true });
   }
 
@@ -1091,7 +1259,7 @@
       if (NN.isHost) sendLobby();
       if (root) { updStage(); updPlay(); updStatus(); toast(p.name + ' — ' + NN.text('PEER_LEFT')); }
     });
-    NN.on('net:close', () => { if (NN.chat.history.length && !NN.isHost) NN.chat.sys('FRIEND_LEFT', 'HOST'); danceStopAll(); L.cd = 0; L.cdSpec = null; const el = $('#ol-cd'); if (el) el.hidden = true; });
+    NN.on('net:close', () => { if (BR.on && !BR.host) { BR.on = false; BR.state = ''; } if (NN.chat.history.length && !NN.isHost) NN.chat.sys('FRIEND_LEFT', 'HOST'); danceStopAll(); L.cd = 0; L.cdSpec = null; const el = $('#ol-cd'); if (el) el.hidden = true; });
     NN.on('net:chat', onChat);
     NN.on('net:voice', updVoice);
     NN.on('net:mute', () => { if (root) { updRoster(); updVoice(); } });
@@ -1113,9 +1281,11 @@
     });
     NN.on('start', (p) => {
       if (NN.isHost || L.cd) return;
+      if (BR.on) { BR.on = false; BR.state = ''; }
       const mode = p.mode === 'br' ? 'br' : p.mode === 'mission' && validMission(p.mission) ? 'mission' : 'sandbox';
       beginMatch({ mode, mission: mode === 'mission' ? p.mission | 0 : 1, seed: (p.seed >>> 0) || 1, role: 'guest', solo: false, bots: mode === 'br' ? clamp(p.bots | 0, 0, 99) : 0 }, 3);
     });
+    tradeHooks();
     NN.on('profile', onProfile); NN.on('profile?', onProfileReq);
     NN.on('cev', onCev); NN.on('dances', onDances);
     if (RM) {
@@ -1141,7 +1311,7 @@
   const ST = { on: false, building: 0, ready: false, canvas: null, r: null, scene: null, cam: null, host: null, figs: [], raf: 0, last: 0, tok: 0, ptr: { x: 0, y: 0, sx: 0, sy: 0 }, w: 0, h: 0, plat: [], lost: false };
   // x, z, радиус: [0] — главный игрок (центр спереди), далее дугой: справа, слева, дальние справа/слева, центр сзади (кольца и свечение — только у платформ)
   const PLAT = [[0, 1.25, 0.95], [1.7, -0.55, 0.8], [-1.7, -0.55, 0.8], [3.15, -1.55, 0.7], [-3.15, -1.55, 0.7], [0, -2.5, 0.7]];
-  const POSES = ['cross', 'back', 'cross', 'hang', 'back', 'cross'];     // серьёзные позы: руки скрещены / за спиной / вдоль тела
+  const POSES = ['cross', 'hang', 'cross', 'hang', 'cross', 'hang'];     // строгая стойка: руки скрещены на груди или строго по швам
   const yawOf = (pi) => (pi === 0 ? -0.12 : -PLAT[pi][0] * 0.32);
   function onPtr(e) { if (e.isPrimary === false) return; ST.ptr.x = clamp(e.clientX / Math.max(1, innerWidth) * 2 - 1, -1, 1); ST.ptr.y = -clamp(e.clientY / Math.max(1, innerHeight) * 2 - 1, -1, 1); }
   const want3d = () => !/[?&]nolobby3d(?![A-Za-z0-9_])/.test(location.search) && !!(window.Missions && Missions._core && Missions._core.loadThree && Missions._core.geo && Missions._core.Run && Missions._core.Run.prototype.npc) &&
@@ -1262,22 +1432,18 @@
   }
   // позы: руки скрещены на груди / за спиной / вдоль тела; лёгкое дыхание; голова чуть вверх
   function pose(fi, n, t, p) {
-    const T = THREE, v = ST.v || (ST.v = [new T.Vector3(), new T.Vector3()]), br = Math.sin(t * 1.5 + fi) * 0.004;
-    const kind = POSES[fi] || 'cross', H = ST.host;
-    if (kind === 'cross') {
-      H.solveArm(n.armL, n.elbL, [-0.2, 0.46, 0], v[0].set(0.14, 0.3 + br, 0.17), -1);
-      H.solveArm(n.armR, n.elbR, [0.2, 0.46, 0], v[1].set(-0.14, 0.27 + br, 0.2), 1);
-    } else if (kind === 'back') {
-      H.solveArm(n.armL, n.elbL, [-0.2, 0.46, 0], v[0].set(-0.05, 0.03 + br, -0.17), -1);
-      H.solveArm(n.armR, n.elbR, [0.2, 0.46, 0], v[1].set(0.05, 0.01 + br, -0.17), 1);
+    const T = THREE, v = ST.v || (ST.v = [new T.Vector3(), new T.Vector3()]), H = ST.host;
+    if (POSES[fi] === 'cross') {
+      H.solveArm(n.armL, n.elbL, [-0.2, 0.46, 0], v[0].set(0.17, 0.33, 0.14), -1);
+      H.solveArm(n.armR, n.elbR, [0.2, 0.46, 0], v[1].set(-0.17, 0.3, 0.17), 1);
     } else {
-      H.solveArm(n.armL, n.elbL, [-0.2, 0.46, 0], v[0].set(-0.27, 0.0 + br, 0.03), -1);
-      H.solveArm(n.armR, n.elbR, [0.2, 0.46, 0], v[1].set(0.27, 0.0 + br, 0.03), 1);
+      H.solveArm(n.armL, n.elbL, [-0.2, 0.46, 0], v[0].set(-0.215, -0.07, 0.0), -1);
+      H.solveArm(n.armR, n.elbR, [0.2, 0.46, 0], v[1].set(0.215, -0.07, 0.0), 1);
     }
-    n.spine.scale.setScalar(1 + Math.sin(t * 1.5 + fi) * 0.006);      // дыхание
-    const look = fi === 0 ? p.sx : 0;
-    n.head.rotation.x = -0.1 - (fi === 0 ? p.sy * 0.14 : 0) + Math.sin(t * 0.9 + fi) * 0.01;     // подбородок чуть вверх
-    n.head.rotation.y = look * 0.45 + Math.sin(t * 0.4 + fi) * 0.04;
+    n.hips.rotation.set(0, 0, 0); n.hips.position.y = 0.95;                // никакой качки и расслабленности: прямая стойка
+    n.spine.rotation.set(0, 0, 0); n.spine.scale.setScalar(1 + Math.sin(t * 1.4 + fi) * 0.004);   // лёгкое дыхание
+    n.legL.rotation.set(0, 0, 0); n.legR.rotation.set(0, 0, 0); n.kneeL.rotation.x = 0.02; n.kneeR.rotation.x = 0.02; n.footL.rotation.x = 0; n.footR.rotation.x = 0;
+    n.head.rotation.set(-0.07, (fi === 0 ? p.sx * 0.35 : 0), 0);          // подбородок чуть вверх, взгляд вперёд
   }
   function stTick(now) {
     ST.raf = 0;
@@ -1294,7 +1460,7 @@
     ST.cam.position.set(p.sx * 0.35, 1.5 + p.sy * 0.12, PLAT[0][1] + 5.9 * k);
     ST.cam.lookAt(p.sx * 0.1, 0.92, 0.2);
     ST.figs.forEach((f, i) => {
-      const q = list[i], dancing = q && DN.list[q.slot] && DN.list[q.slot].fig;
+      const q = list[i], dancing = q && ((DN.list[q.slot] && DN.list[q.slot].fig) || DN.fade.some((x) => x.slot === q.slot));
       f.n.g.visible = !!q && !dancing;
       if (!f.n.g.visible) return;
       C.Run.prototype.updateNpc.call(ST.host, f.n, dt);
@@ -1310,14 +1476,27 @@
       if (mu && d.music && mu.tickAt !== now) { mu.tickAt = now; mu.M.tick(dt); }
       if (!d.fig || idx < 0 || !e) return;
       const tr = d.tr;
-      d.t += dt;
-      if (mu && mu.M.running && mu.M.running()) { let err = mu.M.time() - (tr.loop ? d.t % tr.dur : d.t); if (tr.loop) err -= tr.dur * Math.round(err / tr.dur); if (Math.abs(err) > 0.25) d.t += err; else d.t += err * Math.min(1, dt * 4); }
-      d.bl += dt;
-      e.sampleDance(d.t, d.pose, tr);
-      if (d.bl < 0.45) { e.idlePose(d.bl, d.tmp, tr); e.mixPose(d.tmp, d.pose, e.smooth(d.bl / 0.45), d.pose); }
+      if (d.ph === 'in') {                                    // плавный переход из стойки в первый кадр танца, музыка стартует после него
+        d.bl += dt; const k = e.smooth(Math.min(1, d.bl / IN_T));
+        e.mixPose(STAND, d.first, k, d.pose);
+        if (k >= 1) { d.ph = 'play'; d.t = 0; dnMusicOn(d); d.music = true; const m2 = DN.music[d.id]; if (m2 && m2.users > 1 && m2.M.running && m2.M.running()) d.t = m2.M.time(); }
+      } else {
+        d.t += dt;
+        if (mu && mu.M.running && mu.M.running()) { let err = mu.M.time() - (tr.loop ? d.t % tr.dur : d.t); if (tr.loop) err -= tr.dur * Math.round(err / tr.dur); if (Math.abs(err) > 0.25) d.t += err; else d.t += err * Math.min(1, dt * 4); }
+        e.sampleDance(d.t, d.pose, tr);
+        if (!tr.loop && d.t > tr.dur + 0.3) danceStop(d.slot, !!d.self);
+      }
       d.fig.place(PLAT[idx][0], PLAT[idx][1], yawOf(idx)); d.fig.update(d.pose, null);
-      if (!tr.loop && d.t > tr.dur + 0.3) danceStop(d.slot, !!d.self);
     });
+    if (DN.fade.length && e) {                                // плавный возврат из танца в стойку
+      DN.fade = DN.fade.filter((x) => {
+        x.t += dt; const k = e.smooth(Math.min(1, x.t / OUT_T)), idx = dispIndex(x.slot);
+        e.mixPose(x.pose, STAND, k, x.tmp || (x.tmp = new Float32Array(45)));
+        if (idx >= 0) x.fig.place(PLAT[idx][0], PLAT[idx][1], yawOf(idx)); x.fig.update(x.tmp, null);
+        if (k >= 1) { dropFig(x); return false; }
+        return true;
+      });
+    }
     const pulse = 0.82 + Math.sin(t * 2.2) * 0.18;
     ST.plats[0].ringMat.opacity = pulse; ST.plats[0].glowMat.opacity = 0.75 + pulse * 0.25; ST.pl.intensity = 0.7 + pulse * 0.4;
     for (let i = 1; i < list.length && i < ST.plats.length; i += 1) ST.plats[i].glowMat.opacity = 0.7 + Math.sin(t * 2 + i) * 0.2;
@@ -1326,7 +1505,8 @@
   function stDispose() {
     ST.tok += 1;
     if (ST.raf) { cancelAnimationFrame(ST.raf); ST.raf = 0; }
-    Object.keys(DN.list).forEach((s) => { const d = DN.list[s]; if (d.fig) { try { d.fig.dispose(); } catch (e) { /* ok */ } d.fig = null; } });
+    Object.keys(DN.list).forEach((s) => { const d = DN.list[s]; if (d.fig) { dropFig(d); d.fig = null; } });
+    DN.fade.forEach(dropFig); DN.fade = [];
     if (ST.ready) {
       try { ST.keep.forEach((o) => o && o.dispose && o.dispose()); ST.r.dispose(); ST.r.forceContextLoss && ST.r.forceContextLoss(); } catch (e) { /* ok */ }
       if (ST.canvas && ST.canvas.parentNode) ST.canvas.parentNode.removeChild(ST.canvas);
@@ -1346,6 +1526,8 @@
   function onSecond() {
     if (!root || !root.isConnected) return;
     updTimer(); cdTick(); sec += 1;
+    if (BR.on) { if (BR.host && NN.connected) sendLobby(); if (BR.host && RM && RM.hosting && (brLeft() <= 0 || NN.count >= NN.MAX_BR)) brStart(); else tickBR(); }
+    if (L.tab === 'trade') updKP();
     if (L.tab === 'profile' && Date.now() - L.lastStats > 2000) { L.lastStats = Date.now(); const s = $('#ol-stats'); if (s) s.innerHTML = PF.renderStats(); updTop(); }
     if (sec % 25 === 0) profileTick(false);
     if (L.tab === 'public' || L.tab === 'connect') { if (sec % 3 === 0) renderServers(); if (L.tab === 'public' && sec % 4 === 0) renderPublic(); }

@@ -44,7 +44,7 @@
       // враги и волны ведёт Хост (в соло — тоже мы)
       const auth = !co || co.host;
       const S = { wave: 0, queue: [], cd: 3, kills: 0, running: false, hostile: true, t: 0 };
-      const botsN = br ? clamp(((co && co.spec.bots) | 0) || 20, 0, 99) : 0;
+      const botsN = br ? clamp((((co ? co.spec : (r.opts && r.opts.coop)) || {}).bots | 0) || 20, 0, 99) : 0;
       if (br) { S.wave = 1; S.running = true; S.cd = 0; S.queue = Array.from({ length: botsN }, (_, i) => (i % 7 === 6 ? 'heavy' : i % 3 === 2 ? 'rusher' : 'grunt')); S.sp = 0; }
       if (co) co.wave = S;
       const foes = () => cb.enemies.filter((e) => e.tag === 'sbE' && !e.dead);
