@@ -154,7 +154,7 @@
     // -------- ABILITIES: магазин способностей за KP
     '<section class="ol-pane ol-sheet" data-pane="abil"><div class="sh-in">' +
       '<div class="pb-top"><h3>ABILITIES</h3><div class="tr-bal"><small>YOUR BALANCE</small><b id="ab-bal" translate="no">0</b><em>KP</em></div></div>' +
-      '<p class="cn-priv">Buy and upgrade abilities, then put up to three into your slots. In online matches the host checks recharge times of abilities that affect enemies.</p>' +
+      '<p class="cn-priv">Abilities work only offline. Buy and equip them in the SHOP.</p>' +
       '<p class="v-note" id="ab-note"></p><div class="ab-slots" id="ab-slots"></div><div class="pb-list ab-list" id="ab-list" role="list"></div>' +
     '</div></section>' +
     // -------- PROFILE
@@ -685,18 +685,12 @@
     eq.forEach((id, i) => {
       const s = mkp('div', 'ab-slot' + (id ? ' on' : ''));
       s.appendChild(mkp('small', '', 'SLOT ' + (i + 1))); s.appendChild(mkp('b', '', id ? byId[id].name : 'EMPTY'));
-      if (id) { const x = mkp('button', 'ol-btn', 'CLEAR'); x.type = 'button'; x.dataset.act = 'ab-eq'; x.dataset.slot = String(i); x.dataset.v = ''; s.appendChild(x); }
       sl.appendChild(s);
     });
     AB.defs.forEach((d) => {
       const lv = AB.level(d.id), max = d.price.length, row = mkp('div', 'pb-row ab-row' + (lv ? ' own' : '')); row.setAttribute('role', 'listitem');
       const t = mkp('div', 'ab-t'); t.appendChild(mkp('b', '', d.name)); t.appendChild(mkp('em', '', d.info));
-      const cur = lv ? 'LEVEL ' + lv + '/' + max + ' · RECHARGE ' + d.cd[lv - 1] + ' S' : 'NOT OWNED';
-      t.appendChild(mkp('small', '', cur)); row.appendChild(t);
-      const np = AB.nextPrice(d.id), b = mkp('button', 'ol-btn' + (np && np <= kp() ? ' big' : ''), np ? (lv ? 'UPGRADE ' : 'BUY ') + np + ' KP' : 'MAX'); b.type = 'button';
-      if (np) { b.dataset.act = 'ab-buy'; b.dataset.v = d.id; if (np > kp()) b.classList.add('lack'); } else b.disabled = true;
-      row.appendChild(b);
-      if (lv) { const g = mkp('div', 'ab-eqs'); [0, 1, 2].forEach((i) => { const e = mkp('button', 'ol-btn' + (eq[i] === d.id ? ' on' : ''), String(i + 1)); e.type = 'button'; e.dataset.act = 'ab-eq'; e.dataset.slot = String(i); e.dataset.v = d.id; e.setAttribute('aria-pressed', eq[i] === d.id ? 'true' : 'false'); g.appendChild(e); }); row.appendChild(g); }
+      t.appendChild(mkp('small', '', lv ? 'LEVEL ' + lv + '/' + max + ' · RECHARGE ' + d.cd[lv - 1] + ' S' : 'NOT OWNED')); row.appendChild(t);
       box.appendChild(row);
     });
   }
@@ -1194,7 +1188,7 @@
       case 'br-ready': brReady(); break;
       case 'br-cancel': brCancel(); break;
       case 'trade': openTrade(Number(a.dataset.slot)); break;
-      case 'ab-buy': { const r = Toys.ab.buy(v); const nt = $('#ab-note'); if (nt) { nt.className = 'v-note' + (r.ok ? '' : ' bad'); nt.textContent = r.ok ? '' : r.err; } if (r.ok) sfx('mouse'); updKP(); renderAbil(); break; }
+      case 'ab-buy-off': { const r = Toys.ab.buy(v); const nt = $('#ab-note'); if (nt) { nt.className = 'v-note' + (r.ok ? '' : ' bad'); nt.textContent = r.ok ? '' : r.err; } if (r.ok) sfx('mouse'); updKP(); renderAbil(); break; }
       case 'ab-eq': Toys.ab.equip(Number(a.dataset.slot), v || null); renderAbil(); break;
       case 'trade-yes': tradeConfirm(); break;
       case 'trade-no': { const el = $('#ol-trade'); if (el) el.hidden = true; L.tradeAsk = null; break; }

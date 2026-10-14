@@ -325,7 +325,7 @@
     'FILLS EVERY MAGAZINE': ['ЗАПОЛНЯЕТ ВСЕ МАГАЗИНЫ', 'FÜLLT ALLE MAGAZINE'],
     'MORE DAMAGE FOR 6 S': ['БОЛЬШЕ УРОНА 6 С', 'MEHR SCHADEN FÜR 6 S'],
     'ABILITIES': ['СПОСОБНОСТИ', 'FÄHIGKEITEN'],
-    'Buy and upgrade abilities, then put up to three into your slots. In online matches the host checks recharge times of abilities that affect enemies.': ['Покупайте и улучшайте способности, до трёх ставьте в слоты. В онлайне хост проверяет перезарядку способностей, влияющих на врагов.', 'Kaufe und verbessere Fähigkeiten und lege bis zu drei in deine Slots. Online prüft der Host die Aufladezeit von Fähigkeiten, die Gegner betreffen.'],
+    'Abilities work only offline. Buy and equip them in the SHOP.': ['Способности работают только офлайн. Покупка и слоты — в МАГАЗИНЕ.', 'Fähigkeiten funktionieren nur offline. Kauf und Slots im SHOP.'],
     'NOT OWNED': ['НЕ КУПЛЕНО', 'NICHT GEKAUFT'],
     'EMPTY': ['ПУСТО', 'LEER'],
     'CLEAR': ['СНЯТЬ', 'LEEREN'],

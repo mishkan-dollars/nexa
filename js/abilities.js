@@ -8,7 +8,6 @@
   const online = () => !!((NN && NN.connected) || (window.NexaCoop && window.NexaCoop.active));
   const now = () => performance.now() / 1000;
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
-  const HC = {}, HOV = {};
 
   function st(r) { return r.abS || (r.abS = { cd: {}, shield: 0, shieldT: 0, heal: null, sight: 0, mag: 0, magR: 0, over: null, dash: null, ui: null, uiT: 0, marks: [] }); }
   const dirOf = (r) => { const v = new THREE.Vector3(); r.camera.getWorldDirection(v); return v; };
@@ -33,46 +32,22 @@
     }
   }
 
+  function abToast(r, text) {
+    const s = st(r); if (!s.ui) return;
+    let el = s.toast; if (!el) { el = s.toast = document.createElement('div'); el.className = 'm-abtoast'; s.ui.appendChild(el); }
+    el.textContent = text; el.hidden = false; clearTimeout(s.toastT); s.toastT = setTimeout(() => { el.hidden = true; }, 1500);
+  }
   function use(r, slot) {
     const id = AB.equipped()[slot];
     if (!id || !r || !r.cb || r.dead || r.locked || r.paused || r.disposed || r.inCinema || !r.entered) return false;
+    if (online()) return false;
     const lv = AB.level(id), d = defs[id]; if (!lv || !d) return false;
     const s = st(r), t = now();
-    if (t < (s.cd[id] || 0)) { r.sfx && r.sfx('denied'); r.toast(d.name + ' RECHARGING', 1); return false; }
-    if (id === 'slow' && online()) { r.toast('OFFLINE ONLY', 1.2); return false; }
+    if (t < (s.cd[id] || 0)) { r.sfx && r.sfx('denied'); abToast(r, d.name + ' RECHARGING'); return false; }
     s.cd[id] = t + d.cd[lv - 1];
-    const co = window.NexaCoop && window.NexaCoop.active ? window.NexaCoop.session : null;
-    if (co && !co.solo && !co.host && (id === 'fire' || id === 'shock' || id === 'over')) {
-      const f = dirOf(r), l = Math.hypot(f.x, f.z) || 1;
-      NN.sendAction({ type: 'ab', id, lv, x: Math.round((r.p.x + f.x / l * 10) * 10) / 10, z: Math.round((r.p.z + f.z / l * 10) * 10) / 10 });
-      if (id === 'over') s.over = { until: t + 6, m: d.v[lv - 1], remote: true };
-      r.toast(d.name, 1);
-    } else {
-      local(r, id, lv);
-      if (co && !co.solo && co.host && id === 'over') HOV[1] = { until: t + 6, m: d.v[lv - 1] };
-      r.toast(d.name, 1);
-    }
+    local(r, id, lv);
+    abToast(r, d.name);
     return true;
-  }
-
-  function hostCheck(p) {
-    if (!NN.isHost) return;
-    const slot = p.from | 0, d = defs[p.id], r = window.Missions && window.Missions.current, co = window.NexaCoop && window.NexaCoop.session;
-    if (!d || !r || !r.cb || !co) return;
-    const lv = p.lv | 0; if (lv < 1 || lv > d.price.length) return;
-    const k = slot + ':' + d.id, t = now();
-    if (t < (HC[k] || 0)) { NN.sendAction({ type: 'abx', id: d.id }, { to: slot }); return; }
-    HC[k] = t + d.cd[lv - 1] * 0.9;
-    const m = co.remotes.get(slot), v = d.v[lv - 1];
-    if (d.id === 'over') { HOV[slot] = { until: t + 6, m: v }; return; }
-    if (!m || !m.rem) return;
-    if (d.id === 'shock') { shockAt(r, m.rem.x, m.rem.z, v); return; }
-    if (d.id === 'fire') {
-      let x = +p.x, z = +p.z; if (!isFinite(x) || !isFinite(z)) return;
-      const dx = x - m.rem.x, dz = z - m.rem.z, l = Math.hypot(dx, dz);
-      if (l > 12) { x = m.rem.x + dx / l * 12; z = m.rem.z + dz / l * 12; }
-      co.dmgBy = slot; try { fireAt(r, x, z, v); } finally { co.dmgBy = 1; }
-    }
   }
 
   function tick(r, dt) {
@@ -114,13 +89,13 @@
       for (let i = 0; i < 3; i += 1) { const b = document.createElement('button'); b.type = 'button'; b.className = 'm-ab'; b.dataset.slot = String(i); b.innerHTML = '<small></small><b></b><i></i>'; b.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); use(r, i); }); bar.appendChild(b); }
       r.layer.appendChild(bar); s.ui = bar; s.sig = '';
     }
-    const sig = eq.join('|') + '|' + (window.NexaSettings ? 1 : 0);
+    const off = online(), sig = eq.join('|') + '|' + off;
     if (sig !== s.sig) {
-      s.sig = sig; s.ui.hidden = !eq.some(Boolean);
+      s.sig = sig; s.ui.hidden = off || !eq.some(Boolean);
       const NS = window.NexaSettings;
-      Array.from(s.ui.children).forEach((b, i) => { const d = eq[i] && defs[eq[i]]; b.hidden = !d; if (d) { b.querySelector('b').textContent = d.name; b.querySelector('small').textContent = r.touch ? '' : (NS && NS.codeName ? NS.codeName((NS.binding('ab' + (i + 1)) || [CODES[i]])[0]) : CODES[i].slice(3)); } });
+      Array.from(s.ui.querySelectorAll('.m-ab')).forEach((b, i) => { const d = eq[i] && defs[eq[i]]; b.hidden = !d; if (d) { b.querySelector('b').textContent = d.name; b.querySelector('small').textContent = r.touch ? '' : (NS && NS.codeName ? NS.codeName((NS.binding('ab' + (i + 1)) || [CODES[i]])[0]) : CODES[i].slice(3)); } });
     }
-    Array.from(s.ui.children).forEach((b, i) => {
+    Array.from(s.ui.querySelectorAll('.m-ab')).forEach((b, i) => {
       const id = eq[i]; if (!id) return;
       const left = Math.max(0, (s.cd[id] || 0) - t), cd = defs[id].cd[Math.max(0, AB.level(id) - 1)];
       b.classList.toggle('cd', left > 0); b.style.setProperty('--k', String(left > 0 ? left / cd : 0));
@@ -143,7 +118,7 @@
   const dmg0 = P.damageEnemy;
   P.damageEnemy = function (e, amt, head, pt) {
     const s = this.abS;
-    if (s && s.over && !s.over.remote && now() < s.over.until && e && !e.puppet) amt *= s.over.m;
+    if (s && s.over && now() < s.over.until && e && !e.puppet) amt *= s.over.m;
     return dmg0.call(this, e, amt, head, pt);
   };
   window.addEventListener('keydown', (e) => {
@@ -152,9 +127,5 @@
     const t = e.target; if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
     const r = window.Missions && window.Missions.current; if (r) use(r, i);
   });
-  if (NN) {
-    NN.on('ab', hostCheck);
-    NN.on('abx', (p) => { const r = window.Missions && window.Missions.current; if (r && (p.from | 0) === 1) r.toast('ABILITY REJECTED BY HOST', 1.4); });
-  }
-  window.NexaAbil = { use, hostMult(slot) { const o = slot === 1 ? HOV[1] : HOV[slot]; return o && now() < o.until ? o.m : 1; }, defs };
+  window.NexaAbil = { use, defs };
 }());

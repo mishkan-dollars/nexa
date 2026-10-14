@@ -566,7 +566,7 @@
       if (t - this.hitRate.t > 1000) { this.hitRate.t = t; this.hitRate.n = 0; }
       if (++this.hitRate.n > 60 * Math.max(1, this.remotes.size)) return;
       const e = this.byId.get(p.i | 0); if (!e || e.dead) return;
-      const r = this.run, d = clamp(num(p.d), 0, 400) * (window.NexaAbil ? window.NexaAbil.hostMult(p.from | 0) : 1);
+      const r = this.run, d = clamp(num(p.d), 0, 400);
       if (!d) return;
       this.dmgBy = p.from | 0 || 2;
       try { r.damageEnemy(e, d, !!p.h, p.x === undefined ? undefined : { x: num(p.x) / 100, y: num(p.y) / 100, z: num(p.z) / 100 }); } finally { this.dmgBy = 1; }
