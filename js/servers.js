@@ -18,12 +18,13 @@
     'wss://nostr.ra.pe', 'wss://relay.nostr.com.au', 'wss://nostr.stakey.net', 'wss://relay.nostrcheck.me', 'wss://relay.0xchat.com', 'wss://nostr.massmux.com',
     'wss://relay.exit.pub', 'wss://relay.verified-nostr.com', 'wss://nostr.fbxl.net', 'wss://nostr.plantroon.com', 'wss://relay.siamstr.com', 'wss://relay.utxo.one',
     'wss://nostr.vulpem.com', 'wss://nostr.milou.lol', 'wss://relay.wellorder.net', 'wss://nostr.sandwich.farm', 'wss://nostr.l00p.org', 'wss://nostr.thank.eu',
-    'wss://relay.stoner.com', 'wss://relay.hodl.ar', 'wss://nostr.rocks', 'wss://nostr.fmt.wiz.biz', 'wss://relay.bitcoinpark.com', 'wss://nostr.hifish.org'
+    'wss://relay.stoner.com', 'wss://relay.hodl.ar', 'wss://nostr.rocks', 'wss://nostr.fmt.wiz.biz', 'wss://relay.bitcoinpark.com', 'wss://nostr.hifish.org',
+    'wss://relay.nostrati.com', 'wss://nostr-relay.nokotaro.com', 'wss://nostr.holbrook.no', 'wss://nostr.zenon.network', 'wss://nostr.semisol.dev', 'wss://relay.nostrid.com', 'wss://nostr.btcmp.com', 'wss://nostr.coollamer.com', 'wss://relay.nostr.vet', 'wss://nostr.yael.at', 'wss://relay.nostrss.re', 'wss://nostr.sidnlabs.nl', 'wss://relay.hamnet.io', 'wss://nostr.dumango.com', 'wss://nostr.easydns.ca', 'wss://relay.nostr.moctane.com', 'wss://nostr.rblb.it', 'wss://relay.cxplay.org', 'wss://nostr.nodeofsven.com', 'wss://relay.nostr.directory', 'wss://relay.noswhere.com', 'wss://nostr21.com', 'wss://relay.nostrfreedom.net', 'wss://nostr.satoshi.fun', 'wss://relay.nostrhub.fr', 'wss://nostr.tools.global.id', 'wss://relay.agorist.space', 'wss://nostr.reelnetwork.eu', 'wss://nostr.1f52b.xyz', 'wss://nostr.inosta.cc', 'wss://relay.lnfi.network', 'wss://nostr.camalolo.com', 'wss://relay.shitforce.one', 'wss://nostr.hexhex.online', 'wss://relay.oldcity-bitcoiners.info', 'wss://nostr.middling.mydns.jp', 'wss://relay.nostr.sc', 'wss://relay.zhoushen929.com', 'wss://nostr.skitso.business', 'wss://relay.nostrdice.com', 'wss://nostr.d3ltalabs.com', 'wss://relay.stens.dev', 'wss://nostr-verif.slothy.win'
   ];
   // у пользователя НЕ открылись (2026-10-14): остаются в конце списка с низким приоритетом на случай, если заработают
   const LOW = ['wss://relay.nostr.bg', 'wss://relay.mostr.pub', 'wss://relay.nostr.band'];
   window.NexaServers = {
-    VERSION: 3,
+    VERSION: 4,
     // WebTorrent-трекеры (WebSocket, протокол announce). open.ftorrent.com открылся у пользователя, но бесплатность/условия не подтверждены — оставлен, отмечен.
     TRACKERS: ['wss://tracker.webtorrent.dev', 'wss://tracker.openwebtorrent.com', 'wss://open.ftorrent.com:443'],
     TRACKERS_VERIFIED: ['wss://tracker.webtorrent.dev', 'wss://tracker.openwebtorrent.com', 'wss://open.ftorrent.com:443'],
