@@ -208,7 +208,7 @@
   // ------------------------------------------------------------------ состояние сессии
   // R.role: 'host' | 'guest' | null. R.links — подключённые (attached) соединения: у Хоста по одному на гостя, у гостя одно (к Хосту).
   // Состояние сессии вычисляется из соединений: idle -> creating -> waiting-answer | answering -> connecting -> open <-> lost -> closed | failed
-  const R = { role: null, links: [], mySlot: 0, sticky: 'idle', stickyCode: null, players: [], rate: { t: 0, n: 0 }, hosting: false, speak: {} };
+  const R = { role: null, links: [], mySlot: 0, sticky: 'idle', stickyCode: null, players: [], rate: { t: 0, n: 0 }, hosting: false, speak: {}, children: [] };
   let state = 'idle';
   const isOpen = () => state === 'open' || state === 'lost';
   function computeState() {
@@ -264,15 +264,59 @@
     [act, rel].forEach((ch) => {
       ch.addEventListener('open', () => checkOpen(L));
       ch.addEventListener('close', () => onChannelClose(L));
-      ch.addEventListener('message', (e) => onMessage(L, e.data, ch === act));
+      ch.addEventListener('message', (e) => (L.gr === 'child' ? childUp(L, e.data, ch === act) : onMessage(L, e.data, ch === act)));
     });
     L.act = act; L.rel = rel;
     return L;
+  }
+  // ---- peer-relay: если у игрока нет прямой связи с Хостом, но есть с другим гостем (носителем), тот пересылает его трафик по уже открытым каналам.
+  // Носитель держит «детей» (gr 'child', реальное WebRTC-соединение с отрезанным игроком) и заворачивает их пакеты в {type:'rl', c, d}; Хост разворачивает пакеты в виртуальное соединение
+  // с обычным слотом. Для остальных игроков и для самого игрока это обычный гость (голос через ретранслятор не передаётся).
+  const MAX_KIDS = 2;
+  function tunnel(carrier, cid, fast) { return (x) => { sendLink(carrier, { type: 'rl', c: cid, d: x, f: fast ? 1 : 0 }, fast); }; }
+  function virtualLink(carrier, cid) {
+    const V = newLink('host', true); V.local = false; V.virtual = true; V.carrier = carrier; V.cid = cid;
+    V.act.out = tunnel(carrier, cid, true); V.rel.out = tunnel(carrier, cid, false);
+    if (!attach(V)) return null;
+    carrier.kids = carrier.kids || {}; carrier.kids[cid] = V;
+    V.state = 'connecting'; V.act.open(); V.rel.open();
+    return V;
+  }
+  function childUp(L, raw, fast) {
+    const c = R.links[0];
+    if (typeof raw !== 'string' || raw.length > (fast ? MAX_ACT : MAX_REL) || !c || !c.opened) return;
+    sendLink(c, { type: 'rl', c: L.id, d: raw, f: fast ? 1 : 0 }, fast);
+  }
+  function childGone(L) {
+    const i = R.children.indexOf(L); if (i >= 0) R.children.splice(i, 1);
+    const c = R.links[0]; if (L.opened && c && c.opened) sendLink(c, { type: 'rl', c: L.id, k: 'bye' });
+    destroyLink(L);
+  }
+  function attachChild(L) {
+    const c = R.links[0];
+    if (!L || R.role !== 'guest' || !c || !c.opened || R.children.length >= MAX_KIDS) return false;
+    L.child = true; R.children.push(L); L.state = 'connecting'; armConnectTimer(L, cfg.connectMs);
+    return true;
+  }
+  function onTunnel(L, p) {
+    if (L.gr === 'host') {                                          // Хост (или носитель-промежуточный) получил пакет от «ребёнка» через носителя L
+      const cid = p.c | 0; if (cid < 1) return;
+      let V = L.kids && L.kids[cid];
+      if (p.k === 'bye') { if (V) linkGone(V, 'PEER_LEFT'); return; }
+      if (typeof p.d !== 'string') return;
+      if (!V) { if (R.role !== 'host' || Object.keys(L.kids || {}).length >= MAX_KIDS || R.links.length >= cfg.maxPlayers - 1) return; V = virtualLink(L, cid); if (!V) return; }
+      onMessage(V, p.d, !!p.f);
+    } else if (L.gr === 'guest') {                                  // ответ Хоста для нашего «ребёнка»
+      const ch = R.children.find((x) => x.id === (p.c | 0)); if (!ch || !ch.opened || typeof p.d !== 'string') return;
+      const chn = p.f ? ch.act : ch.rel;
+      if (chn && chn.readyState === 'open' && !(p.f && chn.bufferedAmount > 64 * 1024)) { try { chn.send(p.d); } catch (e) { /* ok */ } }
+    }
   }
   function checkOpen(L) {
     if (!L.act || !L.rel || L.act.readyState !== 'open' || L.rel.readyState !== 'open' || L.ready || L.state === 'closed') return;
     L.ready = true; L.openAt = Date.now(); L.lastRx = now();
     clearTimeout(L.connT);
+    if (L.gr === 'child') { L.opened = true; L.state = 'open'; return; }
     if (L.attached) linkOpened(L);
   }
   function linkOpened(L) {
@@ -292,6 +336,7 @@
   }
   function onPcState(L) {
     if (L.state === 'closed') return;
+    if (L.gr === 'child') { const pc0 = L.pc; if (pc0 && (pc0.connectionState === 'failed' || pc0.connectionState === 'closed' || pc0.iceConnectionState === 'failed')) childGone(L); return; }
     const pc = L.pc; if (!pc) return;
     const cs = pc.connectionState || '', ic = pc.iceConnectionState || '';
     if (cs === 'failed' || ic === 'failed') {
@@ -315,6 +360,7 @@
     setTimeout(() => { if (L.pc === pc && L.state === 'lost' && (pc.connectionState === 'failed' || pc.iceConnectionState === 'failed')) linkGone(L, 'ICE_FAILED'); }, 12000);
   }
   function onChannelClose(L) {
+    if (L.gr === 'child') { if (L.state !== 'closed') setTimeout(() => { if (L.state !== 'closed' && L.rel && L.rel.readyState !== 'open') childGone(L); }, 800); return; }
     if (!L.ready || L.intentional || L.state === 'closed') return;
     setTimeout(() => { if (L.ready && L.rel && L.rel.readyState !== 'open' && L.state !== 'closed' && !L.intentional) linkGone(L, L.peerBye ? 'PEER_LEFT' : 'CLOSED'); }, 1500);
   }
@@ -333,6 +379,9 @@
   // соединение пропало (штатно или нет)
   function linkGone(L, code) {
     if (L.state === 'closed' && !L.attached) return;
+    if (L.kids) Object.keys(L.kids).forEach((k) => { const v = L.kids[k]; delete L.kids[k]; linkGone(v, 'PEER_LEFT'); });
+    if (L.virtual && L.carrier && L.carrier.kids) delete L.carrier.kids[L.cid];
+    if (R.role === 'guest' && R.links[0] === L) { R.children.slice().forEach((ch) => childGone(ch)); }
     const was = L.attached, wasOpen = L.opened;
     destroyLink(L);
     if (!was) return;
@@ -453,7 +502,7 @@
   }
   function armConnectTimer(L, ms) {
     clearTimeout(L.connT);
-    L.connT = setTimeout(() => { if (!L.ready && (L.state === 'answering' || L.state === 'connecting')) fail(L, 'CONNECT_TIMEOUT'); }, ms);
+    L.connT = setTimeout(() => { if (!L.ready && (L.state === 'answering' || L.state === 'connecting')) { if (L.gr === 'child') childGone(L); else fail(L, 'CONNECT_TIMEOUT'); } }, ms);
   }
   // свободное (не присоединённое) соединение-оферент: SDP с полным набором кандидатов (для трекера). Возвращает {link, sdp, forced}
   async function newOffer(gameRole) {
@@ -641,6 +690,7 @@
       case 'pong': if (typeof p.t === 'number') { const r = Math.max(0, now() - p.t); L.rtt = L.rtt ? L.rtt * 0.7 + r * 0.3 : r; L.rttMin = L.rttMin ? Math.min(L.rttMin, r) : r; emit('net:rtt', Math.round(rttMain())); } return;
       case 'sdp': onSdp(L, p); return;
       case 'bye': L.peerBye = true; linkGone(L, 'PEER_LEFT'); return;
+      case 'rl': onTunnel(L, p); return;
       case 'hello': onHello(L, p); return;
       case 'welcome': if (L.gr === 'guest') { cfg.maxPlayers = Math.max(2, Math.min(MAX_BR, p.max | 0 || MAX_PLAYERS)); R.mySlot = Math.max(2, Math.min(cfg.maxPlayers, p.slot | 0 || 2)); emit('net:welcome', { slot: R.mySlot }); } return;
       case 'roster': if (L.gr === 'guest') onRoster(p); return;
@@ -940,6 +990,7 @@
     const had = R.links.length > 0;
     R.links.slice().forEach((l) => { if (l.ready && !silent) sendLink(l, { type: 'bye' }); });
     R.links.slice().forEach((l) => { l.attached = false; destroyLink(l); });
+    R.children.slice().forEach((ch) => { R.children.splice(R.children.indexOf(ch), 1); destroyLink(ch); });
     R.links = []; manual = null;
     voiceStop();
     R.role = null; R.mySlot = 0; R.players = []; R.speak = {}; cfg.maxPlayers = MAX_PLAYERS;
@@ -968,7 +1019,7 @@
     chat: { send: chatSend, get history() { return chat.history; }, sys: chatSys, clean: cleanChat, clear() { chat.history.length = 0; } },
     voice: { enable: voiceEnable, disable: voiceDisable, setMuted: voiceSetMuted, setVolume: voiceSetVolume, incoming: voiceIncoming, get state() { return voiceState(); }, unlock: playRemote },
     // низкоуровневый доступ для js/rendezvous.js: соединения без ручных кодов
-    rtc: { newOffer, newAnswer, applyAnswer, attach, drop: dropLink, connecting: startConnecting, fullSdp: true, free: () => (R.role === 'guest' ? (R.links.length ? 0 : 1) : Math.max(0, cfg.maxPlayers - 1 - R.links.length)) },
+    rtc: { newOffer, newAnswer, applyAnswer, attach, attachChild, childFree: () => (R.role === 'guest' && R.links[0] && R.links[0].opened ? Math.max(0, MAX_KIDS - R.children.length) : 0), drop: dropLink, connecting: startConnecting, fullSdp: true, free: () => (R.role === 'guest' ? (R.links.length ? 0 : 1) : Math.max(0, cfg.maxPlayers - 1 - R.links.length)) },
     util: { scrub, cleanName, cleanChat, cleanColor, cleanPid, shrinkSdp, packCode, crc16, rndHex },
     log: () => logBuf.slice()
   };

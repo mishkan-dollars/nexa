@@ -514,7 +514,7 @@
     const r = hostR = new Rendezvous('room/' + id, {
       mode: 'answerer',
       onStatus: (s) => emit('status', Object.assign({ kind: 'host' }, s)),
-      accept: () => NN.rtc.free() > 0 && pendingLinks() < 3,
+      accept: () => NN.rtc.free() > 0 && pendingLinks() < 3 && !NN.config.testNoAccept,
       onOffer: async (sdp) => {
         if (NN.rtc.free() <= 0) return null;
         const a = await NN.rtc.newAnswer('host', sdp);
@@ -576,9 +576,31 @@
     return { ok: true, id };
   }
   function stopJoin() { clearTimeout(J.timer); if (joinR) { joinR.stop(); joinR = null; } J.stage = ''; }
-  NN.on('net:open', () => { if (joinR) { stopJoin(); emit('join', { stage: 'open', id: J.id }); } });
+  // peer-relay: уже подключённый гость тоже отвечает на offer'ы этой комнаты (после паузы, чтобы Хост успел первым) и пересылает трафик тем, кто не достучался до Хоста напрямую
+  let relayR = null;
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+  function relayStart(id) {
+    stopRelay();
+    if (!id || !serversOn() || typeof RTCPeerConnection !== 'function') return;
+    const r = relayR = new Rendezvous('room/' + id, {
+      mode: 'answerer',
+      accept: () => NN.rtc.childFree() > 0,
+      onOffer: async (sdp) => {
+        await wait(NN.config.relayDelay === undefined ? 8000 : NN.config.relayDelay);
+        if (relayR !== r || !NN.connected || NN.isHost || NN.rtc.childFree() <= 0) return null;
+        const a = await NN.rtc.newAnswer('child', sdp);
+        if (!a) return null;
+        if (!NN.rtc.attachChild(a.link)) { NN.rtc.drop(a.link); return null; }
+        return { sdp: a.sdp, token: a.link };
+      },
+      dropToken: () => { /* ребёнок живёт своим таймером */ }
+    });
+    r.start();
+  }
+  function stopRelay() { if (relayR) { relayR.stop(); relayR = null; } }
+  NN.on('net:open', () => { if (joinR) { const id = J.id; stopJoin(); emit('join', { stage: 'open', id: J.id }); relayStart(id); } });
   NN.on('net:error', (e) => { if (joinR && e && e.code) { const r = joinR; stopJoin(); emit('join', { stage: 'error', err: e.code }); void r; } });
-  NN.on('net:close', () => { if (joinR) { stopJoin(); } });
+  NN.on('net:close', () => { stopRelay(); if (joinR) { stopJoin(); } });
 
   // ---- Быстрая игра: очередь 'quick/<режим>' (маяки), меньший peer_id — хост; дальше — обычная комната по общему id
   async function quickPlay(mode, opts) {
