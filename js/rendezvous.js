@@ -125,7 +125,7 @@
     if (!force && Date.now() - DISC.t < 6 * 3600000 && Object.keys(DISC.list).length > 50) return Promise.resolve(0);
     DS.running = true;
     const base = (SV.NOSTR_VERIFIED || []).filter((u) => { const r = store[u]; return !r || r.ok || !fresh(r); });
-    const src = (paramList('relay') || base).slice(0, 4);
+    const src = (paramList('discrelay') || paramList('relay') || base).slice(0, 4);
     let added = 0;
     const add = (u) => { const c = cleanRelay(u); if (!c) return; if (!DISC.list[c]) added += 1; DISC.list[c] = Date.now(); };
     const one = (url) => new Promise((res) => {
@@ -160,7 +160,7 @@
     const out = cleanList(tr).slice(0, 8).map((u) => ({ url: u, type: 'tracker', verified: ver.has(u) }));
     const seen = new Set();
     cleanList(rl).forEach((u) => { seen.add(u); out.push({ url: u, type: 'nostr', verified: ver.has(u), low: low.has(u) }); });
-    if (!custom && serversOn()) discUrls().forEach((u) => { if (!seen.has(u) && validServer(u)) { seen.add(u); out.push({ url: u, type: 'nostr', verified: false, low: false, disc: true }); } });
+    if ((!custom || paramList('discrelay')) && serversOn()) discUrls().forEach((u) => { if (!seen.has(u) && validServer(u)) { seen.add(u); out.push({ url: u, type: 'nostr', verified: false, low: false, disc: true }); } });
     return out;
   }
   let srvT = 0;
