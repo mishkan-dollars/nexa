@@ -556,6 +556,7 @@
   // ---- ручной режим (запасной, всегда доступен): ссылка ?join=NX1O…, ответ NX1A…
   let manual = null;   // ожидающее приглашение Хоста
   async function createOffer() {
+    { const bg = banGate(); if (bg) return bg; }
     if (typeof RTCPeerConnection !== 'function') { R.sticky = 'failed'; refreshState('UNSUPPORTED'); return { ok: false, err: 'UNSUPPORTED' }; }
     if (manual) { dropLink(manual); manual = null; }
     begin('host');
@@ -592,6 +593,7 @@
     } catch (e) { log('answer error ' + (e && e.name)); return { ok: false, err: 'BAD_DATA' }; }
   }
   async function createAnswer(text) {
+    { const bg = banGate(); if (bg) return bg; }
     if (typeof RTCPeerConnection !== 'function') { R.sticky = 'failed'; refreshState('UNSUPPORTED'); return { ok: false, err: 'UNSUPPORTED' }; }
     const p = await parseInput(text);
     if (!p.ok) return p;
@@ -667,7 +669,7 @@
     let i = null;
     try { i = window.NexaProfile && NexaProfile.publicInfo ? NexaProfile.publicInfo() : null; } catch (e) { i = null; }
     i = i || { name: 'PLAYER', color: '#ff3b30', level: 1 };
-    return { name: cleanName(i.name), color: cleanColor(i.color), level: Math.max(1, Math.min(999, i.level | 0 || 1)), v: VERSION, lang: (window.I18N && I18N.lang) || 'en', pid: MYPID };
+    return { name: cleanName(i.name), color: cleanColor(i.color), level: Math.max(1, Math.min(999, i.level | 0 || 1)), v: VERSION, lang: (window.I18N && I18N.lang) || 'en', pid: MYPID, k: (window.Toys && Toys.ident && Toys.ident.pk) || '' };
   }
   // отправка в одно соединение; вернёт true, если ушло. Быстрые типы идут по 'act' (без повторов; при забитом буфере свежее важнее старого), остальные — по 'rel'
   function sendLink(L, data, fastOpt, raw) {
@@ -783,6 +785,10 @@
     L.peer = { name: cleanName(i.name, L.gr === 'host' ? 'PLAYER ' + L.slot : 'HOST'), color: cleanColor(i.color), level: Math.max(1, Math.min(999, i.level | 0 || 1)), v: i.v | 0, lang: String(i.lang || '').slice(0, 2) };
     const first = !L.helloGot; L.helloGot = true;
     L.pid = cleanPid(i.pid);
+    if (R.role === 'host') {
+      const ad = window.NexaAdmin; L.pk = /^[0-9a-f]{64}$/.test(i.k) ? i.k : '';
+      if (ad && ad.active && (!L.pk || ad.banned(L.pk))) { sendLink(L, { type: 'bye' }); linkGone(L, 'PEER_LEFT'); return; }
+    }
     applyBlock({ name: L.peer.name, pid: L.pid, slot: L.slot });
     if (first) chatSys(R.role === 'host' ? 'FRIEND_JOINED' : 'HOST_READY', L.peer.name);
     if (R.role === 'host') hostSync();
@@ -811,6 +817,8 @@
     return true;
   }
   const isBlockedName = (n) => blockedNames.indexOf(String(n || '').toLowerCase()) >= 0;
+  const banGate = () => { const a = window.NexaAdmin; return a && a.me() ? { ok: false, err: 'BANNED' } : null; };
+  function kickWhere(f) { if (R.role !== 'host') return; R.links.slice().forEach((l) => { if (l.helloGot && f(l.pk)) { sendLink(l, { type: 'bye' }); linkGone(l, 'PEER_LEFT'); } }); }
   function kick(s) { const l = findSlot(s); if (R.role === 'host' && l) { sendLink(l, { type: 'bye' }); linkGone(l, 'PEER_LEFT'); } }
 
   // ------------------------------------------------------------------ текстовый чат
@@ -1011,6 +1019,7 @@
   function localStop() { clearInterval(LC.presT); LC.presT = 0; clearTimeout(LC.joinTO); if (LC.disc) { try { LC.disc.close(); } catch (e) { /* ok */ } LC.disc = null; } LC.rid = ''; }
   const localApi = typeof BroadcastChannel === 'function' ? {
     host() {
+      if (banGate()) return '';
       localStop(); begin('host');
       LC.rid = rndHex(4); const rid = LC.rid, d = LC.disc = new BroadcastChannel('nexa-local-v1');
       const present = () => { if (R.role === 'host' && R.links.length < cfg.maxPlayers - 1) { try { d.postMessage({ t: 'host', rid }); } catch (e) { /* ok */ } } };
@@ -1025,6 +1034,7 @@
       return rid;
     },
     join() {
+      if (banGate()) return Promise.resolve(false);
       localStop(); begin('guest');
       return new Promise((resolve) => {
         const d = LC.disc = new BroadcastChannel('nexa-local-v1'); let done = false;
@@ -1072,7 +1082,7 @@
     local: localApi, diag: () => (DG ? JSON.parse(JSON.stringify(DG)) : null), candStats,
     createOffer, acceptAnswer, createAnswer, parse: parseInput, linkFor, pendingJoin, clearJoinFromUrl,
     sendAction, on, off, close, reset: () => closeAll(false), localInfo,
-    kick, setMuted, isMuted, report, isBlockedName, begin,
+    kick, kickWhere, banGate, setMuted, isMuted, report, isBlockedName, begin,
     setLan(v) { lsSet('nexaNetLan', v ? '1' : '0'); }, get lan() { return localMode(); },
     text: (code) => MSG[code] || String(code || ''),
     chat: { send: chatSend, get history() { return chat.history; }, sys: chatSys, clean: cleanChat, clear() { chat.history.length = 0; } },

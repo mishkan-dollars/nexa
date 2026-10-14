@@ -628,6 +628,7 @@
   // ---- Хост: комната (ссылка / по имени / публичная). Хост — только отвечает на offer'ы гостей.
   async function hostRoom(opts) {
     opts = opts || {};
+    { const bg = NN.banGate(); if (bg) return bg; }
     stopHost();
     const id = opts.id ? roomName(opts.id) : newRoomId();
     if (!id) return { ok: false, err: 'ROOM_NAME_BAD' };
@@ -670,6 +671,7 @@
   const JOIN_TRIES = 3;
   async function joinRoom(id, opts) {
     opts = opts || {};
+    { const bg = NN.banGate(); if (bg) { emit('join', { stage: 'error', err: 'BANNED' }); return bg; } }
     stopJoin();
     id = roomName(id);
     if (!id) { emit('join', { stage: 'error', err: 'ROOM_BAD' }); return { ok: false, err: 'ROOM_BAD' }; }
@@ -753,6 +755,7 @@
   // ---- Быстрая игра: очередь 'quick/<режим>' (маяки), меньший peer_id — хост; дальше — обычная комната по общему id
   async function quickPlay(mode, opts) {
     opts = opts || {};
+    { const bg = NN.banGate(); if (bg) return bg; }
     stopQuick();
     if (typeof RTCPeerConnection !== 'function') return { ok: false, err: 'UNSUPPORTED' };
     if (!serversOn()) return { ok: false, err: 'SERVERS_OFF' };

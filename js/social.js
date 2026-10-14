@@ -22,6 +22,7 @@
   const lang = () => { const l = (window.I18N && I18N.lang) || 'en'; return CHANNELS.indexOf(l) > 0 ? l : 'en'; };
   const clean = (s, n) => String(s || '').replace(/[\u0000-\u001f\u007f<>]/g, '').trim().slice(0, n);
   const validName = (s) => clean(s, 16) || 'PLAYER';
+  const AD = () => window.NexaAdmin, banMe = () => { const a = AD(); return a ? a.me() : null; };
   const ev = new EventTarget();
   const emit = (t, d) => ev.dispatchEvent(new CustomEvent(t, { detail: d }));
 
@@ -66,6 +67,7 @@
       if (!e.id || NET.seen.has(e.id)) return;
       if (!K.checkEvent(e)) return;
       NET.seen.add(e.id); if (NET.seen.size > 4000) NET.seen.clear();
+      if (AD() && AD().banned(e.pubkey)) return;
       const s = NET.subs.get(j[1]); if (s && s.cb) s.cb(e);
     };
     ws.onerror = () => { if (!r.open) { clearTimeout(to); fail(); } };
@@ -79,6 +81,7 @@
   const netInfo = () => ({ on: netOk(), up: Array.from(NET.socks.values()).filter((r) => r.open).length });
   function publish(e) {
     if (!e || !netOk()) return false;
+    if ((e.kind === KIND.chat || e.kind === KIND.clanChat || e.kind === KIND.msg || e.kind === KIND.dm || e.kind === KIND.clan || e.kind === KIND.score || e.kind === KIND.prof) && banMe()) return false;
     const m = JSON.stringify(['EVENT', e]); let n = 0;
     NET.socks.forEach((r) => { if (r.open) { try { r.ws.send(m); n += 1; } catch (er) { /* ok */ } } });
     if (e.kind >= 30000 || e.kind === KIND.dm) { NET.outbox.push(m); if (NET.outbox.length > 60) NET.outbox.shift(); }
@@ -104,7 +107,9 @@
     if (!netOk() || !me()) return;
     const f = Object.keys(S.friends).filter((k) => S.friends[k].st === 'friend');
     const p = pinfo();
-    publish(mk(KIND.pres, f.slice(0, 40).map((k) => ['p', k]), JSON.stringify({ s: myState(), n: p.name, l: p.level })));
+    const a = AD(), tags = f.slice(0, 40).map((k) => ['p', k]), o = { s: myState(), n: p.name, l: p.level };
+    if (a && a.active) { tags.push(['p', a.pub]); o.g = a.flags(); const hs = RM.hosting, js = RM.joining; o.rm = String((hs && hs.id) || (js && js.id) || '').slice(0, 40); o.m = hs ? hs.mode : ''; }
+    publish(mk(KIND.pres, tags, JSON.stringify(o)));
   }
   function subFriends() {
     const f = Object.keys(S.friends).filter((k) => S.friends[k].st === 'friend');
@@ -207,7 +212,7 @@
     const ch = chatCh();
     unsubscribe('nx-chat');
     subscribe('nx-chat', [{ kinds: [KIND.chat], '#t': ['nexa-lobby-' + ch], since: sec() - 600, limit: 60 }], (e) => {
-      if (S.block[e.pubkey] || S.mute[e.pubkey] || e.created_at < sec() - 900 || e.created_at > sec() + 120) return;
+      if (banMe() || S.block[e.pubkey] || S.mute[e.pubkey] || e.created_at < sec() - 900 || e.created_at > sec() + 120) return;
       const t = now(), lastT = CHAT.per[e.pubkey] || 0; if (t - lastT < 700 && e.pubkey !== me()) return; CHAT.per[e.pubkey] = t;
       const c = jparse(e.content, null); if (!c) return;
       const text = clean(c.m, 140); if (!text || LINK.test(text)) return;
@@ -220,6 +225,7 @@
   function sendChat(text) {
     text = clean(text, 140);
     if (!text) return { ok: false, err: '' };
+    if (banMe()) return { ok: false, err: 'BLOCKED' };
     if (LINK.test(text)) return { ok: false, err: 'LINKS ARE NOT ALLOWED' };
     if (now() - CHAT.last < 2000) return { ok: false, err: 'SLOW DOWN' };
     if (text === CHAT.lastText && now() - CHAT.lastAt < 30000) return { ok: false, err: 'DUPLICATE MESSAGE' };
@@ -366,6 +372,7 @@
     const st = h('p', 'v-note sc-net', !RM.servers.on ? 'SIGNALING SERVERS ARE OFF — SOCIAL FEATURES NEED THEM' : !RM.consented() ? 'ALLOW PUBLIC MODE FIRST (PUBLIC TAB)' : info.up ? 'RELAYS CONNECTED: ' + info.up : 'CONNECTING TO RELAYS…');
     r.appendChild(st);
     const body = h('div', 'sc-body'); r.appendChild(body);
+    if (banMe()) { body.appendChild(h('p', 'v-note bad sc-note', AD().text())); return; }
     if (UI.card) { body.appendChild(cardView(UI.card)); return; }
     ({ friends: vFriends, chat: vChat, ranking: vRanking, clans: vClans, id: vId })[UI.tab](body);
   }

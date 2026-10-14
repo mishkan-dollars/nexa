@@ -904,8 +904,10 @@
     if (!on) { nt.className = 'v-note bad'; nt.textContent = NN.text('SERVERS_OFF'); }
     else if (!ok) { nt.className = 'v-note'; nt.textContent = NN.text('PUBLIC_OFF'); }
     else { nt.className = 'v-note'; nt.textContent = ''; }
-    const rooms = ok && on ? RM.gossip.rooms() : [];
-    const mine = RM.hosting && RM.hosting.pub ? RM.adOf() : null;
+    const bm = window.NexaAdmin && NexaAdmin.me();
+    if (bm) { nt.className = 'v-note bad'; nt.textContent = NexaAdmin.text(); }
+    const rooms = ok && on && !bm ? RM.gossip.rooms() : [];
+    const mine = !bm && RM.hosting && RM.hosting.pub ? RM.adOf() : null;
     const rows = (mine ? [Object.assign({ mine: true, age: 0 }, mine)] : []).concat(rooms);
     if (!rows.length) {
       const p = document.createElement('p'); p.className = 'pb-empty'; p.textContent = !on ? 'PUBLIC ROOMS ARE OFF' : (!ok ? 'PRESS REFRESH TO LOOK FOR PUBLIC ROOMS' : (RM.gossip.peers ? 'NO PUBLIC ROOMS RIGHT NOW — CREATE ONE OR TRY QUICK PLAY' : 'LOOKING FOR OTHER PLAYERS…')); box.appendChild(p);

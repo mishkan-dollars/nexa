@@ -66,6 +66,9 @@
     }
     return H.map((x) => ('00000000' + (x >>> 0).toString(16)).slice(-8)).join('');
   }
+  const GD = window.NexaGuard, ADM = /^[0-9a-f]{64}$/.test(String(window.NEXA_ADMIN_PUB || '')) ? window.NEXA_ADMIN_PUB : '', ADM_MAX = 100000;
+  const onlineNow = () => { try { return !!(window.NexaNet && NexaNet.connected) || !!(window.NexaRoom && NexaRoom.servers.on && NexaRoom.consented()); } catch (e) { return false; } };
+  const locked = () => { try { return GD ? !!GD.block() : onlineNow(); } catch (e) { return true; } };
   const DK = 'nexaDev', BK = KEY + '.b';
   const rnd32 = () => { try { const a = new Uint32Array(4); crypto.getRandomValues(a); return Array.from(a).map((x) => ('00000000' + x.toString(16)).slice(-8)).join(''); } catch (e) { return sha256(String(Math.random()) + Date.now()); } };
   let DEVR = null;
@@ -105,7 +108,8 @@
       })(),
       id: typeof d.id === 'string' && /^[0-9a-f]{64}$/.test(d.id) ? d.id : '',
       rk: Number.isFinite(d.rk) ? d.rk : 0,
-      rl: Array.isArray(d.rl) ? d.rl.filter((x) => x && isFinite(x.t) && isFinite(x.n)).slice(-40) : []
+      rl: Array.isArray(d.rl) ? d.rl.filter((x) => x && isFinite(x.t) && isFinite(x.n)).slice(-40) : [],
+      adm: Array.isArray(d.adm) ? d.adm.filter((x) => typeof x === 'string' && /^[0-9a-f]{64}$/.test(x)).slice(-300) : []
     };
     let cv = 0; const ck = (Math.random() * 4294967296) >>> 0;
     const set = (v) => { v = Math.floor(Number(v)); if (!isFinite(v)) return; cv = (Math.max(0, Math.min(1e9, v)) ^ ck) >>> 0; };
@@ -128,7 +132,7 @@
   }
   function save() {
     try {
-      const d = JSON.stringify({ owned: S.owned, loadout: S.loadout, wheel: S.wheel, hud: S.hud, paid: S.paid, rl: S.rl, ab: S.ab, id: S.id, rk: S.rk });
+      const d = JSON.stringify({ owned: S.owned, loadout: S.loadout, wheel: S.wheel, hud: S.hud, paid: S.paid, rl: S.rl, ab: S.ab, id: S.id, rk: S.rk, adm: S.adm });
       const q = DEV.q + 1, p = lastRec ? lastRec.h : '', c = ((S.credits ^ MASK) >>> 0).toString(36);
       const r = { v: 2, q, p, c, d, h: recHash(q, p, c, d) };
       const js = JSON.stringify(r);
@@ -403,7 +407,8 @@
     if (a === 'shop-buy') {
       const d = DEF[v]; if (!d) return true;
       if (S.owned.indexOf(d.id) >= 0) return true;
-      if (S.credits < d.price) { shopNote = { kind: 'bad', text: 'NOT ENOUGH CREDITS' }; ctx.audio && ctx.audio.playSfx('denied'); }
+      if (locked()) { shopNote = { kind: 'bad', text: 'LOCKED' }; ctx.audio && ctx.audio.playSfx('denied'); }
+      else if (S.credits < d.price) { shopNote = { kind: 'bad', text: 'NOT ENOUGH CREDITS' }; ctx.audio && ctx.audio.playSfx('denied'); }
       else { S.credits -= d.price; S.owned.push(d.id); if (d.kind === 'emote') { const i = S.wheel.indexOf(null); if (i >= 0) S.wheel[i] = d.id; } else S.loadout = d.id; save(); shopNote = { kind: 'ok', text: 'PURCHASE COMPLETE' }; sfx('uibuy'); }
       ctx.render && ctx.render(); fillAvatars(); return true;
     }
@@ -549,7 +554,7 @@
   const REPLAY_HOUR = 1500, REWARD_GAP = 30000;
   function reward(taskId) {
     taskId = Number(taskId);
-    if (!Number.isInteger(taskId) || taskId < 1 || taskId > 48) return 0;
+    if (!Number.isInteger(taskId) || taskId < 1 || taskId > 48 || locked()) return 0;
     const now = Date.now(), first = S.paid.indexOf(taskId) < 0;
     S.rl = S.rl.filter((x) => now - x.t < 3600000);
     const last = S.rl.length ? S.rl[S.rl.length - 1].t : 0, hourly = S.rl.reduce((a, x) => a + x.n, 0);
@@ -581,8 +586,8 @@
       if (vaultTaken) return null;
       vaultTaken = true;
       return {
-        credit(n) { n = Math.floor(n); if (!isFinite(n) || n < 1 || n > 1000000 || S.credits + n > 1e9) return false; S.credits += n; save(); return true; },
-        debit(n) { n = Math.floor(n); if (!isFinite(n) || n < 1 || n > 1000000 || S.credits < n) return false; S.credits -= n; save(); return true; }
+        credit(n) { n = Math.floor(n); if (locked() || !isFinite(n) || n < 1 || n > 1000000 || S.credits + n > 1e9) return false; S.credits += n; save(); return true; },
+        debit(n) { n = Math.floor(n); if (locked() || !isFinite(n) || n < 1 || n > 1000000 || S.credits < n) return false; S.credits -= n; save(); return true; }
       };
     },
     get tampered() { return tampered; },
@@ -591,8 +596,23 @@
       event(kind, tags, content) { const K = window.NexaSchnorr; if (!K || !this.pk) return null; return K.makeEvent({ sk: K.unhex(S.id), pk: this.pk }, kind | 0, tags || [], String(content || '')); },
       ecdh(peer) { const K = window.NexaSchnorr; return K && this.pk && /^[0-9a-f]{64}$/.test(peer) ? K.ecdh(K.unhex(S.id), peer) : ''; }
     },
+    adminGrant(ev) {
+      const K = window.NexaSchnorr, t = Math.floor(Date.now() / 1000);
+      if (!ADM || !K || !ev || ev.pubkey !== ADM || ev.kind !== 7790 || !Array.isArray(ev.tags) || !K.checkEvent(ev)) return { ok: false, err: 'SIG' };
+      let c; try { c = JSON.parse(ev.content); } catch (e) { return { ok: false, err: 'BAD' }; }
+      const to = (ev.tags.find((x) => x[0] === 'p') || [])[1], n = c && c.n, x = c && c.x;
+      if (to !== window.Toys.ident.pk) return { ok: false, err: 'TARGET' };
+      if (!Number.isInteger(n) || n < 1 || n > ADM_MAX) return { ok: false, err: 'AMOUNT' };
+      if (!Number.isInteger(x) || t > x) return { ok: false, err: 'EXPIRED' };
+      if (x - ev.created_at > 900 || ev.created_at > t + 120) return { ok: false, err: 'BAD' };
+      if (S.adm.indexOf(ev.id) >= 0) return { ok: false, err: 'DUP' };
+      if (locked()) return { ok: false, err: 'LOCKED' };
+      if (S.credits + n > 1e9) return { ok: false, err: 'CAP' };
+      S.adm.push(ev.id); S.adm = S.adm.slice(-300); S.credits += n; save();
+      return { ok: true, n, id: ev.id, bal: S.credits };
+    },
     rankReward(place) {
-      const now = Date.now(); if (now - S.rk < 86400000 || !(place >= 1 && place <= 10)) return 0;
+      const now = Date.now(); if (locked() || now - S.rk < 86400000 || !(place >= 1 && place <= 10)) return 0;
       S.rk = now; const n = 500 - (place - 1) * 40; S.credits += n; save(); return n;
     },
     ab: {
@@ -603,6 +623,7 @@
       buy(id) {
         const d = ABD[id], n = d ? S.ab.lv[id] | 0 : -1;
         if (!d || n >= d.price.length) return { ok: false, err: 'MAX LEVEL' };
+        if (locked()) return { ok: false, err: 'LOCKED' };
         if (S.credits < d.price[n]) return { ok: false, err: 'NOT ENOUGH KP' };
         S.credits -= d.price[n]; S.ab.lv[id] = n + 1;
         if (n === 0) { const i = S.ab.eq.indexOf(null); if (i >= 0) S.ab.eq[i] = id; }
