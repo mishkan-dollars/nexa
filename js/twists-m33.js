@@ -466,4 +466,141 @@
       if (S.sc > 2.2) { S.sc = 0; if (e.los) { r.toast('YOUR LENS GLINT GAVE YOU AWAY', 1.6); r.hurt(14, e.x, e.z); } }
     }
   });
+
+  const fmt = (s) => Math.floor(s / 60) + ':' + String(Math.floor(s % 60)).padStart(2, '0');
+
+  // ===================================================================== 40 BRIDGE — мост рушится позади
+  // В забеге за вами обваливается полотно: чёрная пропасть догоняет прессом, пролёты трясутся.
+  TW.add(40, {
+    name: 'collapsing-span',
+    phase(r, T, name) {
+      const S = T.s, sec = T.secOf(name);
+      S.pit = null; S.sec = null;
+      if (!sec || sec.b !== 'run') return;
+      S.sec = sec;
+      const m = T.add(new (window.THREE.Mesh)(r.g.box, r.basic(0x000000))); m.scale.set(sec.W, 0.05, 1); m.position.set(0, 0.07, sec.zA); S.pit = m;
+      T.att(() => { r.extraShake = 0; });
+      T.after(2, () => r.hint('THE SPAN IS FALLING AWAY BEHIND YOU — KEEP RUNNING', 4));
+    },
+    tick(r, T, dt) {
+      const S = T.s, b = r.bulk;
+      if (!S.pit || !b || !b.on) return;
+      const len = Math.max(0.1, S.sec.zA + 12 - b.z);
+      S.pit.scale.z = len; S.pit.position.z = b.z + len / 2 - 0.4;
+      if (!r.locked) { r.extraShake = 0.004; if (Math.random() < dt * 4) r.sparks(rnd(-6, 6), 0.2, b.z + 1, 0, 1, 0, 2); }
+    }
+  });
+
+  // ===================================================================== 41 SUBWAY RUSH — вагон полон пассажиров
+  // В боевых секторах на полу лежат перепуганные пассажиры. Не стрелять: за чистый штурм без жертв — бонус.
+  TW.add(41, {
+    name: 'passengers',
+    setup(r, T) { T.s.dead = 0; },
+    phase(r, T, name) {
+      const S = T.s, sec = T.secOf(name);
+      if (!sec || sec.b !== 'fight') return;
+      T.spawnPts(sec, 7, 5).forEach((p) => {
+        const e = r.enemy('grunt', p[0], p[1], { friendly: true, drop: false, exact: true, hp: 0.4, yaw: Math.random() * 6.28 });
+        e.ai = (q) => { q.n.cvT = 1; q.n.daze = 1; q.n.armT = 0; q.n.creeping = false; return true; };
+        e.onDeath = () => { S.dead += 1; r.hint('A PASSENGER WAS HIT', 1.8); r.flash(0.25); };
+      });
+      if (!S.said) { S.said = true; T.after(3, () => r.hint('PASSENGERS ARE LYING ON THE FLOOR — DO NOT SHOOT THEM', 5)); }
+    },
+    finish(r, T, done) { if (done && T.s.dead === 0) r.twBonus = (r.twBonus || 0) + 40; }
+  });
+
+  // ===================================================================== 42 SIEGE — карта улучшения между волнами
+  // Перед каждым генератором три карты: БРОНЯ (+40 здоровья), ПАТРОНЫ (полный запас), ЛОВУШКА (бочки у генератора). Клик или [4] [5] [6]; через 9 с выбирается первая.
+  TW.add(42, {
+    name: 'upgrade-cards',
+    phase(r, T, name) {
+      const S = T.s, sec = T.secOf(name);
+      if (!sec || sec.b !== 'hold' || sec.k === 0) return;
+      const cards = [['ARMOR', '+40 MAX INTEGRITY, FULL HEAL'], ['AMMO', 'FULL RESERVES FOR EVERY WEAPON'], ['TRAP', 'THREE BARRELS AT THE GENERATOR']];
+      const el = document.createElement('div'); el.className = 'tw-cards';
+      el.innerHTML = '<div><h2>CHOOSE AN UPGRADE</h2><p class="s">[4] [5] [6] OR CLICK — AUTO IN 9 S</p>' + cards.map((c, i) => '<button type="button" class="tw-card"><i>[' + (i + 4) + ']</i><b>' + c[0] + '</b>' + c[1] + '</button>').join('') + '</div>';
+      r.layer.appendChild(el); let done = false;
+      if (!r.touch && document.pointerLockElement) { try { document.exitPointerLock(); } catch (e) { /* ignore */ } }
+      const pick = (i) => {
+        if (done) return; done = true; el.remove();
+        if (!r.touch) r.requestLock();
+        if (i === 0) { r.maxHp += 40; r.hp = r.maxHp; r.refreshHud(); }
+        else if (i === 1) r.inv.forEach((w) => { w.reserve = w.def.maxReserve; w.mag = w.def.mag; });
+        else for (let k = 0; k < 3; k += 1) { const x = sec.gen[0] + (k - 1) * 2.4, z = sec.gen[1] + 3; if (!r.blockedE(x, z)) { const b = r.barrel(x, z); T.att(() => { b.alive = false; b.col.off = true; b.m.visible = b.band.visible = false; }); } }
+        r.refreshHud(); r.sfx('notification'); r.toast(cards[i][0], 1.4);
+      };
+      el.querySelectorAll('.tw-card').forEach((b, i) => b.addEventListener('click', () => pick(i)));
+      const kd = (e) => { if (/^Digit[456]$/.test(e.code)) pick(+e.code.slice(5) - 4); };
+      document.addEventListener('keydown', kd);
+      T.att(() => { done = true; el.remove(); document.removeEventListener('keydown', kd); });
+      T.after(9, () => pick(0));
+    }
+  });
+
+  // ===================================================================== 43 TRAITOR — напарник стреляет в спину
+  // На стелс-участке с вами идёт напарник в белом жилете. На середине он оборачивается и открывает огонь.
+  TW.add(43, {
+    name: 'partner-betrayal',
+    phase(r, T, name) {
+      const S = T.s, sec = T.secOf(name);
+      S.p = null;
+      if (!sec || sec.b !== 'stealth') return;
+      const e = r.enemy('grunt', r.p.x + 2, r.p.z + 2, { friendly: true, drop: false, exact: true, hp: 2.2, tag: 'partner' });
+      S.p = e; S.sec = sec; S.turned = false;
+      e.ai = (q, dt) => {
+        if (S.turned) return false;
+        const g = q.n.g.position, tx = r.p.x + 1.6, tz = r.p.z + 2.2, dx = tx - g.x, dz = tz - g.z, d = Math.hypot(dx, dz);
+        if (d > 0.5) { const sp = Math.min(3.2, d * 2) * dt, nx = g.x + dx / d * sp, nz = g.z + dz / d * sp; if (!r.blockedE(nx, g.z)) g.x = nx; if (!r.blockedE(g.x, nz)) g.z = nz; q.n.yaw = Math.atan2(dx, dz); q.n.creeping = true; } else q.n.creeping = false;
+        q.n.armT = 0; return true;
+      };
+      T.att(() => { S.p = null; });
+      if (!S.said) { S.said = true; r.say(HND, 'ВОЗЬМИ НАПАРНИКА. ОН ПРОВЕДЁТ ТЕБЯ ДО КОМНАТЫ.', 3); r.hint('YOUR PARTNER (WHITE VEST) COVERS YOUR BACK', 4); }
+    },
+    tick(r, T, dt) {
+      const S = T.s, e = S.p;
+      if (!e || S.turned || e.dead || r.locked) return;
+      if (r.p.z < S.sec.zA - S.sec.D * 0.55) {
+        S.turned = true; e.friendly = false; e.n.vest.visible = true; e.n.armT = 1; e.cd = 0.3;
+        r.glitch && r.glitch(0.2); r.sfx('error');
+        r.say(e.n ? 'PARTNER' : '', 'ТЫ СЛИШКОМ МНОГО ЗНАЕШЬ.', 2.4); r.hint('HE TURNED ON YOU!', 3);
+      }
+    }
+  });
+
+  // ===================================================================== 44 THE WARDEN RETURNS — время BREAKOUT на спине
+  // Над Надзирателем висит ваше лучшее время прохождения BREAKOUT (миссия 7).
+  TW.add(44, {
+    name: 'warden-time',
+    phase(r, T, name) {
+      const S = T.s, sec = T.secOf(name);
+      S.lab = null;
+      if (!sec || sec.b !== 'boss') return;
+      const tm = TW.stats(null).tm[7];
+      S.txt = 'BREAKOUT ' + (tm ? fmt(tm) : '--:--');
+      S.lab = T.label(S.txt, 0, 4.2, 0, { w: 3, size: 54, bill: true });
+      T.att(() => { S.lab = null; });
+      T.after(2, () => r.hint('THE WARDEN WEARS YOUR BREAKOUT TIME ON HIS BACK', 4));
+    },
+    tick(r, T, dt) {
+      const S = T.s; if (!S.lab) return;
+      const b = T.foes((e) => e.type === 'boss')[0];
+      if (b) { S.lab.visible = true; S.lab.position.set(b.x, 4.8, b.z); } else S.lab.visible = false;
+    }
+  });
+
+  // ===================================================================== 47 COLD STORAGE — запись камер
+  // На финальной карточке: «ТЕБЯ ВИДЕЛИ / НЕ ВИДЕЛИ», число убийств и время ограбления.
+  TW.add(47, {
+    name: 'footage',
+    tick(r, T, dt) {
+      const S = T.s;
+      if (!r.ending || S.card) return;
+      const end = r.qs('.m-end');
+      if (end.classList.contains('on') && end.querySelector('h2').textContent === 'MISSION COMPLETE') {
+        S.card = true;
+        const seen = r.hz && (r.hz.loud || r.hz.alarm);
+        end.querySelector('p').insertAdjacentHTML('beforeend', '<br>SECURITY FOOTAGE: ' + (seen ? 'YOU WERE SEEN' : 'YOU WERE NOT SEEN') + '<br>HOSTILES DOWN: ' + (r.twStat ? r.twStat.kills : 0) + '<br>TIME ON JOB: ' + fmt(r.twStat ? r.twStat.time : 0));
+      }
+    }
+  });
 }());

@@ -245,4 +245,31 @@
     "YOUR LENS GLINT GAVE YOU AWAY": ["БЛИК ТВОЕЙ ЛИНЗЫ ВЫДАЛ ТЕБЯ","DEIN LINSENBLITZEN HAT DICH VERRATEN"],
     "SNIPER DUEL WON": ["ДУЭЛЬ СНАЙПЕРОВ ВЫИГРАНА","SCHARFSCHÜTZENDUELL GEWONNEN"]
   });
+  I18N.add('en', {
+    "THE SPAN IS FALLING AWAY BEHIND YOU — KEEP RUNNING": ["ПРОЛЁТ ОБРУШИВАЕТСЯ ЗА СПИНОЙ — БЕГИ ДАЛЬШЕ","DIE BRÜCKE BRICHT HINTER DIR WEG — LAUF WEITER"],
+    "A PASSENGER WAS HIT": ["ЗАДЕТ ПАССАЖИР","EIN FAHRGAST WURDE GETROFFEN"],
+    "PASSENGERS ARE LYING ON THE FLOOR — DO NOT SHOOT THEM": ["ПАССАЖИРЫ ЛЕЖАТ НА ПОЛУ — НЕ СТРЕЛЯЙ В НИХ","FAHRGÄSTE LIEGEN AM BODEN — NICHT AUF SIE SCHIESSEN"],
+    "CHOOSE AN UPGRADE": ["ВЫБЕРИ УЛУЧШЕНИЕ","WÄHLE EIN UPGRADE"],
+    "[4] [5] [6] OR CLICK — AUTO IN 9 S": ["[4] [5] [6] ИЛИ КЛИК — АВТОВЫБОР ЧЕРЕЗ 9 С","[4] [5] [6] ODER KLICK — AUTO IN 9 S"],
+    "ARMOR": ["БРОНЯ","PANZERUNG"],
+    "AMMO": ["ПАТРОНЫ","MUNITION"],
+    "TRAP": ["ЛОВУШКА","FALLE"],
+    "+40 MAX INTEGRITY, FULL HEAL": ["+40 К МАКС. ЦЕЛОСТНОСТИ, ПОЛНОЕ ЛЕЧЕНИЕ","+40 MAX. INTEGRITÄT, VOLLE HEILUNG"],
+    "FULL RESERVES FOR EVERY WEAPON": ["ПОЛНЫЙ ЗАПАС ДЛЯ КАЖДОГО ОРУЖИЯ","VOLLER VORRAT FÜR JEDE WAFFE"],
+    "THREE BARRELS AT THE GENERATOR": ["ТРИ БОЧКИ У ГЕНЕРАТОРА","DREI FÄSSER AM GENERATOR"],
+    "YOUR PARTNER (WHITE VEST) COVERS YOUR BACK": ["НАПАРНИК (БЕЛЫЙ ЖИЛЕТ) ПРИКРЫВАЕТ ТЕБЕ СПИНУ","DEIN PARTNER (WEISSE WESTE) DECKT DEN RÜCKEN"],
+    "HE TURNED ON YOU!": ["ОН ПРЕДАЛ ТЕБЯ!","ER HAT SICH GEGEN DICH GEWENDET!"],
+    "PARTNER": ["НАПАРНИК","PARTNER"],
+    "BREAKOUT {s0}": ["ПОБЕГ {s0}","AUSBRUCH {s0}"],
+    "BREAKOUT --:--": ["ПОБЕГ --:--","AUSBRUCH --:--"],
+    "THE WARDEN WEARS YOUR BREAKOUT TIME ON HIS BACK": ["НАДЗИРАТЕЛЬ НОСИТ ТВОЁ ВРЕМЯ ПОБЕГА НА СПИНЕ","DER AUFSEHER TRÄGT DEINE AUSBRUCHSZEIT AUF DEM RÜCKEN"],
+    "SECURITY FOOTAGE: YOU WERE SEEN": ["ЗАПИСЬ КАМЕР: ТЕБЯ ВИДЕЛИ","ÜBERWACHUNGSVIDEO: DU WURDEST GESEHEN"],
+    "SECURITY FOOTAGE: YOU WERE NOT SEEN": ["ЗАПИСЬ КАМЕР: ТЕБЯ НЕ ВИДЕЛИ","ÜBERWACHUNGSVIDEO: DU WURDEST NICHT GESEHEN"],
+    "HOSTILES DOWN: {0}": ["ВРАГОВ УСТРАНЕНО: {0}","FEINDE AUSGESCHALTET: {0}"],
+    "TIME ON JOB: {s0}": ["ВРЕМЯ НА ДЕЛЕ: {s0}","ZEIT AUFTRAG: {s0}"]
+  });
+  I18N.add('ru', {
+    "ВОЗЬМИ НАПАРНИКА. ОН ПРОВЕДЁТ ТЕБЯ ДО КОМНАТЫ.": ["TAKE A PARTNER. HE WILL GET YOU TO THE ROOM.","NIMM EINEN PARTNER MIT. ER BRINGT DICH ZUM RAUM."],
+    "ТЫ СЛИШКОМ МНОГО ЗНАЕШЬ.": ["YOU KNOW TOO MUCH.","DU WEISST ZU VIEL."]
+  });
 }());

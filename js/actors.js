@@ -494,6 +494,44 @@
     }
     F.act = TB;
   };
+  // то же для куклы другого игрока: пул пятен на груди (n.spine), мировой dir -> в систему куклы
+  Run.prototype.bloodSplatNpc = function (n, dir, amount) {
+    this.ensureBlood && this.ensureBlood();
+    if (!this.bl || !n || !n.spine) return;
+    const T = THREE;
+    let F = n.npb;
+    if (!F) {
+      const col = TB_COL[this.bloodMode] || TB_COL.red, geo = new T.CircleGeometry(0.5, 9);
+      F = n.npb = { s: [], i: 0, act: 0, c0: new T.Color(col[0]), c1: new T.Color(col[1]) };
+      for (let k = 0; k < 12; k += 1) {
+        const mt = new T.MeshBasicMaterial({ color: col[0], transparent: true, opacity: 0, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }), m = new T.Mesh(geo, mt);
+        m.visible = false; n.spine.add(m); F.s.push({ m, mt, t: 0, L: 1, sx: 1 });
+      }
+      (this.npcBlood || (this.npcBlood = [])).push(F);
+    }
+    const r = n.g.rotation.y, lx = dir ? -(dir.x * Math.cos(r) - dir.z * Math.sin(r)) : 0;
+    const a = clamp(amount === undefined ? 1 : amount, 0.1, 1.5), cnt = Math.round(2 + 5 * a);
+    for (let k = 0; k < cnt; k += 1) {
+      const q = F.s[F.i]; F.i = (F.i + 1) % 12;
+      q.m.position.set(clamp(lx * 0.06 + rnd(-0.1, 0.1), -0.13, 0.13), rnd(0.08, 0.42), 0.1);
+      q.m.rotation.z = Math.random() * 6.28; q.sx = rnd(0.02, 0.06) * (0.7 + a * 0.5); q.t = 0; q.L = rnd(16, 30); q.m.visible = true; q.mt.opacity = 0.92; q.mt.color.copy(F.c0);
+    }
+    F.act = 12;
+  };
+  Run.prototype.updateNpcBlood = function (dt) {
+    (this.npcBlood || []).forEach((F) => {
+      if (!F.act) return;
+      let act = 0;
+      F.s.forEach((q) => {
+        if (!q.m.visible) return;
+        q.t += dt; const u = q.t / q.L;
+        if (u >= 1) { q.m.visible = false; return; }
+        act += 1; q.mt.color.copy(F.c0).lerp(F.c1, clamp(u / 0.6, 0, 1)); q.mt.opacity = 0.92 * (u < 0.7 ? 1 : 1 - (u - 0.7) / 0.3);
+        const g = 0.4 + 0.6 * Math.min(1, q.t / 0.18); q.m.scale.set(q.sx * g, q.sx * g, 1);
+      });
+      F.act = act;
+    });
+  };
   Run.prototype.updateTorsoBlood = function (dt) {
     const F = this.fpb; if (!F || !F.act) return;
     let act = 0;

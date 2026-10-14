@@ -144,7 +144,7 @@
       this.on('net:left', (p) => this.removeRemote(p.slot, true)); this.on('net:roster', () => this.pruneRemotes());
       this.on('net:state', (s) => { if (s.state === 'lost') this.note('CONNECTION UNSTABLE…'); });
       this.on('hit', this.onHit); this.on('espawn', this.onSpawn); this.on('ekill', this.onKill); this.on('egone', this.onGone); this.on('snap', this.onSnap);
-      this.on('eshot', this.onEShot); this.on('hurt', this.onHurt); this.on('wave', this.onWave);
+      this.on('bl', this.onBlood); this.on('eshot', this.onEShot); this.on('hurt', this.onHurt); this.on('wave', this.onWave);
       r.hooks.push((dt) => { try { this.tick(dt); } catch (e) { if (!this.errLogged) { this.errLogged = true; console.warn('[coop]', e); } } });
       this.buildUi();
     }
@@ -530,6 +530,10 @@
       if (n.flashM && n.gunG) { n.g.updateMatrixWorld(true); v.copy(n.flashM.position); n.gunG.localToWorld(v); } else v.set(m.rem.x, 1.35, m.rem.z);
       return v;
     }
+    onBlood(p) {
+      const m = this.remotes.get(p.from | 0), r = this.run; if (!m || !m.av || !r.bloodSplatNpc || !m.av.n.g.visible) return;
+      r.bloodSplatNpc(m.av.n, { x: clamp(num(p.x), -1, 1), z: clamp(num(p.z), -1, 1) }, clamp(num(p.a, 0.5), 0.1, 1.5));
+    }
     onBoom(p) {
       const r = this.run; if (!r.blastFx || !r.scene) return;
       try { r.blastFx(num(p.x), num(p.y), num(p.z), clamp(num(p.r, 4), 0.5, 20), p.k); } catch (e) { /* только картинка */ }
@@ -730,6 +734,7 @@
       this.sendState(dt);
       this.sendSnap(dt);
       this.puppets(dt);
+      if (r.updateNpcBlood) r.updateNpcBlood(dt);
       if (this.story && !this.host) this.expireProv();
       this.cineSync();
       this.updateAvatars(dt);
@@ -821,6 +826,11 @@
   });
   wrap1('throwGadget', function (o, a) { const co = this.__co; if (co) co.gt = { id: a[0], t: this.time }; return o.apply(this, a); });
   wrap1('plantC4', function (o, a) { const co = this.__co; if (co) co.gt = { id: 'c4', t: this.time }; return o.apply(this, a); });
+  wrap1('bloodSplatTorso', function (o, a) {
+    const co = this.__co, d = a[0];
+    if (co && !co.solo && NN.connected && d) NN.sendAction({ type: 'bl', x: q(d.x, 100), z: q(d.z, 100), a: q(a[1] === undefined ? 1 : a[1], 10) });
+    return o.apply(this, a);
+  });
   wrap1('explode', function (o, a) {
     const co = this.__co;
     if (co && !co.solo && NN.connected) NN.sendAction({ type: 'boom', x: q(a[0], 10), y: q(a[1], 10), z: q(a[2], 10), r: q(a[3] || 4, 10), k: a[5] });
