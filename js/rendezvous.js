@@ -85,6 +85,64 @@
     try { const q = new URLSearchParams(location.search).getAll(name).join(','); return q ? q.split(',') : null; } catch (e) { return null; }
   }
   const cleanList = (l) => Array.from(new Set((l || []).map((x) => String(x).trim()).filter((x) => x && validServer(x)))).slice(0, 5000);
+  // ---- обнаружение релеев во время работы (NIP-66 kind 30166, NIP-65 kind 10002): адреса не вшиты, а берутся у проверенных релеев
+  const DISC_TTL = 14 * 86400000, DISC_MAX = 3000, DISC_USE = 2500;
+  const BAD_HOST = /(^|\.)(workers\.dev|onrender\.com|fly\.dev|trycloudflare\.com|ts\.net|duckdns\.org|onion|local|localhost|internal|example\.\w+)$/;
+  function cleanRelay(u) {
+    let x; try { x = new URL(String(u).trim()); } catch (e) { return ''; }
+    if (x.protocol !== 'wss:' || x.username || x.password || x.search || x.hash || (x.pathname && x.pathname !== '/')) return '';
+    const h = x.hostname.toLowerCase();
+    if (h.length > 40 || h.indexOf('.') < 1 || /^[\d.]+$/.test(h) || h.indexOf(':') >= 0 || h.indexOf('[') >= 0 || BAD_HOST.test(h) || /(^|[.-])(test|dev|staging|stage|demo|tmp)([.-]|\d|$)/.test(h) || !/^[a-z0-9.-]+$/.test(h)) return '';
+    return 'wss://' + h + (x.port && x.port !== '443' ? ':' + x.port : '');
+  }
+  let DISC = { list: {}, t: 0 };
+  try { const j = JSON.parse(lsGet('nexaDiscovered') || '{}'); if (j && typeof j.list === 'object' && j.list) { DISC.list = j.list; DISC.t = +j.t || 0; } } catch (e) { DISC = { list: {}, t: 0 }; }
+  const saveDisc = () => {
+    try {
+      const t = Date.now(); let k = Object.keys(DISC.list).filter((u) => t - DISC.list[u] < DISC_TTL);
+      if (k.length > DISC_MAX) k = k.sort((a, b) => DISC.list[b] - DISC.list[a]).slice(0, DISC_MAX);
+      const o = {}; k.forEach((u) => { o[u] = DISC.list[u]; }); DISC.list = o;
+      lsSet('nexaDiscovered', JSON.stringify({ v: 1, t: DISC.t, list: o }));
+    } catch (e) { /* не критично */ }
+  };
+  const discUrls = () => { const t = Date.now(); return Object.keys(DISC.list).filter((u) => t - DISC.list[u] < DISC_TTL).slice(0, DISC_USE); };
+  function discEvent(ev, add) {
+    if (!ev || typeof ev !== 'object' || !Array.isArray(ev.tags)) return;
+    if (ev.kind === 30166) {
+      const tags = ev.tags, d = tags.find((x) => x[0] === 'd'); if (!d) return;
+      const req = tags.filter((x) => x[0] === 'R').map((x) => String(x[1]));
+      if (req.some((x) => x === 'auth' || x === 'payment' || x === 'pow')) return;
+      if (tags.some((x) => x[0] === 'n' && x[1] && x[1] !== 'clearnet')) return;
+      if (!tags.some((x) => x[0] === 'rtt-open')) return;
+      add(d[1]);
+    } else if (ev.kind === 10002) {
+      ev.tags.forEach((x) => { if (x[0] === 'r' && x[1]) add(x[1]); });
+    }
+  }
+  const DS = { running: false };
+  function discover(force) {
+    if (DS.running || !serversOn()) return Promise.resolve(0);
+    if (!force && Date.now() - DISC.t < 6 * 3600000 && Object.keys(DISC.list).length > 50) return Promise.resolve(0);
+    DS.running = true;
+    const base = (SV.NOSTR_VERIFIED || []).filter((u) => { const r = store[u]; return !r || r.ok || !fresh(r); });
+    const src = (paramList('relay') || base).slice(0, 4);
+    let added = 0;
+    const add = (u) => { const c = cleanRelay(u); if (!c) return; if (!DISC.list[c]) added += 1; DISC.list[c] = Date.now(); };
+    const one = (url) => new Promise((res) => {
+      let ws; const fin = () => { clearTimeout(tm); try { ws && ws.close(); } catch (e) { /* ok */ } res(); };
+      const tm = setTimeout(fin, 9000);
+      try { ws = new WebSocket(url); } catch (e) { fin(); return; }
+      let eose = 0, n = 0;
+      ws.onopen = () => { try { ws.send(JSON.stringify(['REQ', 'nxd1', { kinds: [30166], limit: 700 }])); ws.send(JSON.stringify(['REQ', 'nxd2', { kinds: [10002], limit: 700 }])); } catch (e) { fin(); } };
+      ws.onmessage = (m) => {
+        let j; try { j = JSON.parse(m.data); } catch (e) { return; }
+        if (!Array.isArray(j)) return;
+        if (j[0] === 'EVENT' && n < 1500) { n += 1; discEvent(j[2], add); } else if (j[0] === 'EOSE' && (eose += 1) >= 2) fin();
+      };
+      ws.onerror = fin; ws.onclose = fin;
+    });
+    return Promise.all(src.map(one)).then(() => { DS.running = false; DISC.t = Date.now(); saveDisc(); seAt = 0; emitServers(); return added; }, () => { DS.running = false; return 0; });
+  }
   // [{url, type:'tracker'|'nostr'}]: параметры ?tracker= / ?relay= (через запятую) или localStorage 'nexaTrackers' / 'nexaRelays' заменяют списки по умолчанию
   let seCache = null, seAt = 0;
   function serverEntries() {
@@ -100,7 +158,9 @@
     if (custom) { tr = tr || []; rl = rl || []; } else { tr = tr || SV.TRACKERS; rl = rl || SV.NOSTR_RELAYS; }
     const ver = new Set((custom ? [] : (SV.NOSTR_VERIFIED || []).concat(SV.TRACKERS_VERIFIED || []))), low = new Set(custom ? [] : (SV.NOSTR_LOW || []));
     const out = cleanList(tr).slice(0, 8).map((u) => ({ url: u, type: 'tracker', verified: ver.has(u) }));
-    cleanList(rl).forEach((u) => out.push({ url: u, type: 'nostr', verified: ver.has(u), low: low.has(u) }));
+    const seen = new Set();
+    cleanList(rl).forEach((u) => { seen.add(u); out.push({ url: u, type: 'nostr', verified: ver.has(u), low: low.has(u) }); });
+    if (!custom && serversOn()) discUrls().forEach((u) => { if (!seen.has(u) && validServer(u)) { seen.add(u); out.push({ url: u, type: 'nostr', verified: false, low: false, disc: true }); } });
     return out;
   }
   let srvT = 0;
@@ -154,7 +214,7 @@
   // честная сводка: всё считается по фактическим проверкам и соединениям
   function summary() {
     const l = serverList();
-    return { total: l.length, checked: l.filter((x) => x.checked).length, online: l.filter((x) => x.state === 'online' || x.state === 'active').length, active: l.filter((x) => x.state === 'active' || x.state === 'connecting').length, down: l.filter((x) => x.state === 'down').length };
+    return { found: discUrls().length, total: l.length, checked: l.filter((x) => x.checked).length, online: l.filter((x) => x.state === 'online' || x.state === 'active').length, active: l.filter((x) => x.state === 'active' || x.state === 'connecting').length, down: l.filter((x) => x.state === 'down').length };
   }
   const transports = new Set();
   function activeSet() { const s = new Set(); transports.forEach((t) => t.adapters.forEach((a) => { if (a.state === 'connecting' || a.state === 'open') s.add(a.url); })); return s; }
@@ -374,7 +434,12 @@
   const MON = { t: 0, last: 0 };
   const inUse = () => !!(hostR || joinR || quickR || G.on);
   const monitorOk = () => serversOn() && (consented() || inUse());
-  function monitorTick() { if (!monitorOk()) return; probe(false, consented() ? 24 : 12); }   // без согласия, только при использовании комнат: не больше 12 серверов
+  function monitorTick() {
+    if (!monitorOk()) return;
+    discover(false);
+    const pending = Object.keys(DISC.list).filter((u) => !fresh(store[u])).length;
+    probe(false, pending > 24 ? 64 : consented() ? 24 : 12);
+  }   // без согласия, только при использовании комнат: не больше 12 серверов
   const monitor = {
     start() { if (MON.t || !monitorOk()) return; monitorTick(); MON.t = setInterval(monitorTick, 40000); },       // каждый заход — до 24 непроверенных (по приоритету), проверенные живут 30 минут
     stop() { clearInterval(MON.t); MON.t = 0; },
@@ -854,7 +919,7 @@
   window.NexaRoom = {
     DEFAULT_TRACKERS: SV.TRACKERS, trackers: trackerList, validTracker, Rendezvous, MultiTransport, infoHash, sha1js,
     servers: {
-      list: serverList, summary, probe, monitor, entries: serverEntries, health: HEALTH, get on() { return serversOn(); },
+      list: serverList, summary, probe, monitor, discover, discovered: () => discUrls().length, entries: serverEntries, health: HEALTH, get on() { return serversOn(); },
       setOn(v) { lsSet('nexaServersOn', v ? '1' : '0'); if (!v) { stopHost(); stopJoin(); stopQuick(); gossipStop(true); } emitServers(); },
       get live() { return summary().online; }
     },

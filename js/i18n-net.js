@@ -364,6 +364,7 @@
     '… AND {0} MORE SERVERS': ['… И ЕЩЁ СЕРВЕРОВ: {0}', '… UND {0} WEITERE SERVER'],
     'TOTAL': ['ВСЕГО', 'GESAMT'],
     'CHECKED': ['ПРОВЕРЕНО', 'GEPRÜFT'],
+    'FOUND': ['НАЙДЕНО', 'GEFUNDEN'],
     'IN USE': ['В РАБОТЕ', 'IM EINSATZ'],
     'UNAVAILABLE': ['НЕДОСТУПЕН', 'NICHT ERREICHBAR'],
     'RESERVE': ['В РЕЗЕРВЕ', 'RESERVE'],

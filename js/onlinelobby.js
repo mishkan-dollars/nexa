@@ -835,7 +835,7 @@
     $$('.ol-srv').forEach((blk) => {
       blk.classList.toggle('is-off', !on);
       const cnt = blk.querySelector('.srv-count'); cnt.textContent = '';
-      [['TOTAL', sm.total], ['CHECKED', sm.checked], ['ONLINE', sm.online], ['IN USE', sm.active], ['UNAVAILABLE', sm.down]].forEach((c) => {
+      [['FOUND', sm.found], ['TOTAL', sm.total], ['CHECKED', sm.checked], ['ONLINE', sm.online], ['IN USE', sm.active], ['UNAVAILABLE', sm.down]].forEach((c) => {
         const sp = document.createElement('span'); sp.className = 'sm-' + c[0].replace(/ /g, '').toLowerCase();
         const em = document.createElement('em'); em.textContent = c[0]; const n = document.createElement('b'); n.setAttribute('translate', 'no'); n.textContent = String(c[1]);
         sp.appendChild(em); sp.appendChild(n); cnt.appendChild(sp);
