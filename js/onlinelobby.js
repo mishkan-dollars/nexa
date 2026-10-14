@@ -527,17 +527,17 @@
         const g = new T.Group(); g.position.set(p[0], 0, p[1]);
         const disc = new T.Mesh(new T.CylinderGeometry(p[2], p[2] * 1.04, 0.09, 40), new T.MeshLambertMaterial({ color: 0x1c1d21, emissive: 0x060607 })); disc.position.y = 0.045; g.add(disc);
         const ringMat = new T.MeshBasicMaterial({ color: i === 0 ? 0xff4a3d : 0x3a3d44, transparent: true, opacity: i === 0 ? 1 : 0.7 });
-        const ring = new T.Mesh(new T.TorusGeometry(p[2] * 0.98, 0.028, 8, 56), ringMat); ring.rotation.x = Math.PI / 2; ring.position.y = 0.092; g.add(ring);
+        const ring = new T.Mesh(new T.TorusGeometry(p[2] * 0.98, 0.028, 8, 56), ringMat); ring.rotation.x = Math.PI / 2; ring.position.y = 0.092; ring.visible = false;   // колец у игроков нет (стиль игры)
         const glowMat = new T.MeshBasicMaterial({ map: glowTex(T, i === 0 ? 'rgba(255,90,70,.75)' : 'rgba(120,130,150,.25)', i === 0 ? 'rgba(255,60,50,.22)' : 'rgba(80,90,110,.08)'), transparent: true, depthWrite: false, blending: T.AdditiveBlending });
-        const glow = new T.Mesh(new T.PlaneGeometry(p[2] * 3.1, p[2] * 3.1), glowMat); glow.rotation.x = -Math.PI / 2; glow.position.y = 0.1; g.add(glow);
+        const glow = new T.Mesh(new T.PlaneGeometry(p[2] * 3.1, p[2] * 3.1), glowMat); glow.rotation.x = -Math.PI / 2; glow.position.y = 0.1; glow.visible = false;
         scene.add(g); plats.push({ g, ringMat, glowMat, disc, ring, glow }); keep.push(disc.geometry, disc.material, ring.geometry, ringMat, glow.geometry, glowMat, glowMat.map);
       });
       const floor = new T.Mesh(new T.PlaneGeometry(24, 18), new T.MeshBasicMaterial({ map: glowTex(T, 'rgba(18,20,26,.95)', 'rgba(10,11,14,.55)'), transparent: true, depthWrite: false }));
       floor.rotation.x = -Math.PI / 2; floor.position.set(0, 0.002, -1); scene.add(floor); keep.push(floor.geometry, floor.material, floor.material.map);
-      scene.add(new T.AmbientLight(0x9aa4b8, 0.85));
+      scene.add(new T.AmbientLight(0xb4b4b4, 0.85));
       const key = new T.DirectionalLight(0xffffff, 0.95); key.position.set(2.5, 5, 6); scene.add(key);
-      const rim = new T.DirectionalLight(0x5a78ff, 0.8); rim.position.set(-3, 3, -5); scene.add(rim);
-      const pl = new T.PointLight(0xff4030, 0.9, 5, 2); pl.position.set(0, 0.5, PLAT[0][1] + 0.4); scene.add(pl);
+      const rim = new T.DirectionalLight(0xc8c8c8, 0.7); rim.position.set(-3, 3, -5); scene.add(rim);
+      const pl = new T.PointLight(0xffffff, 0.35, 5, 2); pl.position.set(0, 0.5, PLAT[0][1] + 0.4); scene.add(pl);
       // стикмены игры: тот же риг, что у врагов (actors.js); тело чуть светлее, чтобы читалось на тёмном фоне
       const mkFig = (pi, yaw) => {
         const n = C.Run.prototype.npc.call(hostObj, PLAT[pi][0], PLAT[pi][1], yaw);

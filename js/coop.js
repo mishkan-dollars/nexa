@@ -105,6 +105,7 @@
     constructor(run, spec) {
       this.run = run; this.spec = spec; this.mode = spec.mode === 'mission' ? 'mission' : 'sandbox';
       this.host = spec.role !== 'guest'; this.slot = spec.role === 'guest' ? 2 : 1; this.solo = !!spec.solo;
+      if (!this.solo) run.noPause = true;   // в онлайне паузы нет (мир идёт у друга): Esc/кнопка/потеря фокуса не ставят игру на паузу
       this.shared = this.mode === 'sandbox';
       this.rem = { x: 0, z: 0, yaw: 0, hp: 100, dead: false, w: '', crouch: false, aim: 0, got: false, p: { x: 0, z: 0, yaw: 0, pitch: 0, phase: 0, moving: 0 }, lastT: 0 };
       this.av = null; this.ready = false; this.peerReady = false; this.offs = []; this.sendT = 0; this.snapT = 0; this.hudT = 0; this.lastSend = 0;
@@ -236,7 +237,7 @@
     }
     partnerGone(text) {
       if (this.gone) return;
-      this.gone = true; this.solo = true;
+      this.gone = true; this.solo = true; this.run.noPause = false;   // друг ушёл — снова одиночная игра, пауза разрешена
       this.note(text || 'FRIEND LEFT', 3);
       if (this.av) { this.av.n.g.visible = false; }
       this.stopRemoteEmote();
@@ -304,9 +305,16 @@
       const e = this.emo = { id, tr, t: 0, fig: null, pose: new Float32Array(45), tmp: new Float32Array(45), wait: false };
       const go = () => { if (this.emo !== e || r.disposed) return; e.fig = EC.makeFigure(THREE, { cast: false }); r.scene.add(e.fig.group); EC.idlePose(0, e.pose, tr); e.fig.update(e.pose, null); };
       if (tr.ready()) go(); else tr.load().then(go);
+      const snd = r.snd;   // музыка танца напарника: тот же трек, что играет у самого танцующего; тише с расстоянием
+      if (snd && snd.ctx && snd.ctx.state !== 'closed' && EC.makeMusic) {
+        try { const M = e.music = EC.makeMusic(snd.ctx, () => Math.min(1, snd.musVol() * 1.35) * this.emoVol(), tr); M.target = 1; M.play(0); } catch (er) { e.music = null; }
+      }
     }
+    emoVol() { const R = this.rem, p = this.run.p; if (!R) return 1; return Math.max(0.12, 1 - Math.hypot(R.x - p.x, R.z - p.z) / 45); }
     updateEmote(dt) {
-      const EC = window.EmoteCore, e = this.emo, R = this.rem; if (!e || !e.fig) return;
+      const EC = window.EmoteCore, e = this.emo, R = this.rem; if (!e) return;
+      if (e.music) e.music.tick(dt);
+      if (!e.fig) return;
       e.t += dt;
       const tr = e.tr;
       EC.sampleDance(e.t, e.pose, tr);
@@ -317,6 +325,7 @@
     stopRemoteEmote() {
       const e = this.emo; if (!e) return;
       this.emo = null;
+      if (e.music) { try { e.music.stop(); } catch (er) { /* уже остановлена */ } e.music = null; }
       if (e.fig) { try { e.fig.dispose(); } catch (er) { /* сцена могла быть уничтожена */ } }
     }
 
