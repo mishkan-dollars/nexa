@@ -12,6 +12,20 @@ const http = require('http'), crypto = require('crypto'), path = require('path')
 const S = require(path.join(__dirname, '..', 'js', 'schnorr.js'));
 const KIND = (process.argv.find((a) => /^--kind=\d+$/.test(a)) || '').slice(7) | 0, NOTAG = process.argv.includes('--notag'), AUTHR = process.argv.includes('--auth');
 const PORT = Number(process.argv.find((a) => /^\d+$/.test(a))) || 8791, POW = process.argv.includes('--pow'), SILENT = process.argv.includes('--silent');
+const DISC = (process.argv.find((a) => /^--disc=\d+$/.test(a)) || '').slice(7) | 0;
+function discEvents(kind) {
+  const out = [], now = Math.floor(Date.now() / 1000);
+  for (let i = 0; i < DISC; i += 1) {
+    const kinds = i % 20, host = 'relay' + i + '.nodenet' + (i % 37) + '.io', url = 'wss://' + host;
+    const bad = [null, 'wss://x' + i + '.onion', 'wss://10.0.' + (i % 250) + '.1', 'wss://test' + i + '.nodenet.io', 'wss://a' + i + '.workers.dev', 'ws://' + host, 'wss://' + 'v'.repeat(60) + i + '.io'];
+    if (kind === 30166) {
+      const tags = [['d', kinds >= 14 && kinds < 20 ? bad[kinds - 13] : url], ['rtt-open', '120']];
+      if (kinds === 1) tags.push(['R', 'auth']); if (kinds === 2) tags.push(['R', 'payment']); if (kinds === 3) { tags.length = 1; }
+      out.push({ id: String(i), pubkey: 'p', created_at: now, kind, tags, content: '', sig: 's' });
+    } else out.push({ id: 'r' + i, pubkey: 'p' + (i % 50), created_at: now, kind, tags: [['r', 'wss://extra' + i + '.nostrhub.org'], ['r', bad[(i % 6) + 1]]], content: '', sig: 's' });
+  }
+  return out;
+}
 const conns = new Set(), stats = { events: 0, bad: 0, delivered: 0, conns: 0, reqs: 0 };
 function frame(op, payload) {
   const b = Buffer.isBuffer(payload) ? payload : Buffer.from(payload), n = b.length;
@@ -28,7 +42,9 @@ function onMsg(c, text) {
     stats.reqs += 1;
     if (AUTHR) { send(c, ['CLOSED', m[1], 'auth-required: please authenticate']); return; }
     if (NOTAG && m.slice(2).some((f) => f && f['#t'])) { send(c, ['CLOSED', m[1], 'error: tag filters not supported']); return; }
-    c.subs.set(m[1], m.slice(2)); send(c, ['EOSE', m[1]]);
+    c.subs.set(m[1], m.slice(2));
+    if (DISC) m.slice(2).forEach((f) => { if (f && f.kinds && f.kinds.some((k) => k === 30166 || k === 10002)) discEvents(f.kinds[0]).forEach((ev) => send(c, ['EVENT', m[1], ev])); });
+    send(c, ['EOSE', m[1]]);
   }
   else if (m[0] === 'CLOSE') c.subs.delete(m[1]);
   else if (m[0] === 'EVENT') {
