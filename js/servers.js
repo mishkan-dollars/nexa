@@ -28,7 +28,8 @@
   window.NexaServers = {
     VERSION: 6,
     // WebTorrent-трекеры (WebSocket, протокол announce). open.ftorrent.com открылся у пользователя, но бесплатность/условия не подтверждены — оставлен, отмечен.
-    TRACKERS: ['wss://tracker.webtorrent.dev', 'wss://tracker.openwebtorrent.com', 'wss://open.ftorrent.com:443'],
+    // + публичные WebTorrent-трекеры из стандартного списка webtorrent (из памяти, НЕ ПРОВЕРЕНО, проверка живости отсеет мёртвые): tracker.btorrent.xyz, tracker.fastcast.nz
+    TRACKERS: ['wss://tracker.webtorrent.dev', 'wss://tracker.openwebtorrent.com', 'wss://open.ftorrent.com:443', 'wss://tracker.btorrent.xyz', 'wss://tracker.fastcast.nz'],
     TRACKERS_VERIFIED: ['wss://tracker.webtorrent.dev', 'wss://tracker.openwebtorrent.com', 'wss://open.ftorrent.com:443'],
     // Не включены (у пользователя не открылся; у сервиса есть тарифы): tracker.files.fm — включайте сами через ?tracker=… или localStorage 'nexaTrackers'.
     TRACKERS_OPTIONAL: ['wss://tracker.files.fm:7073/announce'],

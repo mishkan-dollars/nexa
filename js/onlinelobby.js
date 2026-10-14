@@ -795,7 +795,9 @@
       });
       const sw = blk.querySelector('.srv-on'); if (sw) sw.checked = on;
       const ul = blk.querySelector('.srv-list'); ul.textContent = '';
-      list.forEach((s) => {
+      const prio = { active: 0, connecting: 1, online: 2, down: 3, idle: 4, off: 5 };
+      const shown = list.length > 60 ? list.slice().sort((a, b) => (prio[a.state] || 9) - (prio[b.state] || 9) || (a.ms || 1e9) - (b.ms || 1e9)).slice(0, 60) : list;
+      shown.forEach((s) => {
         const li = document.createElement('li'); li.className = 'srv st-' + s.state;
         const dot = document.createElement('i'); dot.setAttribute('aria-hidden', 'true');
         const nm = document.createElement('b'); nm.setAttribute('translate', 'no'); nm.textContent = s.host;
@@ -806,6 +808,7 @@
         if (s.why && WHY_TXT[s.why]) { const w = document.createElement('i'); w.className = 'srv-why'; w.textContent = WHY_TXT[s.why]; li.appendChild(w); }
         ul.appendChild(li);
       });
+      if (list.length > shown.length) { const li = document.createElement('li'); li.className = 'srv-more'; li.textContent = '… AND ' + (list.length - shown.length) + ' MORE SERVERS'; ul.appendChild(li); }
       const btn = blk.querySelector('[data-act="srv-probe"]'); if (btn) btn.disabled = !on;
     });
   }
@@ -848,13 +851,14 @@
   }
   function renderJoin() {
     const el = $('#ol-join'), j = L.joinUi; if (!el || !j) return;
-    const stages = { searching: j.kind === 'quick' ? 'LOOKING FOR PLAYERS…' : 'LOOKING FOR YOUR FRIEND…', connecting: 'CONNECTING TO YOUR FRIEND…', paired: 'PLAYER FOUND — CONNECTING…', hosting: 'WAITING FOR THE OTHER PLAYER…',
+    const stages = { retry: 'TRYING OTHER SERVERS…', searching: j.kind === 'quick' ? 'LOOKING FOR PLAYERS…' : 'LOOKING FOR YOUR FRIEND…', connecting: 'CONNECTING TO YOUR FRIEND…', paired: 'PLAYER FOUND — CONNECTING…', hosting: 'WAITING FOR THE OTHER PLAYER…',
       timeout: 'NO ANSWER YET', unavailable: 'SERVERS NOT REACHABLE', error: 'COULD NOT CONNECT', open: 'CONNECTED' };
     const box = document.createElement('div'); box.className = 'pk-box jn-box';
     const h = document.createElement('h3'); h.textContent = j.kind === 'quick' ? 'QUICK PLAY' : 'CONNECTING TO YOUR FRIEND…'; box.appendChild(h);
     const s = document.createElement('p'); s.className = 'jn-st' + (j.stage === 'timeout' || j.stage === 'unavailable' || j.stage === 'error' ? ' bad' : ''); s.textContent = stages[j.stage] || stages.searching; box.appendChild(s);
     const bar = document.createElement('div'); bar.className = 'pf-bar'; const bi = document.createElement('i'); bi.style.width = clamp(((Date.now() - j.t0) / 20000) * 100, 4, 100) + '%'; bar.appendChild(bi);
-    if (j.stage === 'searching' || j.stage === 'connecting' || j.stage === 'paired' || j.stage === 'hosting') box.appendChild(bar);
+    if (j.stage === 'searching' || j.stage === 'retry' || j.stage === 'connecting' || j.stage === 'paired' || j.stage === 'hosting') box.appendChild(bar);
+    if (j.attempt > 1 && j.of) { const at = document.createElement('p'); at.className = 'v-note'; at.textContent = 'ATTEMPT ' + j.attempt + '/' + j.of; box.appendChild(at); }
     if (j.msg) { const m = document.createElement('p'); m.className = 'v-note bad'; m.textContent = NN.text(j.msg); box.appendChild(m); }
     const p2 = document.createElement('p'); p2.className = 'cn-priv'; p2.textContent = 'The meeting servers and your friend can technically see your network address (WebRTC); a VPN hides it.'; box.appendChild(p2);
     const act = document.createElement('div'); act.className = 'pf-btns';
@@ -1296,6 +1300,7 @@
       RM.on('join', (j) => {
         if (!root || !L.joinUi) return;
         if (j.stage === 'open') { joinStage('open'); setTab('play'); toast('FRIEND CONNECTED'); return; }
+        L.joinUi.attempt = j.attempt; L.joinUi.of = j.of;
         joinStage(j.stage, j.err);
       });
       RM.on('quick', (q) => {

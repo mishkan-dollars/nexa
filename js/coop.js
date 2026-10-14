@@ -392,9 +392,9 @@
       const L = this.lastPos;
       const x = q(p.x, 50), z = q(p.z, 50), a = q(p.yaw, 50), c = r.pm && r.pm.crouch ? 1 : 0, w = r.wp ? r.wp.id : '', h = r.cb ? Math.round(clamp(r.hp / (r.maxHp || 100), 0, 1) * 100) : 100, d = r.dead ? 1 : 0, aim = q(r.aimK || 0, 4);
       const same = x === L.x && z === L.z && a === L.a && c === L.c && w === L.w && h === L.h && d === L.d && aim === L.q;
-      if (this.sendT < (same ? 0.5 : 0.066)) return;      // ≤ 15 пакетов/с; в покое — 2 раза в секунду
+      if (this.sendT < (document.hidden ? 1 : same ? 0.5 : 0.066)) return;      // ≤ 15 пакетов/с; в покое — 2 раза в секунду; в скрытой вкладке — раз в секунду
       this.sendT = 0;
-      Object.assign(L, { x, z, a, c, w, h, d, q: aim });
+      L.x = x; L.z = z; L.a = a; L.c = c; L.w = w; L.h = h; L.d = d; L.q = aim;
       NN.sendAction({ type: 'pos', x, z, a, c, w, h, d, q: aim });
     }
     onPos(p) {
@@ -447,7 +447,7 @@
     waveText(S, left) { this.run.objective('WAVE ' + S.wave + ' — ' + left + ' ENEMIES'); }
     sendSnap(dt) {
       if (!this.host || this.solo || !this.shared || !this.peerReady) return;
-      this.snapT += dt; if (this.snapT < 0.1) return; this.snapT = 0;
+      this.snapT += dt; if (this.snapT < (document.hidden ? 0.5 : 0.1)) return; this.snapT = 0;
       const list = [];
       this.byId.forEach((e) => {
         if (e.dead || !e.n) return;

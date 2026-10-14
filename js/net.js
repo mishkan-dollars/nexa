@@ -245,7 +245,7 @@
       close() { if (c.readyState === 'closed') return; c.readyState = 'closed'; c.dispatch('close'); } };
     return c;
   }
-  function newLink(gameRole, local) {
+  function newLink(gameRole, local, pool) {
     const L = { id: ++linkSeq, gr: gameRole, slot: gameRole === 'guest' ? 1 : 0, state: 'creating', pc: null, act: null, rel: null, sid: '', polite: gameRole === 'guest', making: false,
       ready: false, attached: false, lastN: {}, lastRx: 0, openAt: 0, rtt: 0, rttMin: 0, pingT: 0, watchT: 0, connT: 0, restartT: 0, intentional: false, peerBye: false,
       rate: { t: 0, n: 0 }, peer: null, info: null, offerCode: '', answerCode: '', tx: 0, rx: 0, txB: 0, rxB: 0, chatGot: [], sender: null, remote: null, el: null, dest: null, rsrc: null,
@@ -253,7 +253,7 @@
     let act, rel;
     if (local) { L.local = true; act = fakeChan('act'); rel = fakeChan('rel'); }
     else {
-      const pc = L.pc = new RTCPeerConnection({ iceServers: cfg.iceServers, bundlePolicy: 'max-bundle', iceCandidatePoolSize: 0 });
+      const pc = L.pc = new RTCPeerConnection({ iceServers: cfg.iceServers, bundlePolicy: 'max-bundle', iceCandidatePoolSize: pool | 0 });      // pool > 0: кандидаты собираются заранее (быстрее offer/answer)
       pc.addEventListener('connectionstatechange', () => onPcState(L));
       pc.addEventListener('iceconnectionstatechange', () => onPcState(L));
       pc.addEventListener('negotiationneeded', () => negotiate(L));
@@ -484,12 +484,16 @@
       let done = false, t = 0;
       const fin = (forced) => {
         if (done) return;
-        done = true; clearTimeout(t);
+        done = true; clearTimeout(t); clearTimeout(early);
         pc.removeEventListener('icegatheringstatechange', chk); pc.removeEventListener('icecandidate', onc);
         resolve({ sdp: (pc.localDescription && pc.localDescription.sdp) || '', forced });
       };
       const chk = () => { if (pc.iceGatheringState === 'complete') fin(false); };
-      const onc = (e) => { if (!e.candidate) fin(false); };
+      let early = 0;
+      const onc = (e) => {
+        if (!e.candidate) { fin(false); return; }
+        if (!early && /typ (srflx|relay)/.test(e.candidate.candidate || '')) early = setTimeout(() => fin(false), 220);     // публичный кандидат есть — ждём не весь сбор, а ещё 0,2 с
+      };
       pc.addEventListener('icegatheringstatechange', chk); pc.addEventListener('icecandidate', onc);
       t = setTimeout(() => fin(true), Math.max(0, cfg.forceMs - (Date.now() - t0)));   // страховка 2.5 с (от начала создания): затянувшийся сбор ICE не должен блокировать выдачу
       chk();
@@ -506,21 +510,21 @@
   }
   // свободное (не присоединённое) соединение-оферент: SDP с полным набором кандидатов (для трекера). Возвращает {link, sdp, forced}
   async function newOffer(gameRole) {
-    const L = newLink(gameRole), t0 = Date.now();
+    const L = newLink(gameRole, false, 2), t0 = Date.now();
     try {
       await L.pc.setLocalDescription(await L.pc.createOffer());
       const g = await gather(L.pc, t0);
-      return { link: L, sdp: g.sdp, forced: g.forced };
+      return { link: L, sdp: cfg.shrinkRz === false ? g.sdp : shrinkSdp(g.sdp).sdp, forced: g.forced };
     } catch (e) { destroyLink(L); return null; }
   }
   async function newAnswer(gameRole, offerSdp) {
-    const L = newLink(gameRole), t0 = Date.now();
+    const L = newLink(gameRole, false, 2), t0 = Date.now();
     try {
       await L.pc.setRemoteDescription({ type: 'offer', sdp: offerSdp });
       await L.pc.setLocalDescription(await L.pc.createAnswer());
       const g = await gather(L.pc, t0);
       L.state = 'answering';
-      return { link: L, sdp: g.sdp, forced: g.forced };
+      return { link: L, sdp: cfg.shrinkRz === false ? g.sdp : shrinkSdp(g.sdp).sdp, forced: g.forced };
     } catch (e) { destroyLink(L); return null; }
   }
   async function applyAnswer(L, sdp) {
@@ -661,11 +665,16 @@
   // единая точка отправки: {type, n, ts, ...поля}. Хост — всем гостям (или opts.to = слот), гость — Хосту (DIRECT-пакеты уходят адресату через Хоста)
   function sendAction(data, opts) {
     if (!data || typeof data.type !== 'string') return false;
-    const fast = opts && opts.fast !== undefined ? !!opts.fast : undefined;
+    const fast = opts && opts.fast !== undefined ? !!opts.fast : !!FAST[data.type];
     let ok = false;
     if (R.role === 'host') {
       const to = opts && opts.to;
-      R.links.forEach((l) => { if (l.ready && l.opened && (!to || l.slot === to)) { if (sendLink(l, data, fast)) ok = true; } });
+      let s = '';
+      R.links.forEach((l) => {
+        if (!l.ready || !l.opened || (to && l.slot !== to)) return;
+        if (!s) { const pkt = Object.assign({}, data); pkt.n = ++seq; pkt.ts = Date.now(); try { s = JSON.stringify(pkt); } catch (e) { s = '!'; } }
+        if (s !== '!' && sendLink(l, null, fast, s)) ok = true;                 // сериализуем один раз на всех получателей
+      });
     } else if (R.role === 'guest') {
       const l = R.links[0];
       if (l && l.ready && l.opened) { const d = opts && opts.to ? Object.assign({}, data, { to: opts.to | 0 }) : data; ok = sendLink(l, d, fast); }
@@ -700,7 +709,7 @@
       default: break;
     }
     if (L.gr === 'host') {                                      // Хост принимает от гостя
-      if (RELAY[p.type]) { relayOthers(L, p, null, fast); emit(p.type, p); return; }
+      if (RELAY[p.type]) { relayOthers(L, p, raw, fast); emit(p.type, p); return; }
       if (DIRECT[p.type] && (p.to | 0) > 1) { const dst = findSlot(p.to | 0); if (dst) { const q = Object.assign({}, p); delete q.to; sendLink(dst, q, undefined); } return; }
       emit(p.type, p);
     } else {
@@ -710,9 +719,11 @@
   }
   // Хост: переслать пакет гостя остальным гостям (с проставленным from)
   function relayOthers(from, p, raw, fast) {
-    const q = Object.assign({}, p); q.from = from.slot;
-    const s = JSON.stringify(q);
-    R.links.forEach((l) => { if (l !== from && l.opened && l.ready) sendLink(l, q, fast === undefined ? !!FAST[p.type] : !!fast, s); });
+    const f = fast === undefined ? !!FAST[p.type] : !!fast;
+    let s;
+    if (typeof raw === 'string' && raw.charCodeAt(raw.length - 1) === 125) s = raw.slice(0, -1) + ',"from":' + from.slot + '}';       // без повторного разбора и JSON.stringify (последний from побеждает)
+    else { const q = Object.assign({}, p); q.from = from.slot; s = JSON.stringify(q); }
+    R.links.forEach((l) => { if (l !== from && l.opened && l.ready) sendLink(l, null, f, s); });
   }
   function rttMain() {
     if (R.role === 'guest') return R.links[0] ? R.links[0].rtt : 0;

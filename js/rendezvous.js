@@ -84,9 +84,15 @@
   function paramList(name) {
     try { const q = new URLSearchParams(location.search).getAll(name).join(','); return q ? q.split(',') : null; } catch (e) { return null; }
   }
-  const cleanList = (l) => Array.from(new Set((l || []).map((x) => String(x).trim()).filter((x) => x && validServer(x)))).slice(0, 400);
+  const cleanList = (l) => Array.from(new Set((l || []).map((x) => String(x).trim()).filter((x) => x && validServer(x)))).slice(0, 5000);
   // [{url, type:'tracker'|'nostr'}]: параметры ?tracker= / ?relay= (через запятую) или localStorage 'nexaTrackers' / 'nexaRelays' заменяют списки по умолчанию
+  let seCache = null, seAt = 0;
   function serverEntries() {
+    if (seCache && now() - seAt < 2000) return seCache;
+    seCache = serverEntriesRaw(); seAt = now();
+    return seCache;
+  }
+  function serverEntriesRaw() {
     let tr = paramList('tracker'), rl = paramList('relay');
     const custom = !!(tr || rl);
     if (!tr) { const s = lsGet('nexaTrackers'); if (s) { try { const j = JSON.parse(s); tr = Array.isArray(j) ? j : String(s).split(','); } catch (e) { tr = String(s).split(','); } } }
@@ -97,6 +103,8 @@
     cleanList(rl).forEach((u) => out.push({ url: u, type: 'nostr', verified: ver.has(u), low: low.has(u) }));
     return out;
   }
+  let srvT = 0;
+  const emitServers = () => { if (srvT) return; srvT = setTimeout(() => { srvT = 0; emitServers(); }, 250); };
   const trackerList = () => serverEntries().filter((e) => e.type === 'tracker').map((e) => e.url);
   const serversOn = () => lsGet('nexaServersOn') !== '0';
   // здоровье по адресу: состояние, число подряд сбоев, «мёртв до»
@@ -107,23 +115,24 @@
   const FRESH = 30 * 60000;
   let store = {};
   try { const j = JSON.parse(lsGet('nexaSrvHealth') || '{}'); if (j && typeof j === 'object') store = j; } catch (e) { store = {}; }
-  const saveStore = () => { try { const k = Object.keys(store); if (k.length > 400) k.slice(0, k.length - 400).forEach((x) => { delete store[x]; }); lsSet('nexaSrvHealth', JSON.stringify(store)); } catch (e) { /* без хранилища */ } };
+  const saveStore = () => { try { const k = Object.keys(store); if (k.length > 3000) k.slice(0, k.length - 3000).forEach((x) => { delete store[x]; }); lsSet('nexaSrvHealth', JSON.stringify(store)); } catch (e) { /* без хранилища */ } };
   const fresh = (r) => !!r && now() - r.t < FRESH;
   function markDead(url, type, why, hard) {
     const h = hl(url, type);
     h.fails += 1; h.state = 'down'; h.why = why || ''; h.checked = now();
     h.deadUntil = now() + (hard ? 30 * 60000 : Math.min(30 * 60000, deadBase() * Math.pow(2, Math.min(4, h.fails - 1))));
     store[url] = { ok: false, ms: 0, t: now(), n: why || '' }; saveStore();
-    emit('servers', serverList());
+    emitServers();
   }
   function markOk(url, type, ms, note) {
     const h = hl(url, type); h.state = 'online'; h.fails = 0; h.deadUntil = 0; h.lastOk = now(); h.checked = now(); h.why = ''; if (ms >= 0) h.ms = ms; if (note !== undefined) h.note = note;
     store[url] = { ok: true, ms: Math.round(h.ms || 0), t: now(), n: h.note || '' }; saveStore();
-    emit('servers', serverList());
+    emitServers();
   }
   // приоритет при выборе: свежо ответившие по задержке, затем непроверенные, свежо упавшие — в конец
   // проверенные пользователем (VERIFIED) идут раньше непроверенных, неработавшие (LOW) — в самом конце
-  const rankOf = (e) => { const r = store[e.url], h = HEALTH.get(e.url); if (h && h.state === 'online') return h.ms || 1; if (fresh(r)) return r.ok ? r.ms || 1 : 1e9; return (e.low ? 8000 : e.verified ? 2000 : 5000) + Math.random() * 1000; };
+  let lastGood = []; try { lastGood = JSON.parse(lsGet('nexaLastGood') || '[]').filter((x) => typeof x === 'string').slice(0, 12); } catch (e) { lastGood = []; }
+  const rankOf = (e) => { const r = store[e.url], h = HEALTH.get(e.url); if (lastGood.indexOf(e.url) >= 0) return 0.5; if (h && h.state === 'online') return h.ms || 1; if (fresh(r)) return r.ok ? r.ms || 1 : 1e9; return (e.low ? 8000 : e.verified ? 2000 : 5000) + Math.random() * 1000; };
   const ranked = (entries) => entries.map((e) => ({ e, k: rankOf(e) })).sort((a, b) => a.k - b.k).map((x) => x.e);
   for (const u of Object.keys(store)) { const r = store[u]; if (fresh(r) && r.ok) { const h = hl(u, 'nostr'); h.state = 'online'; h.ms = r.ms; h.lastOk = r.t; h.checked = r.t; } }
   const isDead = (url) => { const h = HEALTH.get(url); return !!(h && h.state === 'down' && h.deadUntil > now()); };
@@ -297,7 +306,7 @@
     fill() {
       if (this.closed) return;
       const act = this.adapters.filter((a) => a.state === 'connecting' || a.state === 'open').length;
-      let free = LIVE_MAX() - act;
+      let free = (this.ctx.liveMax || LIVE_MAX()) - act;
       for (const e of ranked(this.entries)) {
         if (free <= 0) break;
         if (this.adapters.some((a) => a.url === e.url && (a.state === 'connecting' || a.state === 'open'))) continue;
@@ -308,7 +317,7 @@
         a.connect();
       }
       this.h.status();
-      emit('servers', serverList());
+      emitServers();
     }
     fail(a, why, hard) {
       if (a.state === 'failed' || a.state === 'closed') return;
@@ -327,7 +336,7 @@
       const usable = this.entries.filter((e) => !isDead(e.url) && !this.adapters.some((a) => a.url === e.url && (a.state === 'open' || a.state === 'connecting'))).length;
       return { up, connecting, total: this.entries.length, reserve: usable };
     }
-    close() { this.closed = true; clearInterval(this.fillT); this.adapters.forEach((a) => { a.close(); }); this.adapters = []; transports.delete(this); emit('servers', serverList()); }
+    close() { this.closed = true; clearInterval(this.fillT); this.adapters.forEach((a) => { a.close(); }); this.adapters = []; transports.delete(this); emitServers(); }
   }
 
   // проверка здоровья всех серверов списка (кнопка «Проверить»): короткое соединение, не больше LIVE_MAX одновременно
@@ -339,7 +348,7 @@
     let list = serverEntries().filter((e) => !act.has(e.url) && (force || !fresh(store[e.url])));
     if (limit) list = ranked(list).slice(0, limit);
     list.forEach((e) => { const h = hl(e.url, e.type); h.state = 'connecting'; h.deadUntil = 0; });
-    emit('servers', serverList());
+    emitServers();
     let i = 0;
     // сервер «онлайн», если WebSocket открылся (измеренная задержка); ответ на пробный REQ только уточняет примечание (требует вход / не отвечает), мёртвым не делает
     const one = (e) => new Promise((res) => {
@@ -358,16 +367,16 @@
       ws.onclose = () => { if (!opened) fin(false, 'closed'); else fin(true, '', 'closed'); };
     });
     const worker = async () => { while (i < list.length) { const e = list[i]; i += 1; await one(e); } };
-    probing = Promise.all(Array.from({ length: Math.min(8, list.length) }, worker)).then(() => { probing = null; MON.last = now(); emit('servers', serverList()); return serverList(); });
+    probing = Promise.all(Array.from({ length: Math.min(8, list.length) }, worker)).then(() => { probing = null; MON.last = now(); emitServers(); return serverList(); });
     return probing;
   }
   // фоновый монитор: сразу и раз в 4 минуты. Работает только если игрок согласился на публичный режим или комнаты уже используются (до этого сторонних серверов не трогаем)
   const MON = { t: 0, last: 0 };
   const inUse = () => !!(hostR || joinR || quickR || G.on);
   const monitorOk = () => serversOn() && (consented() || inUse());
-  function monitorTick() { if (!monitorOk()) return; probe(false, consented() ? 0 : 12); }   // без согласия, только при использовании комнат: не больше 12 серверов
+  function monitorTick() { if (!monitorOk()) return; probe(false, consented() ? 24 : 12); }   // без согласия, только при использовании комнат: не больше 12 серверов
   const monitor = {
-    start() { if (MON.t || !monitorOk()) return; monitorTick(); MON.t = setInterval(monitorTick, 4 * 60000); },
+    start() { if (MON.t || !monitorOk()) return; monitorTick(); MON.t = setInterval(monitorTick, 40000); },       // каждый заход — до 24 непроверенных (по приоритету), проверенные живут 30 минут
     stop() { clearInterval(MON.t); MON.t = 0; },
     get running() { return !!MON.t; }
   };
@@ -395,10 +404,10 @@
         status: () => this.status(),
         open: (a) => this.onOpen(a),
         message: (m, t) => this.onMessage(m, t)
-      }, { hash: this.hash, peerId: this.peerId });
+      }, { hash: this.hash, peerId: this.peerId, liveMax: this.o.liveMax });
       this.tr.open();
       this.startedAt = now();
-      this.timer = setInterval(() => this.tick(), 3500);
+      this.timer = setInterval(() => this.tick(), this.mode === 'offerer' ? 2000 : 3500);
       this.status();
     }
     status() {
@@ -422,14 +431,15 @@
         if (first || !this.sentFirst) { msg.event = 'started'; }
         const want = this.mode === 'answerer' ? 0 : Math.max(0, Math.min(5, this.o.offerCount ? this.o.offerCount() : 0) - this.pend.size);
         const offers = [];
-        for (let i = 0; i < want; i += 1) {
-          const r = await this.o.makeOffer();
-          if (!r || !this.running) break;
+        const made = await Promise.all(Array.from({ length: want }, () => this.o.makeOffer()));       // offer'ы создаются параллельно, без последовательных ожиданий
+        made.forEach((r) => {
+          if (!r) return;
+          if (!this.running) { try { this.o.dropToken && this.o.dropToken(r.token); } catch (e) { /* ok */ } return; }
           const id = toHex(randBin(10));          // 20 hex-символов (binary string)
           const wire = { offer_id: id, offer: { type: 'offer', sdp: r.sdp } };
           this.pend.set(id, { token: r.token, t: now(), wire });
           offers.push(wire);
-        }
+        });
         msg.offers = Array.from(this.pend.values()).map((p) => p.wire);       // неотвеченные offer'ы шлём снова: хост мог появиться в рое позже
         if (this.tr && this.tr.announce(msg) > 0) this.sentFirst = true;
         else offers.forEach((o) => { const p = this.pend.get(o.offer_id); this.pend.delete(o.offer_id); try { this.o.dropToken && this.o.dropToken(p.token); } catch (e) { /* ok */ } });
@@ -483,7 +493,7 @@
 
   let hostR = null, joinR = null, quickR = null;   // активные рои
   const H = { id: '', pub: false, title: '', mode: 'sandbox', mission: 1, startedAt: 0 };
-  const J = { id: '', t0: 0, stage: '', timer: 0 };
+  const J = { id: '', t0: 0, stage: '', timer: 0, attempt: 0, of: 3, roundMs: 9000, got: false };
 
   function roomLink(id) {
     let base = '';
@@ -500,6 +510,19 @@
     try { const u = new URL(location.href); u.searchParams.delete('room'); u.hash = u.hash.replace(/^#/, '').split('&').filter((x) => x.indexOf('room=') !== 0).join('&'); history.replaceState(null, '', u.pathname + u.search + (u.hash && u.hash !== '#' ? u.hash : '')); } catch (e) { /* адресная строка недоступна */ }
   }
 
+  // Для комнаты порядок серверов одинаков у всех (проверенные, затем трекеры, затем остальные — по хешу id): хост слушает три окна, гость пробует по окну за попытку,
+  // поэтому при сбое одного набора следующая попытка идёт через другие серверы и всё равно пересекается с хостом.
+  const fnv = (str) => { let h = 2166136261; for (let i = 0; i < str.length; i += 1) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; };
+  const winSize = () => Math.max(1, Math.min(12, NN.config.win | 0 || 6));
+  function roomEntries(id, round, host) {
+    const W = winSize();
+    const ord = serverEntries().filter((e) => !e.low && !isDead(e.url)).map((e) => ({ e, k: (e.verified ? 0 : e.type === 'tracker' ? 1 : 2) * 4294967296 + fnv(id + '|' + e.url) })).sort((a, b) => a.k - b.k).map((x) => x.e);
+    const span = ord.slice(0, W * 3);
+    if (host || span.length <= W) return span;
+    const st = (round * W) % span.length, out = span.slice(st, st + W);
+    return out.length < W ? out.concat(span.slice(0, W - out.length)) : out;
+  }
+
   // ---- Хост: комната (ссылка / по имени / публичная). Хост — только отвечает на offer'ы гостей.
   async function hostRoom(opts) {
     opts = opts || {};
@@ -512,7 +535,7 @@
     Object.assign(H, { id, pub: !!opts.pub, title: String(opts.title || '').slice(0, 24), mode: opts.mode === 'mission' ? 'mission' : opts.mode === 'br' ? 'br' : 'sandbox', mission: Math.max(1, Math.min(47, opts.mission | 0 || 1)) });
     H.startedAt = now();
     const r = hostR = new Rendezvous('room/' + id, {
-      mode: 'answerer',
+      mode: 'answerer', entries: roomEntries(id, 0, true), liveMax: winSize() * 3,
       onStatus: (s) => emit('status', Object.assign({ kind: 'host' }, s)),
       accept: () => NN.rtc.free() > 0 && pendingLinks() < 3 && !NN.config.testNoAccept,
       onOffer: async (sdp) => {
@@ -542,6 +565,7 @@
   }
 
   // ---- Гость: подключение к комнате по ссылке/имени/публичной. Гость предлагает offer'ы; хост отвечает.
+  const JOIN_TRIES = 3;
   async function joinRoom(id, opts) {
     opts = opts || {};
     stopJoin();
@@ -550,19 +574,25 @@
     if (!serversOn()) { emit('join', { stage: 'error', err: 'SERVERS_OFF' }); return { ok: false, err: 'SERVERS_OFF' }; }
     if (typeof RTCPeerConnection !== 'function') { emit('join', { stage: 'error', err: 'UNSUPPORTED' }); return { ok: false, err: 'UNSUPPORTED' }; }
     NN.begin('guest'); monitor.start();
-    J.id = id; J.t0 = now(); J.stage = 'searching'; J.got = false;
-    const to = (opts.timeoutMs || 20000);
-    const fire = (stage, extra) => { J.stage = stage; emit('join', Object.assign({ stage, id, ms: now() - J.t0, up: joinR && joinR.up }, extra || {})); };
+    Object.assign(J, { id, t0: now(), stage: 'searching', got: false, attempt: 1, of: opts.tries || JOIN_TRIES, roundMs: opts.roundMs || (opts.timeoutMs ? Math.floor(opts.timeoutMs / (opts.tries || JOIN_TRIES)) : (NN.config.roundMs || 9000)) });
+    await joinRound();
+    return { ok: true, id };
+  }
+  const fire = (stage, extra) => { J.stage = stage; emit('join', Object.assign({ stage, id: J.id, ms: now() - J.t0, up: joinR && joinR.up, attempt: J.attempt, of: J.of }, extra || {})); };
+  async function joinRound() {
+    if (joinR) { joinR.stop(); joinR = null; }
+    const id = J.id;
     const r = joinR = new Rendezvous('room/' + id, {
-      mode: 'offerer',
-      onStatus: (s) => { emit('status', Object.assign({ kind: 'join' }, s)); if (noServers(s) && J.stage === 'searching') { fire('unavailable', { err: 'NO_TRACKER' }); } },
+      mode: 'offerer', entries: roomEntries(id, J.attempt - 1, false),
+      onStatus: (s) => { emit('status', Object.assign({ kind: 'join' }, s)); if (joinR === r && noServers(s) && J.stage === 'searching') nextAttempt('unavailable'); },
       offerCount: () => (J.got ? 0 : 2),
       makeOffer: async () => { const o = await NN.rtc.newOffer('guest'); return o ? { sdp: o.sdp, token: o.link } : null; },
       dropToken: (link) => { if (link && !link.attached) NN.rtc.drop(link); },
       onAnswer: async (link, sdp) => {
-        if (J.got || !link) { NN.rtc.drop(link); return; }
+        if (J.got || !link || joinR !== r) { NN.rtc.drop(link); return; }
         if (!NN.rtc.attach(link)) { NN.rtc.drop(link); return; }
         J.got = true;
+        r.pend.forEach((p) => { if (p.token !== link) { try { NN.rtc.drop(p.token); } catch (e) { /* ok */ } } }); r.pend.clear();     // ранний выход: остальные offer'ы отменяем
         fire('connecting');
         const ok = await NN.rtc.applyAnswer(link, sdp);
         if (!ok) { J.got = false; NN.rtc.drop(link); NN.begin('guest'); fire('searching'); return; }
@@ -571,11 +601,19 @@
     });
     await r.start();
     clearTimeout(J.timer);
-    J.timer = setTimeout(() => { if (joinR === r && NN.state !== 'open' && J.stage !== 'unavailable') fire('timeout', { err: 'TRACKER_TIMEOUT' }); }, to);
+    J.timer = setTimeout(() => { if (joinR === r && NN.state !== 'open' && !J.got && J.stage !== 'unavailable') nextAttempt('timeout'); }, J.roundMs);
     fire('searching');
-    return { ok: true, id };
   }
-  function stopJoin() { clearTimeout(J.timer); if (joinR) { joinR.stop(); joinR = null; } J.stage = ''; }
+  // повтор через другой набор серверов (новое окно, новые offer'ы и ICE); число попыток ограничено
+  function nextAttempt(why) {
+    clearTimeout(J.timer);
+    if (J.attempt >= J.of) { fire(why === 'unavailable' ? 'unavailable' : 'timeout', { err: why === 'unavailable' ? 'NO_TRACKER' : 'TRACKER_TIMEOUT' }); return; }
+    J.attempt += 1; J.got = false;
+    NN.begin('guest');
+    fire('retry', { why });
+    joinRound();
+  }
+  function stopJoin() { clearTimeout(J.timer); if (joinR) { joinR.stop(); joinR = null; } J.stage = ''; J.attempt = 0; }
   // peer-relay: уже подключённый гость тоже отвечает на offer'ы этой комнаты (после паузы, чтобы Хост успел первым) и пересылает трафик тем, кто не достучался до Хоста напрямую
   let relayR = null;
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -598,8 +636,16 @@
     r.start();
   }
   function stopRelay() { if (relayR) { relayR.stop(); relayR = null; } }
+  NN.on('net:open', () => {
+    const live = []; transports.forEach((t) => t.adapters.forEach((a) => { if (a.state === 'open' && live.indexOf(a.url) < 0) live.push(a.url); }));
+    if (live.length) { lastGood = live.slice(0, 12); lsSet('nexaLastGood', JSON.stringify(lastGood)); }       // кэш рабочих серверов для быстрого старта
+  });
   NN.on('net:open', () => { if (joinR) { const id = J.id; stopJoin(); emit('join', { stage: 'open', id: J.id }); relayStart(id); } });
-  NN.on('net:error', (e) => { if (joinR && e && e.code) { const r = joinR; stopJoin(); emit('join', { stage: 'error', err: e.code }); void r; } });
+  NN.on('net:error', (e) => {
+    if (!joinR || !e || !e.code) return;
+    if (J.attempt < J.of && (e.code === 'CONNECT_TIMEOUT' || e.code === 'ICE_FAILED')) { nextAttempt('connect'); return; }      // соединение не состоялось — другая попытка через другие серверы
+    stopJoin(); emit('join', { stage: 'error', err: e.code });
+  });
   NN.on('net:close', () => { stopRelay(); if (joinR) { stopJoin(); } });
 
   // ---- Быстрая игра: очередь 'quick/<режим>' (маяки), меньший peer_id — хост; дальше — обычная комната по общему id
@@ -809,10 +855,10 @@
     DEFAULT_TRACKERS: SV.TRACKERS, trackers: trackerList, validTracker, Rendezvous, MultiTransport, infoHash, sha1js,
     servers: {
       list: serverList, summary, probe, monitor, entries: serverEntries, health: HEALTH, get on() { return serversOn(); },
-      setOn(v) { lsSet('nexaServersOn', v ? '1' : '0'); if (!v) { stopHost(); stopJoin(); stopQuick(); gossipStop(true); } emit('servers', serverList()); },
+      setOn(v) { lsSet('nexaServersOn', v ? '1' : '0'); if (!v) { stopHost(); stopJoin(); stopQuick(); gossipStop(true); } emitServers(); },
       get live() { return summary().online; }
     },
-    hostRoom, joinRoom, stopHost, stopJoin, quickPlay, stopQuick, roomLink, pendingRoom, clearRoomFromUrl, roomName, newRoomId,
+    roomEntries, hostRoom, joinRoom, stopHost, stopJoin, quickPlay, stopQuick, roomLink, pendingRoom, clearRoomFromUrl, roomName, newRoomId,
     gossip: {
       start: gossipStart, stop: gossipStop, rooms: listRooms, refresh() { broadcast({ t: 'rooms?' }); emit('rooms', listRooms()); }, requestProfile,
       get peers() { return G.peers.filter((p) => p.open).length; }, get on() { return G.on; }, _G: G
