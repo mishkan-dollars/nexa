@@ -33,7 +33,8 @@ function frame(op, payload) {
   return Buffer.concat([h, b]);
 }
 const send = (c, arr) => { try { c.sock.write(frame(1, JSON.stringify(arr))); } catch (e) { /* закрыт */ } };
-const match = (f, ev) => (!f.kinds || f.kinds.includes(ev.kind)) && (!f.since || ev.created_at >= f.since) && (!f['#t'] || ev.tags.some((t) => t[0] === 't' && f['#t'].includes(t[1])));
+const STORE = process.argv.includes('--store'), kept = [];
+const match = (f, ev) => (!f.kinds || f.kinds.includes(ev.kind)) && (!f.since || ev.created_at >= f.since) && (!f.authors || f.authors.includes(ev.pubkey)) && Object.keys(f).every((k) => k[0] !== '#' || ev.tags.some((t) => t[0] === k.slice(1) && f[k].includes(t[1])));
 function onMsg(c, text) {
   if (SILENT) return;
   let m; try { m = JSON.parse(text); } catch (e) { return; }
@@ -43,6 +44,7 @@ function onMsg(c, text) {
     if (AUTHR) { send(c, ['CLOSED', m[1], 'auth-required: please authenticate']); return; }
     if (NOTAG && m.slice(2).some((f) => f && f['#t'])) { send(c, ['CLOSED', m[1], 'error: tag filters not supported']); return; }
     c.subs.set(m[1], m.slice(2));
+    if (STORE) m.slice(2).forEach((f) => { kept.filter((e) => match(f, e)).slice(-(f.limit || 100)).forEach((e) => send(c, ['EVENT', m[1], e])); });
     if (DISC) m.slice(2).forEach((f) => { if (f && f.kinds && f.kinds.some((k) => k === 30166 || k === 10002)) discEvents(f.kinds[0]).forEach((ev) => send(c, ['EVENT', m[1], ev])); });
     send(c, ['EOSE', m[1]]);
   }
@@ -54,6 +56,7 @@ function onMsg(c, text) {
     if (POW) { send(c, ['OK', ev.id, false, 'pow: required']); return; }
     if (KIND && ev.kind !== KIND) { stats.kindRej = (stats.kindRej || 0) + 1; send(c, ['OK', ev.id, false, 'blocked: kind not allowed']); return; }
     send(c, ['OK', ev.id, true, '']);
+    if (STORE && ev.kind !== 27780) { const d = (ev.tags.find((t) => t[0] === 'd') || [])[1]; const i = d !== undefined ? kept.findIndex((e) => e.kind === ev.kind && e.pubkey === ev.pubkey && (e.tags.find((t) => t[0] === 'd') || [])[1] === d) : -1; if (i >= 0) kept.splice(i, 1); kept.push(ev); }
     conns.forEach((o) => o.subs.forEach((fs, sub) => { if (fs.some((f) => match(f, ev))) { stats.delivered += 1; send(o, ['EVENT', sub, ev]); } }));
   }
 }

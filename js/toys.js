@@ -103,6 +103,8 @@
         const eq = [0, 1, 2].map((i) => { const id = Array.isArray(a.eq) ? a.eq[i] : null; return id && lv[id] ? id : null; });
         return { lv, eq: eq.map((id, i) => (id && eq.indexOf(id) === i ? id : null)) };
       })(),
+      id: typeof d.id === 'string' && /^[0-9a-f]{64}$/.test(d.id) ? d.id : '',
+      rk: Number.isFinite(d.rk) ? d.rk : 0,
       rl: Array.isArray(d.rl) ? d.rl.filter((x) => x && isFinite(x.t) && isFinite(x.n)).slice(-40) : []
     };
     let cv = 0; const ck = (Math.random() * 4294967296) >>> 0;
@@ -126,7 +128,7 @@
   }
   function save() {
     try {
-      const d = JSON.stringify({ owned: S.owned, loadout: S.loadout, wheel: S.wheel, hud: S.hud, paid: S.paid, rl: S.rl, ab: S.ab });
+      const d = JSON.stringify({ owned: S.owned, loadout: S.loadout, wheel: S.wheel, hud: S.hud, paid: S.paid, rl: S.rl, ab: S.ab, id: S.id, rk: S.rk });
       const q = DEV.q + 1, p = lastRec ? lastRec.h : '', c = ((S.credits ^ MASK) >>> 0).toString(36);
       const r = { v: 2, q, p, c, d, h: recHash(q, p, c, d) };
       const js = JSON.stringify(r);
@@ -584,6 +586,15 @@
       };
     },
     get tampered() { return tampered; },
+    ident: {
+      get pk() { const K = window.NexaSchnorr; if (!K) return ''; if (!S.id) { S.id = K.hex(K.newKey().sk); save(); } return K.hex(K.pubkey(K.unhex(S.id))); },
+      event(kind, tags, content) { const K = window.NexaSchnorr; if (!K || !this.pk) return null; return K.makeEvent({ sk: K.unhex(S.id), pk: this.pk }, kind | 0, tags || [], String(content || '')); },
+      ecdh(peer) { const K = window.NexaSchnorr; return K && this.pk && /^[0-9a-f]{64}$/.test(peer) ? K.ecdh(K.unhex(S.id), peer) : ''; }
+    },
+    rankReward(place) {
+      const now = Date.now(); if (now - S.rk < 86400000 || !(place >= 1 && place <= 10)) return 0;
+      S.rk = now; const n = 500 - (place - 1) * 40; S.credits += n; save(); return n;
+    },
     ab: {
       defs: ABIL.map((d) => Object.freeze(Object.assign({}, d, { price: d.price.slice(), cd: d.cd.slice(), v: d.v.slice() }))),
       level: (id) => (S.ab.lv[id] | 0),

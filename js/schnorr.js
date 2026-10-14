@@ -115,6 +115,7 @@
     const id = sha256(utf8(JSON.stringify([0, ev.pubkey, ev.created_at, ev.kind, ev.tags, ev.content])));
     return hex(id) === ev.id && verify(id, unhex(ev.pubkey), unhex(ev.sig));
   }
-  const api = { sha256, hex, unhex, pubkey, sign, verify, newKey, makeEvent, checkEvent, tagged };
+  function ecdh(sk, pk) { const P0 = liftX(int(unhex(pk))); if (!P0) return ''; const a = affine(mul(P0, int(sk))); return a ? hex(bytes32(a[0])) : ''; }
+  const api = { sha256, hex, unhex, pubkey, sign, verify, newKey, makeEvent, checkEvent, tagged, ecdh };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.NexaSchnorr = api;
 }(typeof window !== 'undefined' ? window : globalThis));

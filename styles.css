@@ -1530,7 +1530,7 @@ body.in-online .terminal { animation: none !important; transform: none !importan
 
 /* ---- лобби v3: режим справа, чат выдвижной, KP, вкладки MODE и TRADES ---- */
 .ol { --car-h: 0px; }
-.ol[data-tab="trade"] .ol-pane[data-pane="trade"] { display: block; }
+.ol[data-tab="trade"] .ol-pane[data-pane="trade"], .ol[data-tab="social"] .ol-pane[data-pane="social"] { display: block; }
 /*__*/.ol[data-tab="trade"] .ol-pane[data-pane="trade"] { display: block; }
 .ol-kp { display: inline-flex; align-items: baseline; gap: 6px; flex: none; padding: 3px 10px; border: 1px solid #5a5226; border-radius: 6px; background: rgba(40,36,10,.55); color: #ffe600; font-size: 19px; letter-spacing: .06em; } .ol-kp small { color: #bfb35a; font-size: 12px; letter-spacing: .18em; }
 .ol-bl { left: auto; right: clamp(12px, 3vw, 48px); top: 70px; bottom: auto; width: min(300px, 46vw); }
@@ -1560,3 +1560,21 @@ body.in-online .terminal { animation: none !important; transform: none !importan
 .m-abmark { position: absolute; width: 14px; height: 14px; margin: -7px 0 0 -7px; border: 2px solid #fff; transform: rotate(45deg); pointer-events: none; z-index: 5; }
 .abshield::after { content: ""; position: absolute; inset: 0; box-shadow: inset 0 0 70px rgba(255,255,255,.35); pointer-events: none; z-index: 4; }
 .ol-btn.lack { opacity: .55; }
+
+.sc-nav { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 8px; }
+.sc-sub { background: #14161a; border: 1px solid #444; color: #bbb; padding: 5px 10px; font: inherit; font-size: 11px; letter-spacing: .08em; }
+.sc-sub.on { background: #e9eaec; color: #0b0b0c; }
+.sc-add, .sc-send, .sc-chs, .sc-icons, .sc-actions, .sc-dmtop, .sc-clanhd, .sc-members { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin: 6px 0; }
+.sc-add input, .sc-send input { flex: 1; min-width: 120px; }
+.sc-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 4px 0; }
+.sc-name { flex: 1; min-width: 100px; text-align: left; }
+.sc-st { font-size: 10px; letter-spacing: .08em; opacity: .7; }
+.sc-st.battle, .sc-st.match { color: #ff6b66; opacity: 1; } .sc-st.lobby, .sc-st.online { opacity: 1; }
+.sc-log { height: 120px; overflow-y: auto; border: 1px solid #333; padding: 4px 6px; margin: 6px 0; }
+.sc-msg { margin: 2px 0; font-size: 12px; } .sc-msg.me { opacity: .85; }
+.sc-who { background: none; border: 0; color: #fff; font: inherit; font-weight: 700; cursor: pointer; padding: 0; }
+.sc-pos { width: 24px; } .sc-score { margin-left: auto; }
+.sc-ic { font-size: 18px; } .sc-enc { opacity: .6; }
+.sc-short { letter-spacing: .12em; font-size: 14px; margin: 4px 0; }
+.sc-stats { display: flex; gap: 8px; flex-wrap: wrap; } .sc-stat em { display: block; font-size: 9px; opacity: .65; font-style: normal; }
+.sc-toast { position: fixed; right: 10px; top: 56px; z-index: 60; display: flex; gap: 8px; align-items: center; max-width: 80vw; padding: 8px 10px; background: #0d0e10; border: 1px solid #aaa; font-size: 12px; }

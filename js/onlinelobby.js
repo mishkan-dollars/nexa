@@ -73,7 +73,7 @@
   }
 
   function shell() {
-    const tabs = [['play', 'PLAY'], ['public', 'PUBLIC'], ['trade', 'TRADES'], ['profile', 'PROFILE'], ['connect', 'CONNECTION']];
+    const tabs = [['play', 'PLAY'], ['public', 'PUBLIC'], ['trade', 'TRADES'], ['social', 'SOCIAL'], ['profile', 'PROFILE'], ['connect', 'CONNECTION']];
     return '<div class="ol" id="ol" data-i18n="net" data-tab="play" data-state="idle">' +
       '<div class="ol-bg" aria-hidden="true"><i class="ol-moon"></i><i class="ol-haze"></i></div>' +
       '<div class="ol-stage" id="ol-stage"><div class="ol-floor"></div>' +
@@ -144,6 +144,8 @@
       '<p class="cn-priv">You can send KP only to players who are in your room right now. Every transfer is confirmed first; the host checks it and a duplicate or negative amount is rejected.</p>' +
       '<p class="v-note" id="tr-note"></p><div class="pb-list" id="tr-list" role="list"></div>' +
     '</div></section>' +
+    // -------- SOCIAL: друзья, чат, рейтинг, кланы (js/social.js)
+    '<section class="ol-pane ol-sheet" data-pane="social"><div class="sh-in"><div class="sc-root" id="sc-root"></div></div></section>' +
     // -------- PROFILE
     '<section class="ol-pane ol-sheet" data-pane="profile"><div class="sh-in">' +
       '<div class="pf-head"><span id="pf-av"></span><div class="pf-id"><label for="pf-name">NICKNAME</label><div class="pf-nm"><input type="text" id="pf-name" maxlength="16" spellcheck="false" autocomplete="off" aria-label="Nickname"><button type="button" class="ol-btn" data-act="name">SAVE</button></div><p class="v-note" id="pf-note"></p></div>' +
@@ -507,12 +509,13 @@
     if (commVisible()) { L.unread = 0; const dot = $('#ol-chatbtn .ol-dot'); if (dot) dot.hidden = true; }
     if (L.tab === 'profile') updProfile(true);
     if (L.tab === 'trade') renderTrade();
+    if (L.tab === 'social' && window.NexaSocial) NexaSocial.mount($('#sc-root'));
     if (L.tab === 'public') enterPublic();
     layoutTags();
   }
   function setTab(t) {
     if (t === 'chat') { L.tab = 'play'; updTab(); chatToggle(true); return; }
-    if (['play', 'public', 'trade', 'profile', 'connect'].indexOf(t) < 0) t = 'play';
+    if (['play', 'public', 'trade', 'social', 'profile', 'connect'].indexOf(t) < 0) t = 'play';
     L.tab = t; updTab();
   }
 
@@ -1543,6 +1546,7 @@
       if (RM && RM.consented()) RM.servers.monitor.start();
       const pj = NN.pendingJoin(), pr = RM ? RM.pendingRoom() : '';
       if (pj && !L.joinFromUrl) { L.joinFromUrl = true; setTab('connect'); $('#g-in').value = pj; NN.clearJoinFromUrl(); guestAnswer(true); }
+      else if (window.NexaSocial && NexaSocial.takeInvite && !L.joinFromUrl && (L._iv = NexaSocial.takeInvite())) { L.joinFromUrl = true; startJoin(L._iv, 'join', false); }
       else if (pr && !L.joinFromUrl) { L.joinFromUrl = true; RM.clearRoomFromUrl(); startJoin(pr, 'join', false); }
       stStart();
     },
@@ -1552,6 +1556,7 @@
     },
     // после загрузки: ссылка с ?join= / ?room= сразу открывает онлайн-лобби
     boot() { if ((NN.pendingJoin() || (RM && RM.pendingRoom())) && !L.joinFromUrl && ctx.setView) { ctx.setView('ONLINE'); ctx.render && ctx.render(); } },
+    join(rid) { if (root) startJoin(rid, 'join', false); else { this._pend = rid; this.action('online'); } },
     get active() { return !!root; },
     get state() { return L; },
     _st: ST, _dn: DN
