@@ -91,7 +91,7 @@
     }
     const off = online(), sig = eq.join('|') + '|' + off;
     if (sig !== s.sig) {
-      s.sig = sig; s.ui.hidden = off || !eq.some(Boolean);
+      s.sig = sig; s.ui.hidden = off || !r.touch || !eq.some(Boolean);
       const NS = window.NexaSettings;
       Array.from(s.ui.querySelectorAll('.m-ab')).forEach((b, i) => { const d = eq[i] && defs[eq[i]]; b.hidden = !d; if (d) { b.querySelector('b').textContent = d.name; b.querySelector('small').textContent = r.touch ? '' : (NS && NS.codeName ? NS.codeName((NS.binding('ab' + (i + 1)) || [CODES[i]])[0]) : CODES[i].slice(3)); } });
     }
