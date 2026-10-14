@@ -527,6 +527,7 @@
     holdOff();
     S.mHead = 0;
     st.headChoice = pick;
+    K.ost(r, false, 0.4);
     // ---------------------------------------------------------- развязка
     S.bt = 0;
     const brOff = K.hook(r, (dt) => { S.bt += dt; });

@@ -702,7 +702,7 @@
     gasDispose(r, R, G, ov);
     r.waypoint && r.waypoint(null);
     r.baseFov = fov0;
-    st.gasDone = true; r.musicTrack('osttdictor', { vol: 0.95 }).stop(2.5);
+    st.gasDone = true;
     K.unlock(r);
   };
 }());
