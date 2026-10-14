@@ -527,9 +527,9 @@
         const g = new T.Group(); g.position.set(p[0], 0, p[1]);
         const disc = new T.Mesh(new T.CylinderGeometry(p[2], p[2] * 1.04, 0.09, 40), new T.MeshLambertMaterial({ color: 0x1c1d21, emissive: 0x060607 })); disc.position.y = 0.045; g.add(disc);
         const ringMat = new T.MeshBasicMaterial({ color: i === 0 ? 0xff4a3d : 0x3a3d44, transparent: true, opacity: i === 0 ? 1 : 0.7 });
-        const ring = new T.Mesh(new T.TorusGeometry(p[2] * 0.98, 0.028, 8, 56), ringMat); ring.rotation.x = Math.PI / 2; ring.position.y = 0.092; ring.visible = false;   // колец у игроков нет (стиль игры)
+        const ring = new T.Mesh(new T.TorusGeometry(p[2] * 0.98, 0.028, 8, 56), ringMat); ring.rotation.x = Math.PI / 2; ring.position.y = 0.092; g.add(ring);
         const glowMat = new T.MeshBasicMaterial({ map: glowTex(T, i === 0 ? 'rgba(255,90,70,.75)' : 'rgba(120,130,150,.25)', i === 0 ? 'rgba(255,60,50,.22)' : 'rgba(80,90,110,.08)'), transparent: true, depthWrite: false, blending: T.AdditiveBlending });
-        const glow = new T.Mesh(new T.PlaneGeometry(p[2] * 3.1, p[2] * 3.1), glowMat); glow.rotation.x = -Math.PI / 2; glow.position.y = 0.1; glow.visible = false;
+        const glow = new T.Mesh(new T.PlaneGeometry(p[2] * 3.1, p[2] * 3.1), glowMat); glow.rotation.x = -Math.PI / 2; glow.position.y = 0.1; g.add(glow);
         scene.add(g); plats.push({ g, ringMat, glowMat, disc, ring, glow }); keep.push(disc.geometry, disc.material, ring.geometry, ringMat, glow.geometry, glowMat, glowMat.map);
       });
       const floor = new T.Mesh(new T.PlaneGeometry(24, 18), new T.MeshBasicMaterial({ map: glowTex(T, 'rgba(18,20,26,.95)', 'rgba(10,11,14,.55)'), transparent: true, depthWrite: false }));
