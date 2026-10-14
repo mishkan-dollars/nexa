@@ -511,12 +511,12 @@
   }
 
   // Для комнаты порядок серверов одинаков у всех (проверенные, затем трекеры, затем остальные — по хешу id): хост слушает три окна, гость пробует по окну за попытку,
-  // поэтому при сбое одного набора следующая попытка идёт через другие серверы и всё равно пересекается с хостом.
+  // (порядок не зависит от локальных «мёртвых» — иначе окна у хоста и гостя разъедутся), поэтому при сбое одного набора следующая попытка идёт через другие серверы и всё равно пересекается с хостом.
   const fnv = (str) => { let h = 2166136261; for (let i = 0; i < str.length; i += 1) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; };
   const winSize = () => Math.max(1, Math.min(12, NN.config.win | 0 || 6));
   function roomEntries(id, round, host) {
     const W = winSize();
-    const ord = serverEntries().filter((e) => !e.low && !isDead(e.url)).map((e) => ({ e, k: (e.verified ? 0 : e.type === 'tracker' ? 1 : 2) * 4294967296 + fnv(id + '|' + e.url) })).sort((a, b) => a.k - b.k).map((x) => x.e);
+    const ord = serverEntries().filter((e) => !e.low).map((e) => ({ e, k: (e.verified ? 0 : e.type === 'tracker' ? 1 : 2) * 4294967296 + fnv(id + '|' + e.url) })).sort((a, b) => a.k - b.k).map((x) => x.e);
     const span = ord.slice(0, W * 3);
     if (host || span.length <= W) return span;
     const st = (round * W) % span.length, out = span.slice(st, st + W);
