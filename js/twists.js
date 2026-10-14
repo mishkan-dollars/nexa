@@ -226,7 +226,7 @@
     let d = null;
     try { d = JSON.parse(localStorage.getItem(SKEY)); } catch (e) { d = null; }
     if (!d || typeof d !== 'object') d = {};
-    return { kills: d.kills | 0, deaths: d.deaths | 0, shots: d.shots && typeof d.shots === 'object' ? d.shots : {}, time: +d.time || 0, runs: d.runs | 0, heads: d.heads | 0, since: d.since || 0 };
+    return { tm: d.tm && typeof d.tm === 'object' ? d.tm : {}, kills: d.kills | 0, deaths: d.deaths | 0, shots: d.shots && typeof d.shots === 'object' ? d.shots : {}, time: +d.time || 0, runs: d.runs | 0, heads: d.heads | 0, since: d.since || 0 };
   }
   function writeStats(d) { try { localStorage.setItem(SKEY, JSON.stringify(d)); } catch (e) { /* ignore */ } }
   API.stats = function (r) {
@@ -242,12 +242,13 @@
       if (!wired && r.cb) { wired = true; r.cb.killHooks.push((e, head) => { if (!e.friendly && !(e.t && e.t.passive)) { s.kills += 1; if (head) s.heads += 1; } }); }
     });
   }
-  function trackSave(r) {
+  function trackSave(r, done) {
     const s = r.twStat; if (!s || s.saved) return;
     s.saved = true;
     const d = readStats();
     d.kills += s.kills; d.deaths += s.deaths; d.time += s.time; d.heads += s.heads; d.runs += 1;
     Object.keys(s.shots).forEach((k) => { d.shots[k] = (d.shots[k] || 0) + s.shots[k]; });
+    if (done && Number(r.taskId) > 0) { d.tm = d.tm || {}; const id = Number(r.taskId); d.tm[id] = d.tm[id] ? Math.min(d.tm[id], s.time) : s.time; }
     if (!d.since) d.since = Date.now();
     writeStats(d);
   }
@@ -325,7 +326,7 @@
       if (T && !T.broken) safe(T, 'finish', () => T.def.finish && T.def.finish(this, T, done));
       if (done && this.twBonus > 0) this.intBonus = (this.intBonus || 0) + this.twBonus;
       this.twBonus = 0;
-      try { trackSave(this); } catch (e) { /* ignore */ }
+      try { trackSave(this, done); } catch (e) { /* ignore */ }
     }
     return fin0.apply(this, arguments);
   };
