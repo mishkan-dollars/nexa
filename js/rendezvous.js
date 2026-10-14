@@ -89,11 +89,9 @@
     if (!tr) { const s = lsGet('nexaTrackers'); if (s) { try { const j = JSON.parse(s); tr = Array.isArray(j) ? j : String(s).split(','); } catch (e) { tr = String(s).split(','); } } }
     if (!rl) { const s = lsGet('nexaRelays'); if (s) { try { const j = JSON.parse(s); rl = Array.isArray(j) ? j : String(s).split(','); } catch (e) { rl = String(s).split(','); } } }
     if (custom) { tr = tr || []; rl = rl || []; } else { tr = tr || SV.TRACKERS; rl = rl || SV.NOSTR_RELAYS; }
-    const rlc = cleanList(rl), out = cleanList(tr).slice(0, 6).map((u) => ({ url: u, type: 'tracker' }));
-    // реле перемешиваем один раз за сессию: нагрузка распределяется, а «первые шесть» у разных игроков разные
-    if (!serverEntries.order) serverEntries.order = Math.random();
-    const sh = rlc.map((u, i) => ({ u, k: Math.abs(Math.sin((i + 1) * 12.9898 + serverEntries.order * 78.233)) })).sort((a, b) => a.k - b.k).map((x) => x.u);
-    sh.forEach((u) => out.push({ url: u, type: 'nostr' }));
+    const ver = new Set((custom ? [] : (SV.NOSTR_VERIFIED || []).concat(SV.TRACKERS_VERIFIED || []))), low = new Set(custom ? [] : (SV.NOSTR_LOW || []));
+    const out = cleanList(tr).slice(0, 8).map((u) => ({ url: u, type: 'tracker', verified: ver.has(u) }));
+    cleanList(rl).forEach((u) => out.push({ url: u, type: 'nostr', verified: ver.has(u), low: low.has(u) }));
     return out;
   }
   const trackerList = () => serverEntries().filter((e) => e.type === 'tracker').map((e) => e.url);
@@ -121,7 +119,8 @@
     emit('servers', serverList());
   }
   // приоритет при выборе: свежо ответившие по задержке, затем непроверенные, свежо упавшие — в конец
-  const rankOf = (e) => { const r = store[e.url], h = HEALTH.get(e.url); if (h && h.state === 'online') return h.ms || 1; if (fresh(r)) return r.ok ? r.ms || 1 : 1e9; return 5000 + Math.random() * 1000; };
+  // проверенные пользователем (VERIFIED) идут раньше непроверенных, неработавшие (LOW) — в самом конце
+  const rankOf = (e) => { const r = store[e.url], h = HEALTH.get(e.url); if (h && h.state === 'online') return h.ms || 1; if (fresh(r)) return r.ok ? r.ms || 1 : 1e9; return (e.low ? 8000 : e.verified ? 2000 : 5000) + Math.random() * 1000; };
   const ranked = (entries) => entries.map((e) => ({ e, k: rankOf(e) })).sort((a, b) => a.k - b.k).map((x) => x.e);
   for (const u of Object.keys(store)) { const r = store[u]; if (fresh(r) && r.ok) { const h = hl(u, 'nostr'); h.state = 'online'; h.ms = r.ms; h.lastOk = r.t; h.checked = r.t; } }
   const isDead = (url) => { const h = HEALTH.get(url); return !!(h && h.state === 'down' && h.deadUntil > now()); };
