@@ -66,16 +66,17 @@
     }
     return H.map((x) => ('00000000' + (x >>> 0).toString(16)).slice(-8)).join('');
   }
-  const GD = window.NexaGuard, ADM = /^[0-9a-f]{64}$/.test(String(window.NEXA_ADMIN_PUB || '')) ? window.NEXA_ADMIN_PUB : '', ADM_MAX = 100000;
+  const ST = window.NexaStore || { get: (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch (e) { /* ignore */ } } };
+  const GD = window.NexaGuard, SG = window.NexaSingle, ADM = /^[0-9a-f]{64}$/.test(String(window.NEXA_ADMIN_PUB || '')) ? window.NEXA_ADMIN_PUB : '', ADM_MAX = 100000;
   const onlineNow = () => { try { return !!(window.NexaNet && NexaNet.connected) || !!(window.NexaRoom && NexaRoom.servers.on && NexaRoom.consented()); } catch (e) { return false; } };
-  const locked = () => { try { return GD ? !!GD.block() : onlineNow(); } catch (e) { return true; } };
+  const locked = () => { sync(); try { return !SG || !SG.owner() || (GD ? !!GD.block() : onlineNow()); } catch (e) { return true; } };
   const DK = 'nexaDev', BK = KEY + '.b';
   const rnd32 = () => { try { const a = new Uint32Array(4); crypto.getRandomValues(a); return Array.from(a).map((x) => ('00000000' + x.toString(16)).slice(-8)).join(''); } catch (e) { return sha256(String(Math.random()) + Date.now()); } };
   let DEVR = null;
-  try { DEVR = JSON.parse(localStorage.getItem(DK)); } catch (e) { DEVR = null; }
+  try { DEVR = JSON.parse(ST.get(DK)); } catch (e) { DEVR = null; }
   const devNew = !(DEVR && typeof DEVR.s === 'string' && DEVR.s.length === 32);
   const DEV = devNew ? { s: rnd32(), q: 0, h: '' } : { s: DEVR.s, q: Math.max(0, DEVR.q | 0), h: String(DEVR.h || '') };
-  const saveDev = () => { try { localStorage.setItem(DK, JSON.stringify(DEV)); } catch (e) { /* ignore */ } };
+  const saveDev = () => { ST.set(DK, JSON.stringify(DEV)); };
   const MASK = parseInt(DEV.s.slice(0, 7), 16) | 0;
   const recHash = (q, p, c, d) => sha256(DEV.s + '|' + q + '|' + p + '|' + c + '|' + d).slice(0, 32);
   let tampered = 0, lastRec = null;
@@ -119,7 +120,7 @@
   }
   function load() {
     let got = null;
-    const raws = [localStorage.getItem(KEY), localStorage.getItem(BK)];
+    const raws = [ST.get(KEY), ST.get(BK)];
     let from = -1;
     for (let i = 0; i < raws.length && !got; i += 1) if (raws[i]) { got = readRec(raws[i]); from = i; }
     if (got) { if (from > 0 && raws[0]) tampered += 1; lastRec = got.r; return build(got.d); }
@@ -136,12 +137,19 @@
       const q = DEV.q + 1, p = lastRec ? lastRec.h : '', c = ((S.credits ^ MASK) >>> 0).toString(36);
       const r = { v: 2, q, p, c, d, h: recHash(q, p, c, d) };
       const js = JSON.stringify(r);
-      localStorage.setItem(BK, js); localStorage.setItem(KEY, js);
+      ST.set(BK, js); ST.set(KEY, js);
       DEV.q = q; DEV.h = r.h; lastRec = r; saveDev();
     } catch (e) { /* ignore */ }
   }
   S = load();
   if (devNew || tampered) save();
+  function sync() {
+    let d; try { d = JSON.parse(ST.get(DK)); } catch (e) { return; }
+    if (!d || !(d.q > DEV.q)) return;
+    const t0 = tampered; DEV.q = d.q | 0; DEV.h = String(d.h || '');
+    const n = load(); if (tampered === t0) S = n;
+  }
+  window.addEventListener('storage', (e) => { if (e.key === DK || e.key === KEY) sync(); });
 
   const ctx = { audio: null, setView: null, render: null, startSandbox: null };
 
@@ -570,6 +578,7 @@
   // подарок из миссии (js/twists-*.js): игрушка или эмоция без оплаты; false — уже есть / нет такой
   function grant(id) {
     const d = DEF[id];
+    sync();
     if (!d || S.owned.indexOf(id) >= 0) return false;
     S.owned.push(id);
     if (d.kind === 'emote') { const i = S.wheel.indexOf(null); if (i >= 0) S.wheel[i] = id; } else if (!S.loadout) S.loadout = id;
@@ -630,7 +639,7 @@
         save(); return { ok: true, lv: n + 1 };
       },
       equip(slot, id) {
-        slot |= 0; if (slot < 0 || slot > 2) return false;
+        sync(); slot |= 0; if (slot < 0 || slot > 2) return false;
         if (id && !S.ab.lv[id]) return false;
         const i = id ? S.ab.eq.indexOf(id) : -1; if (i >= 0) S.ab.eq[i] = null;
         S.ab.eq[slot] = id || null; save(); return true;
@@ -640,7 +649,7 @@
     loadout() { return S.loadout && S.owned.indexOf(S.loadout) >= 0 ? S.loadout : null; },
     hud: {
       has: (k) => !!S.hud[k],
-      grant(k) { if (S.hud[k] !== undefined && !S.hud[k]) { S.hud[k] = true; save(); } }
+      grant(k) { sync(); if (S.hud[k] !== undefined && !S.hud[k]) { S.hud[k] = true; save(); } }
     },
     init(o) { Object.assign(ctx, o || {}); },
     load: loadTpl, tpl: (id) => TPLR[id], make: makeToy, press: pressToy, release: releaseDent, step: stepToy, avatar, avatarUrl: (id) => AV[id] || '',

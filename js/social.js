@@ -47,7 +47,7 @@
   // ------------------------------------------------------------------ сеть: до 3 живых релеев из общего списка серверов
   const NET = { socks: new Map(), subs: new Map(), seen: new Set(), t: 0, outbox: [], bad: {} };
   const MAXS = 3;
-  const netOk = () => !!(RM.servers.on && RM.consented());
+  const netOk = () => !!(RM.servers.on && RM.consented()) && (!window.NexaSingle || window.NexaSingle.owner());
   function pickRelays() {
     const have = new Set(NET.socks.keys());
     return RM.servers.list().filter((x) => x.type === 'nostr' && (x.state === 'online' || x.state === 'active') && !have.has(x.url) && (NET.bad[x.url] || 0) < now()).sort((a, b) => (a.ms || 9e9) - (b.ms || 9e9));

@@ -780,6 +780,7 @@
     let m = 0; R.links.forEach((l) => { if (l.rtt > m) m = l.rtt; });
     return m;
   }
+  const JOINS = {}, JOIN_MAX = 6;
   function onHello(L, p) {
     const i = p.info || {};
     L.peer = { name: cleanName(i.name, L.gr === 'host' ? 'PLAYER ' + L.slot : 'HOST'), color: cleanColor(i.color), level: Math.max(1, Math.min(999, i.level | 0 || 1)), v: i.v | 0, lang: String(i.lang || '').slice(0, 2) };
@@ -787,7 +788,16 @@
     L.pid = cleanPid(i.pid);
     if (R.role === 'host') {
       const ad = window.NexaAdmin; L.pk = /^[0-9a-f]{64}$/.test(i.k) ? i.k : '';
-      if (ad && ad.active && (!L.pk || ad.banned(L.pk))) { sendLink(L, { type: 'bye' }); linkGone(L, 'PEER_LEFT'); return; }
+      const deny = () => { sendLink(L, { type: 'bye' }); linkGone(L, 'PEER_LEFT'); };
+      if (ad && ad.active && (!L.pk || ad.banned(L.pk))) { deny(); return; }
+      if (L.pk) {
+        if (!L.helloGot) {
+          const w = (JOINS[L.pk] || []).filter((t) => now() - t < 60000);
+          if (L.pk === (window.Toys && Toys.ident.pk) || w.length >= JOIN_MAX) { JOINS[L.pk] = w; deny(); return; }
+          w.push(now()); JOINS[L.pk] = w;
+        }
+        R.links.slice().forEach((o) => { if (o !== L && o.helloGot && o.pk === L.pk) { sendLink(o, { type: 'bye' }); linkGone(o, 'PEER_LEFT'); } });
+      }
     }
     applyBlock({ name: L.peer.name, pid: L.pid, slot: L.slot });
     if (first) chatSys(R.role === 'host' ? 'FRIEND_JOINED' : 'HOST_READY', L.peer.name);
@@ -817,7 +827,12 @@
     return true;
   }
   const isBlockedName = (n) => blockedNames.indexOf(String(n || '').toLowerCase()) >= 0;
-  const banGate = () => { const a = window.NexaAdmin; return a && a.me() ? { ok: false, err: 'BANNED' } : null; };
+  const banGate = () => {
+    const a = window.NexaAdmin, g = window.NexaSingle;
+    if (a && a.me()) return { ok: false, err: 'BANNED' };
+    if (g && !g.owner()) { MSG.DUP_TAB = window.NexaAdminText ? window.NexaAdminText('dup') : 'The game is already open in another tab.'; return { ok: false, err: 'DUP_TAB' }; }
+    return null;
+  };
   function kickWhere(f) { if (R.role !== 'host') return; R.links.slice().forEach((l) => { if (l.helloGot && f(l.pk)) { sendLink(l, { type: 'bye' }); linkGone(l, 'PEER_LEFT'); } }); }
   function kick(s) { const l = findSlot(s); if (R.role === 'host' && l) { sendLink(l, { type: 'bye' }); linkGone(l, 'PEER_LEFT'); } }
 

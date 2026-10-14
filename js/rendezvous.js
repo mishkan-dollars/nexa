@@ -956,6 +956,7 @@
   const consented = () => lsGet(CONSENT_KEY) === '1';
   const consent = (v) => { lsSet(CONSENT_KEY, v ? '1' : '0'); };
 
+  if (window.NexaSingle) window.NexaSingle.on('change', () => { if (!window.NexaSingle.owner()) { stopHost(); stopJoin(); stopQuick(); if (NN.connected) NN.close(); } });
   window.NexaRoom = {
     DEFAULT_TRACKERS: SV.TRACKERS, trackers: trackerList, validTracker, Rendezvous, MultiTransport, infoHash, sha1js,
     servers: {
