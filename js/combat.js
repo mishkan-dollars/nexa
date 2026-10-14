@@ -293,6 +293,7 @@
     const { v1, v2, v3, v4, q1, q2, e, sh, hp } = rg;
     sh[0].set(-0.24, -0.22, 0.02); body.localToWorld(sh[0]);
     sh[1].set(0.24, -0.22, 0.02); body.localToWorld(sh[1]);
+    const gb = this.grab; if (gb) { gb.t += dt; if (gb.t >= 0.34) this.grab = null; }
     const gT = this.gadT; if (gT) { gT.t += dt; if (!gT.rel && gT.t >= GT_REL) { gT.rel = true; this.throwGadget(gT.id); this.rigJolt(-0.8, -4, 0); } if (gT.t >= GT) { this.gadT = null; if (rg.gm) { rg.gm.visible = false; rg.gpin.visible = false; } } }
     const gk = this.gadT ? this.gadK() : 0, w = this.wp && gk >= 0.98 ? null : this.wp, rl = this.rl;
     let hvT = clamp((-p.pitch - 0.12) / 0.45, 0, 1); // руки видны, только когда игрок смотрит вниз
@@ -369,6 +370,10 @@
     }
     if (this.pmHands) this.pmHands(dt, w);
     if (this.gadT && !w) { this.pmQ = false; this.pmFist = 'fist'; this.pmFree = false; this.gadHands(hp, rg.wr); hvT = 1; }
+    if (this.grab && !w && !this.gadT) {
+      const g = this.grab, u = g.t, k = u < 0.12 ? easeOut(u / 0.12) : u < 0.18 ? 1 : 1 - smooth((u - 0.18) / 0.16);
+      rg.v3.set(g.x, g.y, g.z); body.localToWorld(rg.v3); hp[1].lerp(rg.v3, k); hvT = Math.max(hvT, 0.9 * Math.min(1, k * 3)); this.pmFist = u > 0.1 && u < 0.2 ? 'fist' : 'open';
+    }
     rg.hv = lerp(rg.hv, hvT, 1 - Math.exp(-dt * 12));
     // с оружием руки держат его всегда; без оружия видны, только когда игрок смотрит вниз
     const armA = w ? 1 : rg.hv, vis = armA > 0.02, arms = rg.arms, el = rg.el, wr = rg.wr;
@@ -1192,6 +1197,10 @@
       else if (k.kind === 'gadget') { if (this.addGadget) this.addGadget(k.o.id, k.o.n || 1); }
       else if (k.kind === 'weapon') { this.giveWeapon(k.o.id, { equip: k.o.equip !== false, reserve: k.o.reserve }); this.toast(WEAPONS[k.o.id].name + ' ACQUIRED', 2); k.o.onTake && k.o.onTake(); }
       if (!ok) continue;
+      if (this.body && this.rg) { // рука тянется к предмету и подтягивает к груди; с оружием в руках оно чуть подаётся вниз
+        const yw = this.p.yaw, dx = k.x - p.x, dz = k.z - p.z, lx = (dx * Math.cos(yw) - dz * Math.sin(yw)), lz = (dx * Math.sin(yw) + dz * Math.cos(yw));
+        this.grab = { t: 0, x: 0.1 + clamp(lx, -1, 1) * 0.25, y: -0.42, z: clamp(lz * 0.6, -0.5, 0.1) }; this.rigJolt(0.25, -2.2, 0);
+      }
       this.snd && this.snd.play(k.kind === 'health' ? 'medkit' : k.kind === 'ammo' ? 'ammopickup' : 'pickup');
       this.scene.remove(k.g); cb.pickups.splice(i, 1); this.refreshHud();
     }

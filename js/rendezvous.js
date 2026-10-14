@@ -139,10 +139,10 @@
       ws.onmessage = (m) => {
         let j; try { j = JSON.parse(m.data); } catch (e) { return; }
         if (!Array.isArray(j)) return;
-        if (j[0] === 'EVENT' && j[2] && total < 6000) { n += 1; total += 1; const t = j[2].created_at | 0; if (t && (!oldest || t < oldest)) oldest = t; discEvent(j[2], add); }
+        if (j[0] === 'EVENT' && j[2] && total < 12000) { n += 1; total += 1; const t = j[2].created_at | 0; if (t && (!oldest || t < oldest)) oldest = t; discEvent(j[2], add); }
         else if (j[0] === 'EOSE' || j[0] === 'CLOSED') {
           try { ws.send(JSON.stringify(['CLOSE', 'nxd'])); } catch (e) { /* ok */ }
-          if (n >= 200 && oldest && cur.page < 5 && total < 6000) plan.unshift({ kind: cur.kind, until: oldest - 1, page: cur.page + 1 });
+          if (n >= 200 && oldest && cur.page < 5 && total < 12000 && (!cur.until || oldest < cur.until)) plan.unshift({ kind: cur.kind, until: oldest - 1, page: cur.page + 1 });
           next();
         }
       };
@@ -210,7 +210,9 @@
   const FRESH = 30 * 60000;
   let store = {};
   try { const j = JSON.parse(lsGet('nexaSrvHealth') || '{}'); if (j && typeof j === 'object') store = j; } catch (e) { store = {}; }
-  const saveStore = () => { try { const k = Object.keys(store); if (k.length > 3000) k.slice(0, k.length - 3000).forEach((x) => { delete store[x]; }); lsSet('nexaSrvHealth', JSON.stringify(store)); } catch (e) { /* без хранилища */ } };
+  const saveStore0 = () => { try { const k = Object.keys(store); if (k.length > 3000) k.slice(0, k.length - 3000).forEach((x) => { delete store[x]; }); lsSet('nexaSrvHealth', JSON.stringify(store)); } catch (e) { /* без хранилища */ } };
+  let ssT = 0;
+  const saveStore = () => { if (ssT) return; ssT = setTimeout(() => { ssT = 0; saveStore0(); }, 1500); };
   const fresh = (r) => !!r && now() - r.t < FRESH;
   function markDead(url, type, why, hard) {
     const h = hl(url, type);

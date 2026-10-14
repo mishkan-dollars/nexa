@@ -226,4 +226,23 @@
     "SIREN ON — GUARDS ARE MOVING": ["СИРЕНА ВКЛЮЧЕНА — ОХРАНА ДВИЖЕТСЯ","SIRENE AN — DIE WÄCHTER SETZEN SICH IN BEWEGUNG"],
     "NOISE CONSOLE: PICK A WING — THE GUARDS WILL RUN TO THE SIREN": ["ПУЛЬТ ШУМА: ВЫБЕРИ КРЫЛО — ОХРАНА ПОБЕЖИТ К СИРЕНЕ","LÄRMPULT: WÄHLE EINEN FLÜGEL — DIE WÄCHTER LAUFEN ZUR SIRENE"]
   });
+  I18N.add('en', {
+    "COMBO RANKS: CHAIN BARRELS AND EXPLOSIVE KILLS FOR S / A / B": ["РАНГИ ЗА КОМБО: ЦЕПОЧКИ БОЧЕК И УБИЙСТВА ВЗРЫВОМ — S / A / B","COMBO-RÄNGE: FASS-KETTEN UND EXPLOSIONS-KILLS FÜR S / A / B"],
+    "RANK {s0} — CHAIN x{0}, {1} EXPLOSIVE KILLS": ["РАНГ {s0} — ЦЕПОЧКА x{0}, УБИЙСТВ ВЗРЫВОМ: {1}","RANG {s0} — KETTE x{0}, {1} EXPLOSIONS-KILLS"],
+    "RANK {s0}": ["РАНГ {s0}","RANG {s0}"],
+    "CHAIN x{0}": ["ЦЕПОЧКА x{0}","KETTE x{0}"],
+    "GUARDS RAISE THE ALARM OVER BODIES — HIDE THEM IN LOCKERS [E]": ["ОХРАНА ПОДНИМАЕТ ТРЕВОГУ ИЗ-ЗА ТЕЛ — ПРЯЧЬ ИХ В ШКАФЫ [E]","WÄCHTER SCHLAGEN BEI LEICHEN ALARM — VERSTECKE SIE IN SPINDEN [E]"],
+    "HIDE THE BODY": ["СПРЯТАТЬ ТЕЛО","LEICHE VERSTECKEN"],
+    "BODY HIDDEN": ["ТЕЛО СПРЯТАНО","LEICHE VERSTECKT"],
+    "EVERYTHING IS GLASS — FOLLOW THE SHADOW: IT MOVES ONLY WHEN THE WAY IS SAFE": ["ВСЁ СТЕКЛЯННОЕ — ИДИ ЗА ТЕНЬЮ: ОНА ДВИЖЕТСЯ, ТОЛЬКО КОГДА ПУТЬ БЕЗОПАСЕН","ALLES IST GLAS — FOLGE DEM SCHATTEN: ER BEWEGT SICH NUR, WENN DER WEG SICHER IST"],
+    "BOOKS": ["КНИГИ","BÜCHER"],
+    "THROW [J]": ["БРОСИТЬ [J]","WERFEN [J]"],
+    "BOOK THROWN": ["КНИГА БРОШЕНА","BUCH GEWORFEN"],
+    "TAKE A BOOK": ["ВЗЯТЬ КНИГУ","BUCH NEHMEN"],
+    "THE LIBRARIAN IS BLIND: HE HEARS RUNNING AND SHOTS — WALK, AND THROW BOOKS [J] TO DISTRACT HIM": ["БИБЛИОТЕКАРЬ СЛЕП: ОН СЛЫШИТ БЕГ И ВЫСТРЕЛЫ — ХОДИ ШАГОМ И БРОСАЙ КНИГИ [J], ЧТОБЫ ОТВЛЕЧЬ ЕГО","DER BIBLIOTHEKAR IST BLIND: ER HÖRT RENNEN UND SCHÜSSE — GEH LANGSAM UND WIRF BÜCHER [J], UM IHN ABZULENKEN"],
+    "A RIVAL SNIPER IS ON THE FAR ROOF — WATCH FOR HIS LENS GLINT": ["НА ДАЛЬНЕЙ КРЫШЕ СНАЙПЕР-СОПЕРНИК — СЛЕДИ ЗА БЛИКОМ ЕГО ЛИНЗЫ","EIN RIVALISIERENDER SCHARFSCHÜTZE AUF DEM FERNEN DACH — ACHTE AUF SEIN LINSENBLITZEN"],
+    "HE FIRES": ["ОН СТРЕЛЯЕТ","ER SCHIESST"],
+    "YOUR LENS GLINT GAVE YOU AWAY": ["БЛИК ТВОЕЙ ЛИНЗЫ ВЫДАЛ ТЕБЯ","DEIN LINSENBLITZEN HAT DICH VERRATEN"],
+    "SNIPER DUEL WON": ["ДУЭЛЬ СНАЙПЕРОВ ВЫИГРАНА","SCHARFSCHÜTZENDUELL GEWONNEN"]
+  });
 }());

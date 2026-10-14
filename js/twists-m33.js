@@ -268,4 +268,202 @@
     },
     reset(r, T) { const S = T.s; S.real = false; r.redPulse && r.redPulse(false); }
   });
+
+  // ===================================================================== 33 DEMO DERBY — ранги за комбо-взрывы
+  // Считаются цепочки бочек (взрывы подряд ≤1.6 с) и убийства взрывом. После каждого раунда ранг S / A / B и кредиты.
+  TW.add(33, {
+    name: 'combo-rank',
+    setup(r, T) {
+      const S = T.s; S.best = 0; S.ek = 0; S.chain = 0; S.last = -9; S.seen = new Set(); S.rd = 0; S.settled = true;
+      r.cb.killHooks.push((e) => { if (!e.friendly && T.t - S.last < 1.4) S.ek += 1; });
+      T.after(4, () => r.hint('COMBO RANKS: CHAIN BARRELS AND EXPLOSIVE KILLS FOR S / A / B', 5));
+    },
+    settle(r, T) {
+      const S = T.s; if (S.settled) return; S.settled = true;
+      const k = S.best >= 4 && S.ek >= 4 ? 'S' : S.best >= 3 || S.ek >= 3 ? 'A' : 'B';
+      T.bonus(k === 'S' ? 40 : k === 'A' ? 25 : 10, 'RANK ' + k);
+      r.hint('RANK ' + k + ' — CHAIN x' + S.best + ', ' + S.ek + ' EXPLOSIVE KILLS', 3.5);
+    },
+    phase(r, T, name) { const S = T.s; this.settle(r, T); S.best = 0; S.ek = 0; S.chain = 0; S.last = -9; S.settled = false; },
+    reset(r, T) { T.s.settled = true; },
+    tick(r, T, dt) {
+      const S = T.s;
+      if (r.ending) this.settle(r, T);
+      r.cb.shoot.forEach((b) => { if (b.barrel) S.seen.add(b); });
+      S.seen.forEach((b) => {
+        if (b.alive) return;
+        S.seen.delete(b);
+        S.chain = T.t - S.last < 1.6 ? S.chain + 1 : 1; S.last = T.t; S.best = Math.max(S.best, S.chain);
+        if (S.chain >= 2) r.toast('CHAIN x' + S.chain, 1.4);
+      });
+    }
+  });
+
+  // ===================================================================== 34 NIGHT SHIFT — спрячь тело
+  // Убитого охранника можно спрятать в шкаф [E] (у стен в скрытных секторах), пока тело не нашли: охрана о нём не узнает.
+  TW.add(34, {
+    name: 'hide-bodies',
+    phase(r, T, name) {
+      const S = T.s, sec = T.secOf(name);
+      S.lk = []; S.bd = new Set();
+      if (!sec || sec.b !== 'stealth') return;
+      const hw = sec.W / 2 - 0.7;
+      for (let i = 0; i < 4; i += 1) {
+        const x = (i % 2 ? 1 : -1) * hw, z = sec.zA - 6 - i * (sec.D - 12) / 3.5;
+        if (r.blockedE(x, z)) continue;
+        T.solid(x, 1.1, z, 0.8, 2.2, 1.0, 0x5a5a5a); r.strip(x - Math.sign(x) * 0.42, 1.6, z, 0.04, 0.3, 0.5, 0xffffff);
+        S.lk.push([x, z]);
+      }
+      if (!S.said) { S.said = true; T.after(4, () => r.hint('GUARDS RAISE THE ALARM OVER BODIES — HIDE THEM IN LOCKERS [E]', 5)); }
+    },
+    tick(r, T, dt) {
+      const S = T.s, sec = T.sec();
+      if (!S.lk || !S.lk.length || !sec || sec.b !== 'stealth' || r.locked) return;
+      r.cb.enemies.forEach((e) => {
+        if (!e.dead || !e.guard || S.bd.has(e)) return;
+        S.bd.add(e);
+        const it = T.interact({ pos: [e.x, 0.8, e.z], label: 'HIDE THE BODY', reach: 2.2, enabled: () => !e.hid && !e.found && e.n.g.visible, use: () => {
+          it.done(); let best = S.lk[0], bd = 1e9;
+          S.lk.forEach((l) => { const d = Math.hypot(l[0] - e.x, l[1] - e.z); if (d < bd) { bd = d; best = l; } });
+          e.hid = true; e.found = true; const g = e.n.g.position, x0 = g.x, z0 = g.z;
+          r.tween(1.1, (k) => { g.x = x0 + (best[0] - x0) * k; g.z = z0 + (best[1] - z0) * k; }).then(() => { e.n.g.visible = false; r.toast('BODY HIDDEN', 1.4); r.snd && r.snd.play('thud'); });
+        } });
+        T.att(() => it.done());
+      });
+    }
+  });
+
+  // ===================================================================== 35 GLASS HOUSE — всё прозрачное
+  // Укрытия стеклянные: охрана видит сквозь них. Зато и вы видите охрану сквозь стены (белые ромбы), а по дому идёт «тень» — она ждёт, пока путь безопасен.
+  TW.add(35, {
+    name: 'glass',
+    phase(r, T, name) {
+      const S = T.s, sec = T.secOf(name), T3 = window.THREE;
+      if (S.g) { S.g.rm(); S.g = null; }
+      S.sec = null;
+      if (!sec || sec.b !== 'stealth') return;
+      S.sec = sec;
+      r.scene.children.forEach((m) => {
+        const c = m.userData && m.userData.col;
+        if (!c || c.off || c.glass || c.door || (c.y1 - c.y0) > 3.3 || (c.x1 - c.x0) > 7 || c.z1 < sec.zB || c.z0 > sec.zA || (c.z1 - c.z0) > 7) return;
+        c.glass = true;
+        const col = m.material && m.material.color ? m.material.color.getHex() : 0x888888;
+        m.material = new T3.MeshLambertMaterial({ color: col, transparent: true, opacity: 0.25, depthWrite: false });
+      });
+      S.g = T.ghost({ color: 0x222222, opacity: 0.55 });
+      S.gz = sec.zA - 2; S.gx = 0; S.g.set(0, S.gz, Math.PI); S.g.show(true);
+      T.att(() => { if (S.g) { S.g.rm(); S.g = null; } });
+      if (!S.said) { S.said = true; T.after(3, () => r.hint('EVERYTHING IS GLASS — FOLLOW THE SHADOW: IT MOVES ONLY WHEN THE WAY IS SAFE', 6)); }
+    },
+    safe(r, T, x, z) {
+      const M = r.mm; if (!M || !M.S) return true;
+      for (const q of M.S.guards()) {
+        const g = q.n.g.position, dx = x - g.x, dz = z - g.z, d = Math.hypot(dx, dz) || 1;
+        if (d < q.range && ((dx * Math.sin(q.n.yaw) + dz * Math.cos(q.n.yaw)) / d > 0.45 || d < 3) && r.hasLOS(g.x, 1.5, g.z, x, 1.2, z)) return false;
+      }
+      for (const i of M.S.items) {
+        if (i.off) continue;
+        if (i.kind === 'cam') { const dx = x - i.x, dz = z - i.z, d = Math.hypot(dx, dz); if (d < i.range && Math.abs(((Math.atan2(dx, dz) - i.yaw + 9.42) % 6.283) - 3.1416) < i.half + 0.2) return false; }
+        else if (i.kind === 'laser' && i.live && Math.abs(z - i.g.position.z) < 0.9) return false;
+      }
+      return true;
+    },
+    tick(r, T, dt) {
+      const S = T.s, M = r.mm, T3 = window.THREE;
+      if (!S.sec || !M || !M.S || r.locked) return;
+      S.mk = S.mk || new Map();
+      M.S.guards().forEach((q) => {
+        let m = S.mk.get(q);
+        if (!m) { m = new T3.Mesh(r.g.box, new T3.MeshBasicMaterial({ color: 0xffffff, depthTest: false, transparent: true })); m.scale.set(0.22, 0.22, 0.22); m.rotation.set(0.6, 0.78, 0); m.renderOrder = 20; r.scene.add(m); S.mk.set(q, m); }
+        m.visible = !q.dead; m.position.set(q.n.g.position.x, 2.3, q.n.g.position.z);
+      });
+      const g = S.g; if (!g) return;
+      const sec = S.sec, nz = S.gz - 1.7 * dt;
+      if (Math.hypot(r.p.x - S.gx, r.p.z - S.gz) > 14) { g.n.creeping = false; return; }
+      let moved = false;
+      for (const off of [0, 3, -3, 6, -6]) {
+        const nx = Math.max(-sec.W / 2 + 2, Math.min(sec.W / 2 - 2, off === 0 ? S.gx : S.gx + Math.sign(off) * 1.6 * dt * 2));
+        if (!r.blockedE(nx, nz) && this.safe(r, T, nx, nz) && this.safe(r, T, nx, nz - 2)) { S.gx = nx; S.gz = nz; moved = true; break; }
+      }
+      g.n.creeping = moved; g.set(S.gx, S.gz, Math.PI);
+      if (S.gz < sec.zB + 1) { S.gz = sec.zA - 2; S.gx = 0; }
+    }
+  });
+
+  // ===================================================================== 36 THE LIBRARIAN — слепой смотритель
+  // По секторам бродит слепой Библиотекарь: слышит бег и стрельбу, но не видит. Идите шагом. Книги ([E] взять, [J] бросить) отвлекают его на 6 с.
+  TW.add(36, {
+    name: 'blind-warden',
+    setup(r, T) {
+      const S = T.s; S.books = 0;
+      S.el = T.panel('tw-corner tw-box tw-rows', '<h3>BOOKS</h3><p><span>THROW [J]</span><b class="tw-n">0</b></p>', true); S.n = S.el.querySelector('.tw-n');
+      const th = () => this.thr(r, T);
+      T.key('KeyJ', th); T.btn('BOOK', 'right: 120px; bottom: 170px;', th);
+    },
+    thr(r, T) {
+      const S = T.s; if (S.books <= 0 || !S.w) return;
+      S.books -= 1; S.n.textContent = S.books;
+      let x = r.p.x, z = r.p.z;
+      for (let d = 1; d <= 9; d += 1) { const nx = r.p.x - Math.sin(r.p.yaw) * d, nz = r.p.z - Math.cos(r.p.yaw) * d; if (r.blockedE(nx, nz)) break; x = nx; z = nz; }
+      S.lure = [x, z]; S.lt = 6; r.snd && r.snd.play('thud', { k: 0.8 }); r.toast('BOOK THROWN', 1);
+    },
+    phase(r, T, name) {
+      const S = T.s, sec = T.secOf(name);
+      S.w = null; S.lt = 0;
+      if (!sec || sec.b === 'fight') return;
+      const p = T.spawnPts(sec, 4, 12), def = this;
+      const e = r.enemy('heavy', p[0][0], p[0][1], { hp: 3, drop: false, exact: true, friendly: true });
+      e.n.vest.visible = false; S.w = e; let goal = null, cd = 0, tg = 0;
+      e.ai = (q, dt) => {
+        const g = q.n.g.position, pl = r.p, sprint = r.keys && (r.keys.ShiftLeft || r.keys.ShiftRight) && pl.moving > 0.3;
+        const dp = Math.hypot(pl.x - g.x, pl.z - g.z);
+        if ((sprint && dp < 14) || (r.time - (r.twShotT || -9) < 1 && dp < 22)) { goal = [pl.x, pl.z]; tg = 3; }
+        if (S.lt > 0 && S.lure) { goal = S.lure; tg = 1; }
+        S.lt -= dt; tg -= dt; cd -= dt;
+        if (!goal || tg < -4 || Math.hypot(goal[0] - g.x, goal[1] - g.z) < 0.8) { const w = T.spawnPts(sec, 1, 0)[0]; goal = w; tg = 0; }
+        const dx = goal[0] - g.x, dz = goal[1] - g.z, d = Math.hypot(dx, dz) || 1, sp = tg > 0 ? 3.1 : 1.1;
+        q.n.yaw = Math.atan2(dx, dz);
+        const nx = g.x + dx / d * sp * dt, nz = g.z + dz / d * sp * dt;
+        if (!r.blockedE(nx, g.z)) g.x = nx; if (!r.blockedE(g.x, nz)) g.z = nz;
+        q.n.creeping = true; q.n.armT = 0;
+        if (dp < 1.7 && cd <= 0 && !r.locked) { cd = 1; r.hurt(25, g.x, g.z); }
+        return true;
+      };
+      p.slice(1).forEach((q, i) => {
+        const m = r.box(q[0], 0.15, q[1], 0.45, 0.3, 0.35, 0xffffff, false, true); T.att(() => T.gone(m));
+        const it = T.interact({ pos: [q[0], 0.4, q[1]], label: 'TAKE A BOOK', reach: 2.4, use: () => { it.done(); T.gone(m); S.books += 1; S.n.textContent = S.books; r.sfx('notification'); } });
+        T.att(() => it.done());
+      });
+      if (!S.said) { S.said = true; T.after(4, () => r.hint('THE LIBRARIAN IS BLIND: HE HEARS RUNNING AND SHOTS — WALK, AND THROW BOOKS [J] TO DISTRACT HIM', 6)); }
+    }
+  });
+
+  // ===================================================================== 38 SNIPER NEST — дуэль снайперов
+  // В каждом секторе на дальнем краю засел снайпер-соперник. Блик его линзы мигает перед выстрелом; ваш блик (долгое прицеливание) выдаёт вас — прячьтесь и стреляйте первым.
+  TW.add(38, {
+    name: 'sniper-duel',
+    phase(r, T, name) {
+      const S = T.s, sec = T.secOf(name);
+      S.rv = null; S.sc = 0; S.gl = S.gl || null;
+      if (!sec || sec.b !== 'snipe') return;
+      const hw = sec.W / 2 - 3, x = (Math.random() < 0.5 ? -1 : 1) * hw, z = sec.zB + 8;
+      const e = r.enemy('grunt', x, z, { hp: 0.6, drop: false, exact: true, pers: 'sniper', tag: 'rival' });
+      S.rv = e; S.cd = 4;
+      if (!S.gl) { S.gl = new (window.THREE.Mesh)(r.g.box, new (window.THREE.MeshBasicMaterial)({ color: 0xffffff, depthTest: false, transparent: true })); S.gl.scale.set(0.35, 0.35, 0.35); S.gl.renderOrder = 20; r.scene.add(S.gl); }
+      S.gl.visible = false;
+      T.att(() => { S.gl.visible = false; S.rv = null; });
+      r.hint('A RIVAL SNIPER IS ON THE FAR ROOF — WATCH FOR HIS LENS GLINT', 5);
+    },
+    tick(r, T, dt) {
+      const S = T.s, e = S.rv;
+      if (!e || r.locked) return;
+      if (e.dead) { S.gl.visible = false; S.rv = null; T.bonus(20, 'SNIPER DUEL WON'); return; }
+      S.cd -= dt;
+      S.gl.position.set(e.x, 1.7, e.z);
+      S.gl.visible = S.cd < 0.6 && S.cd > 0 && Math.sin(T.t * 30) > 0;
+      if (S.cd <= 0) { S.cd = 4.5; if (e.los) { r.toast('HE FIRES', 0.8); r.hurt(12, e.x, e.z); } }
+      S.sc = r.scoped ? S.sc + dt : 0;
+      if (S.sc > 2.2) { S.sc = 0; if (e.los) { r.toast('YOUR LENS GLINT GAVE YOU AWAY', 1.6); r.hurt(14, e.x, e.z); } }
+    }
+  });
 }());
