@@ -11,7 +11,7 @@
   F.PH = F.PH || {};
   F.ORDER = ['wh', 'fake', 'office', 'car', 'yard', 'base', 'hall', 'vault', 'gas', 'deep', 'flash', 'head', 'bombs', 'exit', 'end', 'credits'];
   const Q = new URLSearchParams(location.search);
-  const OST_ON = new Set(['wh', 'fake', 'office', 'yard', 'base', 'hall', 'vault', 'gas', 'deep', 'head']);
+  const OST_ON = new Set(['vault', 'gas', 'deep', 'head']);
   K.ost = (r, on, fade) => { try { const t = r.musicTrack('osttdictor', { vol: 0.95 }); if (on) t.play(fade || 1.5); else t.stop(fade === undefined ? 1.5 : fade); } catch (e) { /* без музыки */ } };
 
   // общий помощник: объект сценария, живущий в r.f48 (переживает смерть)

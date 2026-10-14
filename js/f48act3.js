@@ -75,6 +75,7 @@
     K.amb.set(r, 'hall', { fade: 2.0 }); K.amb.level(r, 0.5);
     r.sub && r.sub.classList.remove('on');
     K.unlock(r);
+    mus.play(1.5);
 
     // ---------------------------------------------------------- бойня: игрок в броне с миниганом, зал в панике, охрана со всех сторон
     let first = true;
