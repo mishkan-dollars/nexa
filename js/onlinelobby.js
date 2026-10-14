@@ -56,7 +56,7 @@
   }
 
   function shell() {
-    const tabs = [['play', 'PLAY'], ['public', 'PUBLIC'], ['profile', 'PROFILE'], ['chat', 'CHAT'], ['connect', 'CONNECTION']];
+    const tabs = [['play', 'PLAY'], ['mode', 'MODE'], ['public', 'PUBLIC'], ['trade', 'TRADES'], ['profile', 'PROFILE'], ['connect', 'CONNECTION']];
     return '<div class="ol" id="ol" data-i18n="net" data-tab="play" data-state="idle">' +
       '<div class="ol-bg" aria-hidden="true"><i class="ol-moon"></i><i class="ol-haze"></i></div>' +
       '<div class="ol-stage" id="ol-stage"><div class="ol-floor"></div>' +
@@ -69,6 +69,7 @@
         '<button type="button" class="ol-ic" data-action="menu" aria-label="Back to NEXA/OS" title="Back to NEXA/OS">' + IC.back + '</button>' +
         '<nav class="ol-tabs" role="tablist">' + tabs.map((t) => '<button type="button" role="tab" class="ol-tab' + (t[0] === 'play' ? ' on' : '') + '" data-act="tab" data-v="' + t[0] + '" aria-selected="' + (t[0] === 'play') + '">' + t[1] + (t[0] === 'chat' ? '<i class="ol-dot" hidden></i>' : '') + '</button>').join('') +
           '<a class="ol-tab ol-tg" href="' + TG + '" target="_blank" rel="noopener noreferrer">' + IC.tg + '<span>TELEGRAM</span></a></nav>' +
+        '<span class="ol-kp" id="ol-kp" title="KP"><small>KP</small><b translate="no">0</b></span>' +
         '<span class="ol-me"><span class="ol-mea"></span><span class="ol-men" translate="no"></span><span class="ol-mel"><small>LVL</small> <b translate="no"></b></span></span>' +
         '<button type="button" class="ol-ic" data-act="settings" aria-label="Settings" title="Settings">' + IC.gear + '</button>' +
       '</header>' +
@@ -77,6 +78,7 @@
       '<div class="ol-toast" id="ol-toast" role="status" aria-live="polite"></div>' +
       '<div class="ol-modal" id="ol-pick" hidden role="dialog" aria-modal="true" aria-label="Choose a mode"></div>' +
       '<div class="ol-modal" id="ol-card" hidden role="dialog" aria-modal="true" aria-label="Player profile"></div>' +
+      '<div class="ol-modal" id="ol-trade" hidden role="dialog" aria-modal="true" aria-label="Send KP"></div>' +
       '<div class="ol-modal" id="ol-emo" hidden role="dialog" aria-modal="true" aria-label="Emotes"></div>' +
       '<div class="ol-modal" id="ol-consent" hidden role="dialog" aria-modal="true" aria-label="Public play"></div>' +
       '<div class="ol-modal" id="ol-pubnew" hidden role="dialog" aria-modal="true" aria-label="Create a public room"></div>' +
@@ -88,21 +90,13 @@
     return '' +
     // -------- PLAY: левая нижняя панель, уровень, карточка соединения, карусель
     '<section class="ol-pane" data-pane="play">' +
-      '<button type="button" class="ol-quest" data-act="tab" data-v="connect"><span class="q-t"><small>PARTY</small><b id="q-title">NOT CONNECTED</b></span><span class="q-s" id="q-sub">TAP TO CONNECT WITH A FRIEND</span><i class="q-bars"><u></u><u></u><u></u></i></button>' +
+      '<button type="button" class="ol-chatbtn" data-act="chat-toggle" id="ol-chatbtn"><span>CHAT</span><i class="ol-dot" hidden></i><b aria-hidden="true">⌄</b></button>' +
       '<div class="ol-bl"><h2 id="bl-mode">CO-OP SANDBOX</h2>' +
         '<button type="button" class="ol-grey" data-act="pick" id="bl-pick"><span class="g-i">' + IC.modes + '</span><span class="g-t"><b>MISSION / SANDBOX WITH A FRIEND</b><small id="bl-sub"></small></span></button>' +
         '<button type="button" class="ol-play" data-act="play" id="bl-play"><span id="bl-play-t">PLAY</span></button>' +
         '<p class="ol-hint" id="bl-hint"></p></div>' +
       '<div class="ol-br"><button type="button" class="ol-emob" data-act="emotes" id="ol-emob" title="B">' + IC.emo + '<span id="ol-emob-t">EMOTES</span></button>' +
         '<div class="ol-lvl" id="ol-lvl"><i></i><span><small>LVL</small><b translate="no">1</b></span></div><div class="ol-badge" id="ol-badge" title="Rank"><b translate="no">S</b><small>SUBJECT</small></div></div>' +
-      '<div class="ol-car" id="ol-car">' +
-        '<button type="button" class="ol-card c-sb on" data-act="mode" data-v="sandbox"><i class="cd-a">3</i><span><small>CO-OP</small><b>CO-OP SANDBOX</b></span></button>' +
-        '<button type="button" class="ol-card c-ms" data-act="pick"><i class="cd-a">47</i><span><small>STORY</small><b>CO-OP MISSIONS</b></span></button>' +
-        '<button type="button" class="ol-card c-pf" data-act="tab" data-v="profile"><i class="cd-a">★</i><span><small>STATS</small><b>YOUR PROFILE</b></span></button>' +
-        '<button type="button" class="ol-card c-pb" data-act="tab" data-v="public"><i class="cd-a">⌖</i><span><small>QUICK PLAY</small><b>PUBLIC ROOMS</b></span></button>' +
-        '<button type="button" class="ol-card c-cn" data-act="tab" data-v="connect"><i class="cd-a">⇄</i><span><small>P2P</small><b>CONNECT WITH A FRIEND</b></span></button>' +
-        '<a class="ol-card c-tg" href="' + TG + '" target="_blank" rel="noopener noreferrer"><i class="cd-a">' + IC.tg + '</i><span><small>OFFICIAL</small><b>TELEGRAM CHANNEL</b></span></a>' +
-      '</div>' +
     '</section>' +
     // -------- чат + голос (одна панель: справа на PLAY, на всю вкладку на CHAT)
     '<aside class="ol-comm" id="ol-comm"><div class="ol-voice" id="ol-voice">' +
@@ -126,6 +120,18 @@
         '<p class="cn-priv">Anyone who knows the room name can join — pick a long, unusual name and share it only with friends.</p><p class="v-note" id="pr-note"></p></div>' +
       srvHTML('pub') +
       '<p class="cn-priv">Strangers in public rooms and the signaling servers can technically see your network address (WebRTC); a VPN hides it. Public chat is not moderated: you can mute or report any player.</p>' +
+    '</div></section>' +
+    // -------- MODE: сюжетные / песочница / королевская битва + качество для онлайна
+    '<section class="ol-pane ol-sheet" data-pane="mode"><div class="sh-in">' +
+      '<div class="md-tabs" role="tablist"><button type="button" class="md-tab on" data-act="msub" data-v="story">1 · STORY</button><button type="button" class="md-tab" data-act="msub" data-v="sandbox">2 · SANDBOX</button><button type="button" class="md-tab" data-act="msub" data-v="br">3 · BATTLE ROYALE</button></div>' +
+      '<div class="md-body" id="md-body"></div>' +
+      '<div class="md-gfx"><label>ONLINE GRAPHICS</label><div class="pf-btns"><button type="button" class="ol-btn" data-act="gfx" data-v="HIGH">HIGH</button><button type="button" class="ol-btn" data-act="gfx" data-v="LOW">LOW</button></div><p class="v-note">LOW helps weak devices; the choice also changes the game graphics setting.</p></div>' +
+    '</div></section>' +
+    // -------- TRADES: передача KP игрокам комнаты
+    '<section class="ol-pane ol-sheet" data-pane="trade"><div class="sh-in">' +
+      '<div class="pb-top"><h3>TRADES</h3><div class="tr-bal"><small>YOUR BALANCE</small><b id="tr-bal" translate="no">0</b><em>KP</em></div></div>' +
+      '<p class="cn-priv">You can send KP only to players who are in your room right now. Every transfer is confirmed first; the host checks it and a duplicate or negative amount is rejected.</p>' +
+      '<p class="v-note" id="tr-note"></p><div class="pb-list" id="tr-list" role="list"></div>' +
     '</div></section>' +
     // -------- PROFILE
     '<section class="ol-pane ol-sheet" data-pane="profile"><div class="sh-in">' +
@@ -180,8 +186,15 @@
     const lvl = $('#ol-lvl');
     if (lvl) { lvl.querySelector('b').textContent = lv.level; lvl.style.setProperty('--p', Math.round(lv.pct * 360) + 'deg'); }
     const bd = $('#ol-badge'); if (bd) { bd.querySelector('b').textContent = lv.rank.charAt(0); bd.querySelector('small').textContent = lv.rank; }
+    updKP();
+  }
+  const kp = () => { try { return window.Toys ? Toys.credits | 0 : 0; } catch (e) { return 0; } };
+  function updKP() {
+    const e = $('#ol-kp b'); if (e) e.textContent = String(kp());
+    const b = $('#tr-bal'); if (b) b.textContent = String(kp());
   }
   function modeText() {
+    if (L.mode === 'br') return ['BATTLE ROYALE', '', ''];
     if (L.mode === 'mission' && validMission(L.mission)) return ['MISSION', String(L.mission).padStart(2, '0'), missionTitle(L.mission)];
     return ['SANDBOX', '', ''];
   }
@@ -190,15 +203,14 @@
     if (!root) return;
     const host = isHostSide(), mt = modeText();
     const sub = $('#bl-sub');
-    sub.innerHTML = mt[1] ? '<span>MISSION</span> <b translate="no">' + mt[1] + '</b> — <span translate="no">' + esc(mt[2]) + '</span>' : '<span>SANDBOX</span> — <span>WAVES OF ENEMIES</span>';
-    $('#bl-mode').textContent = mt[1] ? 'CO-OP MISSION' : 'CO-OP SANDBOX';
+    if (L.mode === 'br') sub.innerHTML = '<span>BATTLE ROYALE</span> — <span>UP TO 10 PLAYERS</span>'; else sub.innerHTML = mt[1] ? '<span>MISSION</span> <b translate="no">' + mt[1] + '</b> — <span translate="no">' + esc(mt[2]) + '</span>' : '<span>SANDBOX</span> — <span>WAVES OF ENEMIES</span>';
+    $('#bl-mode').textContent = L.mode === 'br' ? 'BATTLE ROYALE' : mt[1] ? 'CO-OP MISSION' : 'CO-OP SANDBOX';
     $('#bl-pick').disabled = !host;
-    $$('.ol-card[data-act="mode"]').forEach((c) => c.classList.toggle('on', L.mode === 'sandbox'));
-    const c2 = $('.ol-card.c-ms'); if (c2) c2.classList.toggle('on', L.mode === 'mission');
     const btn = $('#bl-play'), tx = $('#bl-play-t'), hint = $('#bl-hint');
     root.dataset.cd = L.cd ? '1' : '0';
     let label = 'PLAY', dis = false, hn = '';
     if (L.cd) { label = 'STARTING…'; dis = true; }
+    else if (L.mode === 'br') { label = BR.on ? 'CANCEL' : 'READY'; dis = !isHostSide() && NN.connected && !BR.on; hn = dis ? 'THE BATTLE STARTS WHEN THE HOST TIMER ENDS' : BR.on ? 'SEARCHING FOR PLAYERS — UP TO 10' : 'PRESS READY TO FIND A BATTLE (BOTS FILL EMPTY SEATS AFTER 60 S)'; }
     else if (!NN.connected) { label = 'PLAY'; hn = 'SOLO — OPEN CONNECTION TO PLAY WITH A FRIEND'; }
     else if (NN.isHost) { if (!NN.players.length) { hn = 'SOLO — OPEN CONNECTION TO PLAY WITH A FRIEND'; } else if (!guestsReady()) { dis = true; hn = NN.players.length > 1 ? 'WAITING FOR ALL PLAYERS TO PRESS READY' : 'WAITING FOR YOUR FRIEND TO PRESS READY'; } else hn = NN.players.length > 1 ? 'ALL PLAYERS ARE READY' : 'YOUR FRIEND IS READY'; }
     else { label = L.ready ? 'CANCEL' : 'READY'; hn = L.ready ? 'WAITING FOR THE HOST TO START' : 'PRESS READY WHEN YOU ARE SET'; }
@@ -219,10 +231,6 @@
     $('#cn-dis').hidden = !(open || st === 'waiting-answer' || st === 'answering' || st === 'connecting' || st === 'creating');
     const idx = { idle: 0, creating: 0, 'waiting-answer': 1, answering: 1, connecting: 2, open: 3, lost: 3, closed: 0, failed: 0 }[st] || 0;
     $$('#cn-steps li').forEach((li, i) => { li.classList.toggle('done', i < idx); li.classList.toggle('on', i === idx); });
-    const qt = $('#q-title');
-    if (open) { qt.textContent = 'PARTY ' + NN.count + '/' + MAXP; qt.setAttribute('translate', 'yes'); }
-    else { qt.textContent = STATE_TXT[st] || STATE_TXT.idle; qt.setAttribute('translate', 'yes'); }
-    $('#q-sub').textContent = open ? (st === 'lost' ? 'CONNECTION UNSTABLE…' : 'CONNECTED') : (st === 'idle' || st === 'closed' || st === 'failed' ? 'TAP TO CONNECT WITH A FRIEND' : 'TAP TO CONTINUE CONNECTING');
     root.classList.toggle('is-open', open);
     const full = open && NN.count >= MAXP;
     $('#h-create').disabled = (open && !NN.isHost) || full;
@@ -242,8 +250,6 @@
     if (st === 'open' || st === 'lost') { const s = NN.stats(); el.textContent = fmtTime(s.up) + (s.rtt ? '  ·  ' + s.rtt + ' ms' : ''); }
     else if (L.t0 && (st === 'creating' || st === 'waiting-answer' || st === 'answering' || st === 'connecting')) el.textContent = fmtTime(Math.floor((Date.now() - L.t0) / 1000));
     else el.textContent = '';
-    const sub = $('#q-sub');
-    if (sub && st === 'open' && NN.rtt) sub.textContent = NN.rtt + ' ms';
   }
   function note(id, code, kind) {
     const el = $('#' + id); if (!el) return;
@@ -306,11 +312,18 @@
     else for (let i = log.children.length; i < h.length; i += 1) log.appendChild(lineEl(h[i]));
     log.scrollTop = log.scrollHeight;
   }
-  const commVisible = () => root && (L.tab === 'chat' || (L.tab === 'play' && innerWidth >= 1180));
+  const commVisible = () => root && L.tab === 'play' && root.classList.contains('chat-open');
+  function chatToggle(on) {
+    if (!root) return;
+    const open = on === undefined ? !root.classList.contains('chat-open') : !!on;
+    root.classList.toggle('chat-open', open);
+    const b = $('#ol-chatbtn'); if (b) { b.classList.toggle('on', open); b.querySelector('b').textContent = open ? '⌃' : '⌄'; }
+    if (open) { L.unread = 0; const dot = $('#ol-chatbtn .ol-dot'); if (dot) dot.hidden = true; const log = $('#ol-log'); if (log) log.scrollTop = log.scrollHeight; }
+  }
   function onChat(m) {
     if (!root) return;
     renderLog(false);
-    if (m.from === 'peer' && !commVisible()) { L.unread += 1; const dot = $('.ol-dot'); if (dot) dot.hidden = false; }
+    if (m.from === 'peer' && !commVisible()) { L.unread += 1; const dot = $('#ol-chatbtn .ol-dot'); if (dot) dot.hidden = false; }
     if (m.from === 'peer') sfx('notification');
   }
 
@@ -468,7 +481,7 @@
 
   function refreshAll() {
     if (!root) return;
-    updTop(); updPlay(); updStatus(); updVoice(); renderLog(true); updProfile(true); updTab(); renderServers(); renderPublic(); updRoom(); updEmoBtn();
+    updTop(); updPlay(); updStatus(); updVoice(); renderLog(true); updProfile(true); updTab(); renderServers(); renderPublic(); updRoom(); updEmoBtn(); renderMode(); renderTrade(); updKP();
     $('#ol-msg').disabled = false;
     const lan = $('#cn-lan'); if (lan) lan.checked = NN.lan;
     const o = NN.offerCode;
@@ -480,13 +493,16 @@
     if (!root) return;
     root.dataset.tab = L.tab;
     $$('.ol-tab[data-act="tab"]').forEach((b) => { const on = b.dataset.v === L.tab; b.classList.toggle('on', on); b.setAttribute('aria-selected', on ? 'true' : 'false'); });
-    if (commVisible()) { L.unread = 0; const dot = $('.ol-dot'); if (dot) dot.hidden = true; const log = $('#ol-log'); if (log) log.scrollTop = log.scrollHeight; }
+    if (commVisible()) { L.unread = 0; const dot = $('#ol-chatbtn .ol-dot'); if (dot) dot.hidden = true; }
     if (L.tab === 'profile') updProfile(true);
+    if (L.tab === 'mode') renderMode();
+    if (L.tab === 'trade') renderTrade();
     if (L.tab === 'public') enterPublic();
     layoutTags();
   }
   function setTab(t) {
-    if (['play', 'public', 'profile', 'chat', 'connect'].indexOf(t) < 0) t = 'play';
+    if (t === 'chat') { L.tab = 'play'; updTab(); chatToggle(true); return; }
+    if (['play', 'mode', 'public', 'trade', 'profile', 'connect'].indexOf(t) < 0) t = 'play';
     L.tab = t; updTab();
   }
 
@@ -547,13 +563,14 @@
     else if (NN.role === 'guest' && NN.answerCode && !NN.connected && $('#g-in').value.trim()) { toast('LAN MODE CHANGED — NEW ANSWER CREATED'); guestAnswer(false); }
   }
 
-  function lobbyMsg() { return { type: 'lobby', mode: L.mode, mission: L.mission, ready: NN.players.filter((q) => L.readyMap[q.slot]).map((q) => q.slot) }; }
+  function lobbyMsg() { return { type: 'lobby', mode: L.mode, mission: L.mission, brt: BR.on && BR.host ? Math.max(0, brLeft()) : -1, ready: NN.players.filter((q) => L.readyMap[q.slot]).map((q) => q.slot) }; }
   function sendLobby() { if (NN.isHost && NN.connected) NN.sendAction(lobbyMsg()); }
   function setMode(mode, mission) {
     if (NN.connected && !NN.isHost) return;
-    L.mode = mode === 'mission' && validMission(mission) ? 'mission' : 'sandbox';
+    if (BR.on && mode !== 'br') brCancel();
+    L.mode = mode === 'br' ? 'br' : mode === 'mission' && validMission(mission) ? 'mission' : 'sandbox';
     if (L.mode === 'mission') L.mission = mission | 0;
-    sendLobby(); updPlay(); sfx('mouse');
+    sendLobby(); updPlay(); renderMode(); sfx('mouse');
     if (RM && RM.hosting && RM.hosting.pub) RM.setMeta({ mode: L.mode, mission: L.mission });
   }
   function openPick() {
@@ -572,6 +589,7 @@
   function mkSeed() { try { const a = new Uint32Array(1); crypto.getRandomValues(a); return a[0] || 1; } catch (e) { return (Date.now() % 4294967295) || 1; } }
   function doPlay() {
     if (L.cd) return;
+    if (L.mode === 'br') { if (BR.on) brCancel(); else brReady(); return; }
     if (!NN.connected || (NN.isHost && !NN.players.length)) { beginMatch({ mode: L.mode, mission: L.mission, seed: mkSeed(), role: 'solo', solo: true }, 1); return; }
     if (NN.isHost) {
       if (!guestsReady()) return;
@@ -945,10 +963,20 @@
     if (window.NexaNet && NN.voice && NN.voice.unlock) NN.voice.unlock();
     switch (act) {
       case 'tab': setTab(v); break;
+      case 'chat-toggle': chatToggle(); break;
+      case 'msub': L.msub = v; renderMode(); break;
+      case 'gfx': try { Missions.setQuality(v); } catch (er) { /* ok */ } renderMode(); break;
+      case 'br-ready': brReady(); break;
+      case 'br-cancel': brCancel(); break;
+      case 'trade': openTrade(Number(a.dataset.slot)); break;
+      case 'trade-yes': tradeConfirm(); break;
+      case 'trade-no': { const el = $('#ol-trade'); if (el) el.hidden = true; L.tradeAsk = null; break; }
       case 'settings': { const b = document.getElementById('open-settings'); if (b) b.click(); break; }
       case 'pick': openPick(); break;
       case 'pick-close': closePick(); break;
       case 'mode': setMode(v); closePick(); break;
+      case 'mode-sel': setMode(v); toast('MODE SELECTED'); break;
+      case 'mission-sel': setMode('mission', Number(v)); toast('MODE SELECTED'); break;
       case 'mission': setMode('mission', Number(v)); closePick(); break;
       case 'play': doPlay(); break;
       case 'mic': {
@@ -1071,7 +1099,8 @@
     NN.on('net:rtt', updTimer);
     NN.on('lobby', (p) => {
       if (NN.isHost) return;
-      L.mode = p.mode === 'mission' && validMission(p.mission) ? 'mission' : 'sandbox'; if (L.mode === 'mission') L.mission = p.mission | 0;
+      L.mode = p.mode === 'br' ? 'br' : p.mode === 'mission' && validMission(p.mission) ? 'mission' : 'sandbox'; if (L.mode === 'mission') L.mission = p.mission | 0;
+      L.brt = p.brt | 0;
       L.readyList = Array.isArray(p.ready) ? p.ready.map(Number).filter((n) => n >= 2 && n <= MAXP).slice(0, MAXP) : [];
       updPlay();
     });
@@ -1084,8 +1113,8 @@
     });
     NN.on('start', (p) => {
       if (NN.isHost || L.cd) return;
-      const mode = p.mode === 'mission' && validMission(p.mission) ? 'mission' : 'sandbox';
-      beginMatch({ mode, mission: mode === 'mission' ? p.mission | 0 : 1, seed: (p.seed >>> 0) || 1, role: 'guest', solo: false }, 3);
+      const mode = p.mode === 'br' ? 'br' : p.mode === 'mission' && validMission(p.mission) ? 'mission' : 'sandbox';
+      beginMatch({ mode, mission: mode === 'mission' ? p.mission | 0 : 1, seed: (p.seed >>> 0) || 1, role: 'guest', solo: false, bots: mode === 'br' ? clamp(p.bots | 0, 0, 99) : 0 }, 3);
     });
     NN.on('profile', onProfile); NN.on('profile?', onProfileReq);
     NN.on('cev', onCev); NN.on('dances', onDances);

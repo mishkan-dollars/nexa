@@ -81,7 +81,7 @@
   function paramList(name) {
     try { const q = new URLSearchParams(location.search).getAll(name).join(','); return q ? q.split(',') : null; } catch (e) { return null; }
   }
-  const cleanList = (l) => Array.from(new Set((l || []).map((x) => String(x).trim()).filter((x) => x && validServer(x)))).slice(0, 80);
+  const cleanList = (l) => Array.from(new Set((l || []).map((x) => String(x).trim()).filter((x) => x && validServer(x)))).slice(0, 400);
   // [{url, type:'tracker'|'nostr'}]: параметры ?tracker= / ?relay= (через запятую) или localStorage 'nexaTrackers' / 'nexaRelays' заменяют списки по умолчанию
   function serverEntries() {
     let tr = paramList('tracker'), rl = paramList('relay');
@@ -104,7 +104,7 @@
   const FRESH = 30 * 60000;
   let store = {};
   try { const j = JSON.parse(lsGet('nexaSrvHealth') || '{}'); if (j && typeof j === 'object') store = j; } catch (e) { store = {}; }
-  const saveStore = () => { try { const k = Object.keys(store); if (k.length > 120) k.slice(0, k.length - 120).forEach((x) => { delete store[x]; }); lsSet('nexaSrvHealth', JSON.stringify(store)); } catch (e) { /* без хранилища */ } };
+  const saveStore = () => { try { const k = Object.keys(store); if (k.length > 400) k.slice(0, k.length - 400).forEach((x) => { delete store[x]; }); lsSet('nexaSrvHealth', JSON.stringify(store)); } catch (e) { /* без хранилища */ } };
   const fresh = (r) => !!r && now() - r.t < FRESH;
   function markDead(url, type, why, hard) {
     const h = hl(url, type);

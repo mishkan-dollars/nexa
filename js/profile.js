@@ -180,7 +180,7 @@
     const start0 = M.start;
     M.start = function (taskId, opts) {
       opts = Object.assign({}, opts || {});
-      const sandbox = taskId === 'sandbox' || taskId === 'coopbox', story = /^\d+$/.test(String(taskId));
+      const sandbox = taskId === 'sandbox' || taskId === 'coopbox' || taskId === 'brbox', story = /^\d+$/.test(String(taskId));
       const done0 = opts.onComplete, exit0 = opts.onExit;
       let ended = false;
       opts.onComplete = function (id) { if (!ended) { ended = true; try { if (story) { const p = get(); p.stats.missionsDone += 1; if (window.NexaCoop && NexaCoop.active) p.stats.coopMissionsDone += 1; const n = Number(id); if (p.doneIds.indexOf(n) < 0) p.doneIds.push(n); changed(); save(); } } catch (e) { /* ok */ } } return done0 && done0.apply(this, arguments); };
