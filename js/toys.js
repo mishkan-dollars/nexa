@@ -33,24 +33,89 @@
 
   // ---------------------------------------------------------------- хранилище
   let S = null;
-  function load() {
-    let d = null;
-    try { d = JSON.parse(localStorage.getItem(KEY)); } catch (e) { d = null; }
-    if (!d || typeof d !== 'object') d = {};
+  function sha256(str) {
+    const K = [], H = [0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19];
+    for (let n = 2, c = 0; c < 64; n += 1) { let pr = true; for (let d = 2; d * d <= n; d += 1) if (n % d === 0) { pr = false; break; } if (pr) { K[c] = (Math.pow(n, 1 / 3) * 4294967296) | 0; c += 1; } }
+    const u = unescape(encodeURIComponent(str)), l = u.length, w = [];
+    for (let i = 0; i < l; i += 1) w[i >> 2] |= u.charCodeAt(i) << (24 - (i % 4) * 8);
+    w[l >> 2] |= 0x80 << (24 - (l % 4) * 8); w[(((l + 8) >> 6) + 1) * 16 - 1] = l * 8;
+    const rr = (x, n) => (x >>> n) | (x << (32 - n));
+    for (let o = 0; o < w.length; o += 16) {
+      const m = w.slice(o, o + 16).map((x) => x | 0), v = H.slice();
+      for (let i = 16; i < 64; i += 1) { const a0 = m[i - 15], a1 = m[i - 2]; m[i] = (m[i - 16] + (rr(a0, 7) ^ rr(a0, 18) ^ (a0 >>> 3)) + m[i - 7] + (rr(a1, 17) ^ rr(a1, 19) ^ (a1 >>> 10))) | 0; }
+      let [A, B, C, D, E, F, G, Hh] = v;
+      for (let i = 0; i < 64; i += 1) {
+        const t1 = (Hh + (rr(E, 6) ^ rr(E, 11) ^ rr(E, 25)) + ((E & F) ^ (~E & G)) + K[i] + m[i]) | 0, t2 = ((rr(A, 2) ^ rr(A, 13) ^ rr(A, 22)) + ((A & B) ^ (A & C) ^ (B & C))) | 0;
+        Hh = G; G = F; F = E; E = (D + t1) | 0; D = C; C = B; B = A; A = (t1 + t2) | 0;
+      }
+      [A, B, C, D, E, F, G, Hh].forEach((x, i) => { H[i] = (H[i] + x) | 0; });
+    }
+    return H.map((x) => ('00000000' + (x >>> 0).toString(16)).slice(-8)).join('');
+  }
+  const DK = 'nexaDev', BK = KEY + '.b';
+  const rnd32 = () => { try { const a = new Uint32Array(4); crypto.getRandomValues(a); return Array.from(a).map((x) => ('00000000' + x.toString(16)).slice(-8)).join(''); } catch (e) { return sha256(String(Math.random()) + Date.now()); } };
+  let DEVR = null;
+  try { DEVR = JSON.parse(localStorage.getItem(DK)); } catch (e) { DEVR = null; }
+  const devNew = !(DEVR && typeof DEVR.s === 'string' && DEVR.s.length === 32);
+  const DEV = devNew ? { s: rnd32(), q: 0, h: '' } : { s: DEVR.s, q: Math.max(0, DEVR.q | 0), h: String(DEVR.h || '') };
+  const saveDev = () => { try { localStorage.setItem(DK, JSON.stringify(DEV)); } catch (e) { /* ignore */ } };
+  const MASK = parseInt(DEV.s.slice(0, 7), 16) | 0;
+  const recHash = (q, p, c, d) => sha256(DEV.s + '|' + q + '|' + p + '|' + c + '|' + d).slice(0, 32);
+  let tampered = 0, lastRec = null;
+  function readRec(raw) {
+    let r = null;
+    try { r = JSON.parse(raw); } catch (e) { return null; }
+    if (!r || r.v !== 2 || typeof r.c !== 'string' || typeof r.d !== 'string' || typeof r.h !== 'string') return null;
+    if (recHash(r.q | 0, String(r.p || ''), r.c, r.d) !== r.h) return null;
+    if ((r.q | 0) < DEV.q) return null;
+    let d; try { d = JSON.parse(r.d); } catch (e) { return null; }
+    const cr = (parseInt(r.c, 36) ^ MASK) >>> 0;
+    if (!d || typeof d !== 'object' || !isFinite(cr) || cr > 1e9) return null;
+    d.credits = cr; return { d, r };
+  }
+  function build(d, fresh) {
     const owned = Array.isArray(d.owned) ? d.owned.filter((id) => DEF[id]) : [];
-    const wheel = [];   // колесо эмоций: 8 слотов, в слоте только купленная эмоция (и без повторов)
+    const wheel = [];
     for (let i = 0; i < WHEEL_N; i += 1) { const id = Array.isArray(d.wheel) ? d.wheel[i] : null; wheel.push(DEF[id] && DEF[id].kind === 'emote' && owned.indexOf(id) >= 0 && wheel.indexOf(id) < 0 ? id : null); }
-    return {
-      credits: Number.isFinite(d.credits) ? Math.max(0, Math.floor(d.credits)) : START_CREDITS,
+    const o = {
       owned,
       loadout: DEF[d.loadout] && !DEF[d.loadout].kind && owned.indexOf(d.loadout) >= 0 ? d.loadout : null,
       wheel: wheel,
       hud: { life: !!(d.hud && d.hud.life), gear: !!(d.hud && d.hud.gear) },
-      paid: Array.isArray(d.paid) ? d.paid : []
+      paid: Array.isArray(d.paid) ? d.paid.filter((x) => Number.isInteger(x) && x >= 1 && x <= 48).slice(0, 60) : [],
+      rl: Array.isArray(d.rl) ? d.rl.filter((x) => x && isFinite(x.t) && isFinite(x.n)).slice(-40) : []
     };
+    let cv = 0; const ck = (Math.random() * 4294967296) >>> 0;
+    const set = (v) => { v = Math.floor(Number(v)); if (!isFinite(v)) return; cv = (Math.max(0, Math.min(1e9, v)) ^ ck) >>> 0; };
+    set(Number.isFinite(d.credits) ? d.credits : START_CREDITS);
+    Object.defineProperty(o, 'credits', { get: () => (cv ^ ck) >>> 0, set, enumerable: false });
+    return o;
   }
-  function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { /* ignore */ } }
+  function load() {
+    let got = null;
+    const raws = [localStorage.getItem(KEY), localStorage.getItem(BK)];
+    let from = -1;
+    for (let i = 0; i < raws.length && !got; i += 1) if (raws[i]) { got = readRec(raws[i]); from = i; }
+    if (got) { if (from > 0 && raws[0]) tampered += 1; lastRec = got.r; return build(got.d); }
+    if (raws[0] || raws[1]) {
+      let leg = null; try { leg = JSON.parse(raws[0]); } catch (e) { leg = null; }
+      if (devNew && leg && typeof leg === 'object' && leg.v === undefined) { leg.credits = Math.min(Number.isFinite(leg.credits) ? leg.credits : START_CREDITS, 20000); return build(leg); }
+      tampered += 1;
+    }
+    return build({});
+  }
+  function save() {
+    try {
+      const d = JSON.stringify({ owned: S.owned, loadout: S.loadout, wheel: S.wheel, hud: S.hud, paid: S.paid, rl: S.rl });
+      const q = DEV.q + 1, p = lastRec ? lastRec.h : '', c = ((S.credits ^ MASK) >>> 0).toString(36);
+      const r = { v: 2, q, p, c, d, h: recHash(q, p, c, d) };
+      const js = JSON.stringify(r);
+      localStorage.setItem(BK, js); localStorage.setItem(KEY, js);
+      DEV.q = q; DEV.h = r.h; lastRec = r; saveDev();
+    } catch (e) { /* ignore */ }
+  }
   S = load();
+  if (devNew || tampered) save();
 
   const ctx = { audio: null, setView: null, render: null, startSandbox: null };
 
@@ -439,12 +504,18 @@
 
   // ---------------------------------------------------------------- награды и части HUD
   let pendBonus = 0; // interiors.js: бонус за бесшумные/жестокие убийства и заложников — ждёт ближайшей награды за миссию
-  function bonus(n) { pendBonus = Math.max(0, Math.round(n) || 0); }
+  function bonus(n) { pendBonus = Math.max(0, Math.min(300, Math.round(n) || 0)); }
+  const REPLAY_HOUR = 300, REWARD_GAP = 30000;
   function reward(taskId) {
-    const first = S.paid.indexOf(taskId) < 0;
-    const n = (first ? REWARD_FIRST : REWARD_REPLAY) + pendBonus; pendBonus = 0;
-    if (first) S.paid.push(taskId);
-    S.credits += n; save();
+    taskId = Number(taskId);
+    if (!Number.isInteger(taskId) || taskId < 1 || taskId > 48) return 0;
+    const now = Date.now(), first = S.paid.indexOf(taskId) < 0;
+    S.rl = S.rl.filter((x) => now - x.t < 3600000);
+    const last = S.rl.length ? S.rl[S.rl.length - 1].t : 0, hourly = S.rl.reduce((a, x) => a + x.n, 0);
+    let n = (first ? REWARD_FIRST : REWARD_REPLAY) + pendBonus; pendBonus = 0;
+    if (now - last < REWARD_GAP) n = 0;
+    else if (!first) n = Math.max(0, Math.min(n, REPLAY_HOUR - hourly));
+    if (n > 0) { if (first) S.paid.push(taskId); S.rl.push({ t: now, n: first ? 0 : n }); S.credits += n; save(); }
     const el = document.getElementById('system-message');
     if (el) { const old = el.dataset.old || el.textContent; el.dataset.old = old; el.textContent = '+' + n + ' CR // BALANCE ' + S.credits + ' CR'; clearTimeout(reward.t); reward.t = setTimeout(() => { el.textContent = old; delete el.dataset.old; }, 6000); }
     return n;
@@ -460,11 +531,20 @@
     return true;
   }
 
+  let vaultTaken = false;
   window.Toys = {
     CATALOG, EMOTES, def: (id) => DEF[id], REWARD_FIRST,
     emoteWheel: () => S.wheel.slice(), audio: () => ctx.audio,
     get credits() { return S.credits; },
-    addCredits(n) { n = Math.floor(n); if (!isFinite(n) || n === 0 || S.credits + n < 0 || n > 1e7) return false; S.credits += n; save(); return true; },
+    vault() {
+      if (vaultTaken) return null;
+      vaultTaken = true;
+      return {
+        credit(n) { n = Math.floor(n); if (!isFinite(n) || n < 1 || n > 1000000 || S.credits + n > 1e9) return false; S.credits += n; save(); return true; },
+        debit(n) { n = Math.floor(n); if (!isFinite(n) || n < 1 || n > 1000000 || S.credits < n) return false; S.credits -= n; save(); return true; }
+      };
+    },
+    get tampered() { return tampered; }, sha: sha256,
     owned: (id) => S.owned.indexOf(id) >= 0,
     loadout() { return S.loadout && S.owned.indexOf(S.loadout) >= 0 ? S.loadout : null; },
     hud: {

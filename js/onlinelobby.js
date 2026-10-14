@@ -15,6 +15,21 @@
     pubSession: false, joinUi: null, roomLink: '', dances: {}, cards: {}, srvSeen: false };
   const BR = { on: false, host: false, t0: 0, state: '', findT: 0 };
   const TRD = { sent: {}, seen: new Set(), hseen: new Set(), route: {} };
+  const VAULT = window.Toys && Toys.vault ? Toys.vault() : null;
+  const SIG = { key: {}, mine: '', led: {} };
+  const sg = (k, parts) => (k && window.Toys && Toys.sha ? Toys.sha(k + '|' + parts.join('|')).slice(0, 20) : '');
+  const sgOk = (k, parts, v) => !!k && typeof v === 'string' && v.length === 20 && sg(k, parts) === v;
+  const tOk = (t) => Number.isFinite(t) && Math.abs(Date.now() - t) < 300000;
+  function ledgerOk(src, amt, bal) {
+    const now = Date.now(), e = SIG.led[src] || (SIG.led[src] = { bal: -1, t: now, recv: 0, ts: [], sum: [] });
+    e.ts = e.ts.filter((t) => now - t < 60000); e.sum = e.sum.filter((x) => now - x[0] < 3600000);
+    if (e.ts.length >= 3) return false;
+    if (e.sum.reduce((a, x) => a + x[1], 0) + amt > 100000) return false;
+    if (!Number.isInteger(bal) || bal < 0 || bal > 1e9) return false;
+    if (e.bal >= 0 && bal + amt > e.bal + e.recv + 2000 + Math.ceil((now - e.t) / 3600000 * 1000)) return false;
+    e.ts.push(now); e.sum.push([now, amt]); e.bal = bal; e.recv = 0; e.t = now;
+    return true;
+  }
   L.msub = 'story';
   let root = null, tickT = 0;
   const $ = (s) => (root ? root.querySelector(s) : null);
@@ -678,46 +693,54 @@
     if (!NN.connected || !q) { toast(NN.text('TRADE_GONE'), 'bad'); return; }
     if (!validAmt(a.amt) || a.amt > kp()) { toast(NN.text('TRADE_FUNDS'), 'bad'); return; }
     const tid = NN.util.rndHex(6);
-    if (!Toys.addCredits(-a.amt)) { toast(NN.text('TRADE_FUNDS'), 'bad'); return; }
+    if (!VAULT || !VAULT.debit(a.amt)) { toast(NN.text('TRADE_FUNDS'), 'bad'); return; }
     TRD.sent[tid] = { slot: a.slot, amt: a.amt, name: q.name };
     updKP();
-    if (NN.isHost) trRoute(1, a.slot, a.amt, tid); else NN.sendAction({ type: 'trq', dst: a.slot, amt: a.amt, tid });
+    if (NN.isHost) trRoute(1, a.slot, a.amt, tid); else { const t = Date.now(), bal = kp(); NN.sendAction({ type: 'trq', dst: a.slot, amt: a.amt, tid, t, bal, sg: sg(SIG.mine, ['trq', a.slot, a.amt, tid, t, bal]) }); }
     toast('TRANSFER SENT — WAITING FOR CONFIRMATION');
   }
-  function trResult(src, tid, ok, amt) { if (src === 1) onTrf({ tid, ok, amt }); else NN.sendAction({ type: 'trf', tid, ok, amt }, { to: src }); }
+  function trResult(src, tid, ok, amt) { if (src === 1) onTrf({ tid, ok, amt }); else NN.sendAction({ type: 'trf', tid, ok: ok ? 1 : 0, amt, sg: sg(SIG.key[src], ['trf', tid, ok ? 1 : 0, amt]) }, { to: src }); }
   function trRoute(src, dst, amt, tid) {                       // только хост
     const key = src + ':' + tid;
     if (TRD.hseen.has(key)) return;
     TRD.hseen.add(key); if (TRD.hseen.size > 500) TRD.hseen.clear();
     if (!validTid(tid) || !validAmt(amt) || dst === src || !window.Toys) { trResult(src, tid, false, 0); return; }
-    if (dst === 1) { if (!Toys.addCredits(amt)) { trResult(src, tid, false, 0); return; } toastFrom(src, amt); updKP(); trResult(src, tid, true, amt); return; }
+    if (dst === 1) { if (!VAULT || !VAULT.credit(amt)) { trResult(src, tid, false, 0); return; } toastFrom(src, amt); updKP(); trResult(src, tid, true, amt); return; }
     if (!NN.players.some((q) => q.slot === dst)) { trResult(src, tid, false, 0); return; }
     TRD.route[tid] = { src, dst, amt };
-    NN.sendAction({ type: 'trd', src, amt, tid }, { to: dst });
+    const t = Date.now(); NN.sendAction({ type: 'trd', src, amt, tid, t, sg: sg(SIG.key[dst], ['trd', src, amt, tid, t]) }, { to: dst });
   }
   function toastFrom(src, amt) { const q = src === 1 ? null : NN.players.find((x) => x.slot === src); if (root) toast('+' + amt + ' KP — ' + (q ? q.name : 'HOST')); }
   function onTrf(p) {
     const e = TRD.sent[p.tid]; if (!e) return;
     delete TRD.sent[p.tid];
     if (p.ok) { if (root) toast('SENT ' + e.amt + ' KP — ' + e.name); }
-    else { if (window.Toys) Toys.addCredits(e.amt); if (root) toast('TRANSFER FAILED — KP RETURNED', 'bad'); }
+    else { if (VAULT) VAULT.credit(e.amt); if (root) toast('TRANSFER FAILED — KP RETURNED', 'bad'); }
     updKP(); renderTrade();
   }
   function tradeHooks() {
-    NN.on('trq', (p) => { if (NN.isHost) trRoute(p.from | 0, p.dst | 0, p.amt, p.tid); });
+    NN.on('tk', (p) => { if ((p.from | 0) === 1 && !NN.isHost && typeof p.k === 'string' && /^[0-9a-f]{32}$/.test(p.k)) SIG.mine = p.k; });
+    NN.on('trq', (p) => {
+      if (!NN.isHost) return;
+      const src = p.from | 0;
+      if (!sgOk(SIG.key[src], ['trq', p.dst, p.amt, p.tid, p.t, p.bal], p.sg) || !tOk(p.t) || !validAmt(p.amt)) return;
+      if (!TRD.hseen.has(src + ':' + p.tid) && !ledgerOk(src, p.amt, p.bal)) { TRD.hseen.add(src + ':' + p.tid); trResult(src, p.tid, false, 0); return; }
+      trRoute(src, p.dst | 0, p.amt, p.tid);
+    });
     NN.on('trd', (p) => {
       if ((p.from | 0) !== 1 || NN.isHost || !validTid(p.tid) || !validAmt(p.amt) || TRD.seen.has(p.tid)) return;
+      if (!sgOk(SIG.mine, ['trd', p.src | 0, p.amt, p.tid, p.t], p.sg) || !tOk(p.t)) return;
       TRD.seen.add(p.tid); if (TRD.seen.size > 500) TRD.seen.clear();
-      if (window.Toys && Toys.addCredits(p.amt)) { toastFrom(p.src | 0, p.amt); updKP(); }
-      NN.sendAction({ type: 'tra', src: p.src | 0, tid: p.tid, amt: p.amt });
+      if (VAULT && VAULT.credit(p.amt)) { toastFrom(p.src | 0, p.amt); updKP(); }
+      NN.sendAction({ type: 'tra', src: p.src | 0, tid: p.tid, amt: p.amt, sg: sg(SIG.mine, ['tra', p.src | 0, p.tid, p.amt]) });
     });
     NN.on('tra', (p) => {
       if (!NN.isHost) return;
-      const r = TRD.route[p.tid]; if (!r || r.dst !== (p.from | 0)) return;
-      delete TRD.route[p.tid]; trResult(r.src, p.tid, true, r.amt);
+      const r = TRD.route[p.tid]; if (!r || r.dst !== (p.from | 0) || !sgOk(SIG.key[r.dst], ['tra', p.src | 0, p.tid, p.amt], p.sg)) return;
+      delete TRD.route[p.tid]; const le = SIG.led[r.dst]; if (le) le.recv += r.amt; trResult(r.src, p.tid, true, r.amt);
     });
-    NN.on('trf', (p) => { if ((p.from | 0) === 1 && !NN.isHost) onTrf(p); });
-    NN.on('net:left', (p) => { if (!NN.isHost) return; Object.keys(TRD.route).forEach((t) => { const r = TRD.route[t]; if (r.dst === p.slot) { delete TRD.route[t]; trResult(r.src, t, false, 0); } }); });
+    NN.on('trf', (p) => { if ((p.from | 0) === 1 && !NN.isHost && sgOk(SIG.mine, ['trf', p.tid, p.ok ? 1 : 0, p.amt], p.sg)) onTrf(p); });
+    NN.on('net:left', (p) => { if (!NN.isHost) return; delete SIG.key[p.slot]; delete SIG.led[p.slot]; Object.keys(TRD.route).forEach((t) => { const r = TRD.route[t]; if (r.dst === p.slot) { delete TRD.route[t]; trResult(r.src, t, false, 0); } }); });
   }
 
   function lobbyMsg() { return { type: 'lobby', mode: L.mode, mission: L.mission, brt: BR.on && BR.host ? Math.max(0, brLeft()) : -1, ready: NN.players.filter((q) => L.readyMap[q.slot]).map((q) => q.slot) }; }
@@ -1253,7 +1276,7 @@
       if (s.state === 'open' && s.prev !== 'open' && s.prev !== 'lost') { toast('FRIEND CONNECTED'); if (L.tab === 'connect') setTab('play'); }
     });
     NN.on('net:peer', (q) => {
-      if (NN.isHost) { sendLobby(); sendDances(q.slot); }
+      if (NN.isHost) { sendLobby(); sendDances(q.slot); if (!SIG.key[q.slot]) SIG.key[q.slot] = NN.util.rndHex(16); NN.sendAction({ type: 'tk', k: SIG.key[q.slot] }, { to: q.slot }); }
       sendProfile(q.slot);
       if (root) { updStage(); updPlay(); updStatus(); }
     });
