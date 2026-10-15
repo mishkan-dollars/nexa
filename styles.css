@@ -1578,3 +1578,13 @@ body.in-online .terminal { animation: none !important; transform: none !importan
 .sc-short { letter-spacing: .12em; font-size: 14px; margin: 4px 0; }
 .sc-stats { display: flex; gap: 8px; flex-wrap: wrap; } .sc-stat em { display: block; font-size: 9px; opacity: .65; font-style: normal; }
 .sc-toast { position: fixed; right: 10px; top: 56px; z-index: 60; display: flex; gap: 8px; align-items: center; max-width: 80vw; padding: 8px 10px; background: #0d0e10; border: 1px solid #aaa; font-size: 12px; }
+.rv-mk { position: absolute; z-index: 8; transform: translate(-50%, -100%); pointer-events: none; text-align: center; font-size: 15px; letter-spacing: .06em; text-shadow: 0 1px 5px #000, 0 0 3px #000; white-space: nowrap; }
+.rv-mk b { display: block; font-weight: 600; } .rv-mk small { display: block; font-size: 12px; letter-spacing: .1em; color: #ef4b45; } .rv-mk.near small { color: #ffd60a; }
+.rv-bar { display: block; width: 90px; height: 6px; margin: 3px auto; border: 1px solid #f2f2f2; background: rgba(0,0,0,.6); } .rv-bar u { display: block; height: 100%; width: 0; background: #5be08d; text-decoration: none; transition: width .15s linear; }
+.rv-self { position: absolute; left: 50%; bottom: 12%; transform: translateX(-50%); z-index: 9; text-align: center; font-size: 16px; letter-spacing: .08em; text-shadow: 0 1px 5px #000; background: rgba(0,0,0,.55); border: 1px solid #ef4b45; padding: 8px 18px; border-radius: 4px; }
+.rv-self b { display: block; font-size: 22px; color: #ef4b45; letter-spacing: .14em; } .rv-self span, .rv-self em { font-style: normal; } .rv-self .rv-bar { width: 220px; }
+.rv-sp { background: none; border: 1px solid #f2f2f2; color: #f2f2f2; font: inherit; font-size: 13px; padding: 2px 8px; cursor: pointer; margin-top: 4px; }
+.rv-down::after { content: ''; position: absolute; inset: 0; z-index: 5; pointer-events: none; background: radial-gradient(ellipse at center, rgba(0,0,0,0) 35%, rgba(120,0,0,.55) 100%); backdrop-filter: grayscale(.7); }
+.rv-dec { position: absolute; inset: 0; z-index: 12; display: grid; place-items: center; background: rgba(0,0,0,.82); text-align: center; }
+.rv-dec h2 { margin: 0 0 6px; letter-spacing: .16em; color: #ef4b45; } .rv-dec p { margin: 4px 0 10px; letter-spacing: .08em; } .rv-dec em { font-style: normal; }
+.rv-bt { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; } .rv-bt button { background: none; border: 1px solid #f2f2f2; color: #f2f2f2; font: inherit; padding: 6px 14px; cursor: pointer; letter-spacing: .08em; } .rv-bt button:hover, .rv-bt button.pick { background: #f2f2f2; color: #000; }

@@ -5,6 +5,19 @@
   if (!window.I18N) return;
   I18N.add('en', {
     // ---------------------------------------------------------------- рабочий стол и вкладки
+    '@net:DOWN': ['РАНЕН', 'VERLETZT'],
+    '@net:HOLD [E] TO REVIVE': ['ДЕРЖИ [E], ЧТОБЫ ПОДНЯТЬ', '[E] HALTEN ZUM AUFHELFEN'],
+    '@net:REVIVING…': ['ПОДНИМАЕМ…', 'WIRD AUFGEHOLFEN…'],
+    '@net:REVIVED': ['ВЫ НА НОГАХ', 'DU BIST WIEDER AUF'],
+    '@net:YOU ARE DOWN': ['ВЫ РАНЕНЫ', 'DU BIST VERLETZT'],
+    '@net:WAIT FOR A TEAMMATE TO REVIVE YOU': ['ЖДИТЕ, ПОКА НАПАРНИК ВАС ПОДНИМЕТ', 'WARTE, BIS DICH EIN TEAMKAMERAD AUFHILFT'],
+    '@net:BLEEDING OUT': ['КРОВОТЕЧЕНИЕ', 'VERBLUTEN'],
+    '@net:[Q] SPECTATE': ['[Q] НАБЛЮДАТЬ', '[Q] ZUSCHAUEN'],
+    '@net:ALL PLAYERS DOWN': ['ВСЕ ИГРОКИ ВЫБЫЛИ', 'ALLE SPIELER AUSGESCHIEDEN'],
+    '@net:AUTO RETRY IN': ['АВТОПОВТОР ЧЕРЕЗ', 'AUTOMATISCHE WIEDERHOLUNG IN'],
+    '@net:RETRY MISSION': ['ПОВТОРИТЬ ЗАДАНИЕ', 'AUFTRAG WIEDERHOLEN'],
+    '@net:BACK TO LOBBY': ['В ЛОББИ', 'ZUR LOBBY'],
+    '@net:WAITING FOR THE HOST…': ['ЖДЁМ РЕШЕНИЯ ХОСТА…', 'WARTE AUF DEN HOST…'],
     'ONLINE LOBBY': ['ОНЛАЙН ЛОББИ', 'ONLINE-LOBBY'],
     '@net:PLAY': ['ИГРАТЬ', 'SPIELEN'],
     '@net:PROFILE': ['ПРОФИЛЬ', 'PROFIL'],
