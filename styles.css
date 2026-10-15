@@ -1589,3 +1589,6 @@ body.in-online .terminal { animation: none !important; transform: none !importan
 .rv-dec { position: absolute; inset: 0; z-index: 12; display: grid; place-items: center; background: rgba(0,0,0,.82); text-align: center; }
 .rv-dec h2 { margin: 0 0 6px; letter-spacing: .16em; color: #ef4b45; } .rv-dec p { margin: 4px 0 10px; letter-spacing: .08em; } .rv-dec em { font-style: normal; }
 .rv-bt { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; } .rv-bt button { background: none; border: 1px solid #f2f2f2; color: #f2f2f2; font: inherit; padding: 6px 14px; cursor: pointer; letter-spacing: .08em; } .rv-bt button:hover, .rv-bt button.pick { background: #f2f2f2; color: #000; }
+.nx-ff { position: absolute; right: 10px; top: 46px; z-index: 8; font: 700 11px/1 monospace; letter-spacing: .08em; padding: 3px 8px; background: rgba(0,0,0,.55); border: 1px solid #ffe600; color: #ffe600; pointer-events: none; }
+.nx-ff.off { border-color: #7a7a7a; color: #9a9a9a; }
+.nx-ff i { font-style: normal; opacity: .8; }

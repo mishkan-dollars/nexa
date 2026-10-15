@@ -122,7 +122,8 @@
       this.run = run; this.spec = spec; this.mode = spec.mode === 'mission' ? 'mission' : 'sandbox';
       this.host = spec.role !== 'guest'; this.slot = spec.role === 'guest' ? (NN.slot || 2) : 1; this.solo = !!spec.solo;
       if (!this.solo) run.noPause = true;   // в онлайне паузы нет (мир идёт у друзей): Esc/кнопка/потеря фокуса не ставят игру на паузу
-      this.story = this.mode === 'mission'; this.shared = true; this.pseq = 0; this.kset = {}; this.mk = new Set(); this.ek = {}; this.cinN = 0; this.act = ''; this.snapFull = 0; this.eReq = 0; this.dropCap = null;
+      this.story = this.mode === 'mission'; this.shared = true; this.pseq = 0; this.ffAvail = spec.mode !== 'br' && !spec.solo; this.ff = this.ffAvail && spec.ff !== 0; this.ffm = [0.25, 0.5, 1].indexOf(+spec.ffm) >= 0 ? +spec.ffm : 1; this.ffRate = new Map(); this.ffLast = {};
+      this.kset = {}; this.mk = new Set(); this.ek = {}; this.cinN = 0; this.act = ''; this.snapFull = 0; this.eReq = 0; this.dropCap = null;
       this.remotes = new Map(); this.readySet = new Set();
       this.xs = { ex: 0, ip: 0 }; this.ready = false; this.offs = []; this.sendT = 0; this.snapT = 0; this.hudT = 0; this.lastSend = 0;
       this.stage = 0; this.stages = {};
@@ -148,7 +149,7 @@
       this.on('net:close', () => this.partnerGone(NN.text('PEER_LEFT'))); this.on('net:chat', this.onChat);
       this.on('net:left', (p) => this.removeRemote(p.slot, true)); this.on('net:roster', () => this.pruneRemotes());
       this.on('net:state', (s) => { if (s.state === 'lost') this.note('CONNECTION UNSTABLE…'); });
-      this.on('hit', this.onHit); this.on('espawn', this.onSpawn); this.on('ekill', this.onKill); this.on('egone', this.onGone); this.on('snap', this.onSnap);
+      this.on('hit', this.onHit); this.on('ffh', this.onFfh); this.on('espawn', this.onSpawn); this.on('ekill', this.onKill); this.on('egone', this.onGone); this.on('snap', this.onSnap);
       this.on('bl', this.onBlood); this.on('gr', this.onGrenade); this.on('eshot', this.onEShot); this.on('hurt', this.onHurt); this.on('wave', this.onWave);
       r.hooks.push((dt) => { try { this.tick(dt); } catch (e) { if (!this.errLogged) { this.errLogged = true; console.warn('[coop]', e); } } });
       this.buildUi();
@@ -185,6 +186,7 @@
       const hud = this.hud = document.createElement('div'); hud.className = 'nx-hud'; hud.setAttribute('data-i18n', 'net');
       hud.innerHTML = '';
       L.appendChild(hud);
+      if (this.ffAvail) { const fb = this.ffBadge = document.createElement('div'); fb.className = 'nx-ff'; fb.setAttribute('data-i18n', 'net'); L.appendChild(fb); this.ffUi(); }
       const chat = this.chat = document.createElement('div'); chat.className = 'nx-chat'; chat.setAttribute('data-i18n', 'net');
       chat.innerHTML = '<div class="nx-log" role="log"></div><form class="nx-in" autocomplete="off"><input type="text" maxlength="200" placeholder="Type a message…" aria-label="Chat message" enterkeyhint="send"><button type="submit">SEND</button></form>';
       L.appendChild(chat);
@@ -278,19 +280,23 @@
     onReady() {
       if (this.ready) return;
       this.ready = true;
+      if (this.ffAvail && this.ff) this.note('FRIENDLY FIRE IS ON', 3.6);
       if (!this.story) this.seedOff();
       if (!this.solo) NN.sendAction({ type: 'cev', k: 'ready' });
+      this.ffSend();
       if (!this.solo && this.host && this.peerReady) this.resendEnemies();
     }
     onCev(p) {
       const from = p.from | 0;
       switch (p.k) {
-        case 'ready': this.readySet.add(from); this.rmFor(from); if (this.host && this.ready) this.resendEnemies(); break;
+        case 'ready': this.readySet.add(from); if (this.host) this.ffSend(); this.rmFor(from); if (this.host && this.ready) this.resendEnemies(); break;
         case 'emote': { const m = this.rmFor(from); if (m) this.startRemoteEmote(m, String(p.id || '').slice(0, 20)); break; }
         case 'emoteoff': { const m = this.remotes.get(from); if (m) this.stopRemoteEmote(m); break; }
         case 'bar': this.stages[from] = Math.max(this.stages[from] | 0, p.s | 0); if (p.r && this.stage > 0) NN.sendAction({ type: 'cev', k: 'bar', s: this.stage }, { to: from }); break;
         case 'barn': { const kn = String(p.kn || '').slice(0, 32); (this.kset[from] || (this.kset[from] = new Set())).add(kn); if (p.r && this.mk.has(kn)) NN.sendAction({ type: 'cev', k: 'barn', kn }, { to: from }); break; }
+        case 'ffs': if (!this.host) { this.ff = this.ffAvail && !!p.on; this.ffm = [0.25, 0.5, 1].indexOf(+p.m) >= 0 ? +p.m : 1; this.ffUi(); } break;
         case 'cskip': if (!this.host && this.run.inCinema) this.skipGo = true; break;
+        case 'ffk': if (!this.host) this.ffKillMsg(p.a | 0, p.t | 0); break;
         case 'sv': if (this.host && this.votes) { if (p.v) this.votes.add(from); else this.votes.delete(from); } break;
         case 'svn': if (!this.host) this.skipTxt(p.a | 0, p.b | 0); break;
         case 'eresync': if (this.host && this.ready) this.resendEnemies(); break;
@@ -791,6 +797,66 @@
       const kind = e.n.gunKind === 'pistol' ? 'epistol' : e.n.gunKind === 'shotgun' ? 'shotgun' : e.n.gunKind === 'lmg' ? 'elmg' : 'erifle';
       if (r.snd) { try { r.snd.shot(kind, { dist: Math.hypot(g.x - r.p.x, g.z - r.p.z), at: [g.x, 1.4, g.z] }); } catch (er) { /* звук не критичен */ } }
     }
+    // ---- огонь по своим: хост-авторитетно (цели — «куклы» напарников в cb.shoot; урон идёт обычным 'hurt' цели)
+    ffUi() {
+      const b = this.ffBadge; if (!b) return;
+      b.innerHTML = '<b>' + (this.ff ? 'FF: ON' : 'FF: OFF') + '</b>' + (this.ff && this.ffm < 1 ? '<i> ' + Math.round(this.ffm * 100) + '%</i>' : ''); b.classList.toggle('off', !this.ff);
+    }
+    ffSend() { if (this.host && !this.solo && this.ffAvail) NN.sendAction({ type: 'cev', k: 'ffs', on: this.ff ? 1 : 0, m: this.ffm }); }
+    setFF(on, m) { if (!this.host || !this.ffAvail) return; this.ff = !!on; if (m) this.ffm = m; this.ffUi(); this.ffSend(); }
+    ffTick() {
+      const r = this.run, cb = r.cb; if (!cb || !this.ffAvail || this.solo) return;
+      this.remotes.forEach((m) => {
+        const s = m.ffT || (m.ffT = { alive: false, shape: 'cyl', x: 0, y: 0, z: 0, r: 0.36, h: 1.75, hr: 0.17, hy: 1.62, hp: 100, ally: true, damage: (amt, head, pt) => this.ffHit(m, amt, head, pt) });
+        const on = this.ff && !r.dead && m.rem.got && !m.rem.dead && !this.gone;
+        s.x = m.rem.x; s.z = m.rem.z; s.h = m.rem.crouch ? 1.2 : 1.75; s.hy = m.rem.crouch ? 1.1 : 1.62; s.alive = on;
+        const i = cb.shoot.indexOf(s); if (on && i < 0) cb.shoot.push(s); else if (!on && i >= 0) cb.shoot.splice(i, 1);
+      });
+      if (!this.host) return;
+      const now = performance.now();
+      Object.keys(this.ffLast).forEach((k) => {
+        const f = this.ffLast[k]; if (f.done) { if (now - f.t > 5000) delete this.ffLast[k]; return; }
+        const t = +k, dead = t === 1 ? r.dead : (this.remotes.get(t) || { rem: {} }).rem.dead;
+        if (dead && now - f.t < 2500) { f.done = true; NN.sendAction({ type: 'cev', k: 'ffk', a: f.by, t }); this.ffKillMsg(f.by, t); }
+        else if (now - f.t > 2500) delete this.ffLast[k];
+      });
+    }
+    ffName(s) { const q = NN.players.find((x) => x.slot === s); return String((q && q.name) || 'PLAYER ' + s).toUpperCase().slice(0, 14); }
+    ffKillMsg(a, t) { this.note(a === this.slot ? 'YOU KILLED AN ALLY' : this.ffName(a) + ' KILLED ' + (t === this.slot ? 'YOU' : this.ffName(t)), 3); }
+    ffHit(m, amt, head, pt) {
+      const r = this.run, w = r.wp; if (!this.ff || this.solo || !(amt > 0)) return;
+      if (pt && r.bloodSplatTorso) { try { r.bloodSplatTorso({ x: pt.x, z: pt.z }, 1); } catch (e) { /* только картинка */ } }
+      if (this.host) this.ffApply(1, m.slot, amt, w && w.id, head);
+      else NN.sendAction({ type: 'ffh', t: m.slot, d: Math.round(amt * 10) / 10, w: w ? w.id : '', h: head ? 1 : 0 });
+    }
+    onFfh(p) { if (this.host && this.shared) this.ffApply(p.from | 0, p.t | 0, num(p.d), String(p.w || '').slice(0, 12), !!p.h); }
+    ffApply(att, tgt, d, wid, head) {
+      const r = this.run; if (!this.ff || !this.ffAvail || this.solo || att === tgt || !(d > 0)) return false;
+      const pos = (s) => (s === 1 ? { x: r.p.x, z: r.p.z, dead: r.dead, got: true } : (this.remotes.get(s) || {}).rem);
+      const A = pos(att), T = pos(tgt); if (!A || !T || !A.got || !T.got || T.dead) return false;
+      const boom = wid === 'boom'; if (A.dead && !boom) return false;
+      const W = C.WEAPONS && C.WEAPONS[wid];
+      if (!boom && !W) return false;
+      const dist = Math.hypot(A.x - T.x, A.z - T.z);
+      if (dist > (boom ? 40 : W.range + 6)) return false;
+      d = Math.min(d, boom ? 200 : W.dmg * (head ? 2.4 : 1) * 1.1 + 1);
+      const now = performance.now(), b = this.ffRate.get(att) || { t: now, n: 0 };
+      if (now - b.t > 1000) { b.t = now; b.n = 0; } this.ffRate.set(att, b); if (++b.n > (boom ? 30 : 12 * Math.max(1, W.pellets || 1))) return false;
+      if (!boom && !r.hasLOS(A.x, 1.5, A.z, T.x, 1.2, T.z)) return false;
+      d *= this.ffm; this.ffLast[tgt] = { by: att, t: now };
+      if (tgt === 1) r.hurt(d, A.x, A.z); else NN.sendAction({ type: 'hurt', a: Math.round(d * 10) / 10, x: q(A.x, 10), z: q(A.z, 10) }, { to: tgt });
+      return true;
+    }
+    ffBoom(x, y, z, R, dmg) {
+      const r = this.run; if (!this.ff || this.solo || !this.ffAvail) return;
+      const oy = clamp(y, 0.45, 1.4);
+      this.remotes.forEach((m) => {
+        const R0 = m.rem; if (!R0.got || R0.dead) return;
+        const d = Math.hypot(R0.x - x, R0.z - z); if (d >= R) return;
+        const f = (d < R * 0.22 ? 1.6 : 1 - d / R) * (r.hasLOS(x, oy, z, R0.x, 1.2, R0.z) ? 1 : 0.35), amt = Math.min(60, dmg * 0.6 * f);
+        if (this.host) this.ffApply(1, m.slot, amt, 'boom', false); else NN.sendAction({ type: 'ffh', t: m.slot, d: Math.round(amt * 10) / 10, w: 'boom', h: 0 });
+      });
+    }
     onHurt(p) {                                                // Хост: «в тебя попали» — применяем как обычный урон
       const r = this.run; if (this.host || !r.cb || this.solo) return;
       r.hurt(clamp(num(p.a), 0, 60), num(p.x), num(p.z));
@@ -816,6 +882,7 @@
       this.grenades(dt);
       if (this.story && !this.host) this.expireProv();
       this.cineSync();
+      this.ffTick();
       this.updateAvatars(dt);
       // свои эмоции: сообщаем остальным о начале и конце танца
       const es = r.em && r.em.ses;
@@ -917,6 +984,11 @@
     return res;
   });
   wrap1('plantC4', function (o, a) { const co = this.__co; if (co) co.gt = { id: 'c4', t: this.time }; return o.apply(this, a); });
+  wrap1('explode', function (o, a) {
+    const co = this.__co, res = o.apply(this, a);
+    if (co && co.ff && !co.solo && co.gt && this.time - co.gt.t < (co.gt.id === 'c4' ? 60 : 6)) co.ffBoom(a[0], a[1], a[2], a[3] || 4, a[4] || 0);
+    return res;
+  });
   wrap1('bloodSplatTorso', function (o, a) {
     const co = this.__co, d = a[0];
     if (co && !co.solo && NN.connected && d) NN.sendAction({ type: 'bl', x: q(d.x, 100), z: q(d.z, 100), a: q(a[1] === undefined ? 1 : a[1], 10) });

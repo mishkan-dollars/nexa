@@ -11,7 +11,7 @@
   if (!NN || !PF) return;
   const TG = NN.TELEGRAM, MAXP = NN.MAX_PLAYERS;
   const ctx = { audio: null, setView: null, render: null, startCoop: null };
-  const L = { tab: 'play', mode: 'sandbox', mission: 1, ready: false, readyMap: {}, readyList: [], cd: 0, cdT: 0, cdSpec: null, unread: 0, t0: 0, pick: false, notes: {}, joinFromUrl: false, lastStats: 0, copied: 0,
+  const L = { ff: true, ffm: 1, tab: 'play', mode: 'sandbox', mission: 1, ready: false, readyMap: {}, readyList: [], cd: 0, cdT: 0, cdSpec: null, unread: 0, t0: 0, pick: false, notes: {}, joinFromUrl: false, lastStats: 0, copied: 0,
     pubSession: false, joinUi: null, roomLink: '', dances: {}, cards: {}, srvSeen: false };
   const BR = { on: false, host: false, t0: 0, state: '', findT: 0 };
   const TRADES_ENABLED = true;
@@ -222,6 +222,7 @@
     const host = isHostSide(), mt = modeText();
     const sub = $('#bl-sub');
     if (L.mode === 'br') sub.innerHTML = '<span>BATTLE ROYALE</span> — <span>UP TO 10 PLAYERS</span>'; else sub.innerHTML = mt[1] ? '<span>MISSION</span> <b translate="no">' + mt[1] + '</b> — <span translate="no">' + esc(mt[2]) + '</span>' : '<span>SANDBOX</span> — <span>WAVES OF ENEMIES</span>';
+    if (L.mode !== 'br') sub.innerHTML += ' — <span>' + (L.ff ? 'FF: ON' : 'FF: OFF') + '</span>' + (L.ff && L.ffm < 1 ? ' ' + Math.round(L.ffm * 100) + '%' : '');
     $('#bl-mode').textContent = L.mode === 'br' ? 'BATTLE ROYALE' : mt[1] ? 'CO-OP MISSION' : 'CO-OP SANDBOX';
     $('#bl-pick').disabled = !host;
     const btn = $('#bl-play'), tx = $('#bl-play-t'), hint = $('#bl-hint');
@@ -762,7 +763,7 @@
     NN.on('net:left', (p) => { if (!NN.isHost) return; delete SIG.key[p.slot]; delete SIG.led[p.slot]; Object.keys(TRD.route).forEach((t) => { const r = TRD.route[t]; if (r.dst === p.slot) { delete TRD.route[t]; trResult(r.src, t, false, 0); } }); });
   }
 
-  function lobbyMsg() { return { type: 'lobby', mode: L.mode, mission: L.mission, brt: BR.on && BR.host ? Math.max(0, brLeft()) : -1, ready: NN.players.filter((q) => L.readyMap[q.slot]).map((q) => q.slot) }; }
+  function lobbyMsg() { return { type: 'lobby', ff: L.ff ? 1 : 0, ffm: L.ffm, mode: L.mode, mission: L.mission, brt: BR.on && BR.host ? Math.max(0, brLeft()) : -1, ready: NN.players.filter((q) => L.readyMap[q.slot]).map((q) => q.slot) }; }
   function sendLobby() { if (NN.isHost && NN.connected) NN.sendAction(lobbyMsg()); }
   function setMode(mode, mission) {
     if (NN.connected && !NN.isHost) return;
@@ -782,6 +783,7 @@
       '<button type="button" class="pk-sb' + (L.mode === 'br' ? ' on' : '') + '" data-act="mode" data-v="br"><b>BATTLE ROYALE</b><small>UP TO 10 PLAYERS, BOTS FILL EMPTY SEATS</small></button>' +
       '<p class="pk-t">CO-OP MISSIONS</p><div class="pk-grid">' + ids.map((i) => '<button type="button" class="pk-m' + (L.mode === 'mission' && L.mission === i ? ' on' : '') + '" data-act="mission" data-v="' + i + '"><b translate="no">' + String(i).padStart(2, '0') + '</b><span translate="no">' + esc(missionTitle(i)) + '</span></button>').join('') + '</div>' +
       '<div class="md-gfx"><label>ONLINE GRAPHICS</label><div class="pf-btns"><button type="button" class="ol-btn' + (q === 'HIGH' ? ' on' : '') + '" data-act="gfx" data-v="HIGH">HIGH</button><button type="button" class="ol-btn' + (q === 'LOW' ? ' on' : '') + '" data-act="gfx" data-v="LOW">LOW</button></div></div>' +
+      (NN.isHost ? '<div class="md-gfx"><label>FRIENDLY FIRE</label><div class="pf-btns"><button type="button" class="ol-btn' + (L.ff ? ' on' : '') + '" data-act="ff" data-v="1">ON</button><button type="button" class="ol-btn' + (L.ff ? '' : ' on') + '" data-act="ff" data-v="0">OFF</button></div></div><div class="md-gfx"><label>DAMAGE TO ALLIES</label><div class="pf-btns">' + [0.25, 0.5, 1].map((x) => '<button type="button" class="ol-btn' + (L.ffm === x ? ' on' : '') + '" data-act="ffm" data-v="' + x + '">' + Math.round(x * 100) + '%</button>').join('') + '</div></div>' : '') +
       '<p class="v-note">Story missions: every player waits for the team at each stage.</p></div>';
     el.hidden = false; L.pick = true;
     const f = el.querySelector('.pk-sb'); if (f) try { f.focus({ preventScroll: true }); } catch (e) { /* ok */ }
@@ -795,8 +797,8 @@
     if (!NN.connected || (NN.isHost && !NN.players.length)) { beginMatch({ mode: L.mode, mission: L.mission, seed: mkSeed(), role: 'solo', solo: true }, 1); return; }
     if (NN.isHost) {
       if (!guestsReady()) return;
-      const spec = { mode: L.mode, mission: L.mission, seed: mkSeed(), role: 'host', solo: false };
-      NN.sendAction({ type: 'start', mode: spec.mode, mission: spec.mission, seed: spec.seed });
+      const spec = { mode: L.mode, mission: L.mission, seed: mkSeed(), role: 'host', solo: false, ff: L.ff ? 1 : 0, ffm: L.ffm };
+      NN.sendAction({ type: 'start', mode: spec.mode, mission: spec.mission, seed: spec.seed, ff: spec.ff, ffm: spec.ffm });
       beginMatch(spec, 3);
     } else {
       L.ready = !L.ready; NN.sendAction({ type: 'ready', on: L.ready }); updPlay();
@@ -1198,6 +1200,8 @@
     switch (act) {
       case 'tab': setTab(v); break;
       case 'chat-toggle': chatToggle(); break;
+      case 'ff': L.ff = v === '1'; sendLobby(); updPlay(); openPick(); break;
+      case 'ffm': L.ffm = +v || 1; sendLobby(); updPlay(); openPick(); break;
       case 'gfx': try { Missions.setQuality(v); } catch (er) { /* ok */ } openPick(); break;
       case 'br-ready': brReady(); break;
       case 'br-cancel': brCancel(); break;
@@ -1335,7 +1339,7 @@
     NN.on('lobby', (p) => {
       if (NN.isHost) return;
       L.mode = p.mode === 'br' ? 'br' : p.mode === 'mission' && validMission(p.mission) ? 'mission' : 'sandbox'; if (L.mode === 'mission') L.mission = p.mission | 0;
-      L.brt = p.brt | 0;
+      L.brt = p.brt | 0; L.ff = p.ff !== 0; L.ffm = [0.25, 0.5, 1].indexOf(+p.ffm) >= 0 ? +p.ffm : 1;
       L.readyList = Array.isArray(p.ready) ? p.ready.map(Number).filter((n) => n >= 2 && n <= MAXP).slice(0, MAXP) : [];
       updPlay();
     });
@@ -1350,7 +1354,7 @@
       if (NN.isHost || L.cd) return;
       if (BR.on) { BR.on = false; BR.state = ''; }
       const mode = p.mode === 'br' ? 'br' : p.mode === 'mission' && validMission(p.mission) ? 'mission' : 'sandbox';
-      beginMatch({ mode, mission: mode === 'mission' ? p.mission | 0 : 1, seed: (p.seed >>> 0) || 1, role: 'guest', solo: false, bots: mode === 'br' ? clamp(p.bots | 0, 0, 99) : 0 }, 3);
+      beginMatch({ mode, mission: mode === 'mission' ? p.mission | 0 : 1, seed: (p.seed >>> 0) || 1, role: 'guest', solo: false, ff: p.ff === 0 ? 0 : 1, ffm: +p.ffm || 1, bots: mode === 'br' ? clamp(p.bots | 0, 0, 99) : 0 }, 3);
     });
     tradeHooks();
     NN.on('profile', onProfile); NN.on('profile?', onProfileReq);
