@@ -122,7 +122,7 @@
       this.run = run; this.spec = spec; this.mode = spec.mode === 'mission' ? 'mission' : 'sandbox';
       this.host = spec.role !== 'guest'; this.slot = spec.role === 'guest' ? (NN.slot || 2) : 1; this.solo = !!spec.solo;
       if (!this.solo) run.noPause = true;   // в онлайне паузы нет (мир идёт у друзей): Esc/кнопка/потеря фокуса не ставят игру на паузу
-      this.story = this.mode === 'mission'; this.shared = true; this.pseq = 0; this.kset = {}; this.ek = {}; this.cinN = 0; this.act = ''; this.snapFull = 0; this.eReq = 0; this.dropCap = null;
+      this.story = this.mode === 'mission'; this.shared = true; this.pseq = 0; this.kset = {}; this.mk = new Set(); this.ek = {}; this.cinN = 0; this.act = ''; this.snapFull = 0; this.eReq = 0; this.dropCap = null;
       this.remotes = new Map(); this.readySet = new Set();
       this.xs = { ex: 0, ip: 0 }; this.ready = false; this.offs = []; this.sendT = 0; this.snapT = 0; this.hudT = 0; this.lastSend = 0;
       this.stage = 0; this.stages = {};
@@ -287,8 +287,8 @@
         case 'ready': this.readySet.add(from); this.rmFor(from); if (this.host && this.ready) this.resendEnemies(); break;
         case 'emote': { const m = this.rmFor(from); if (m) this.startRemoteEmote(m, String(p.id || '').slice(0, 20)); break; }
         case 'emoteoff': { const m = this.remotes.get(from); if (m) this.stopRemoteEmote(m); break; }
-        case 'bar': this.stages[from] = Math.max(this.stages[from] | 0, p.s | 0); break;
-        case 'barn': (this.kset[from] || (this.kset[from] = new Set())).add(String(p.kn || '').slice(0, 32)); break;
+        case 'bar': this.stages[from] = Math.max(this.stages[from] | 0, p.s | 0); if (p.r && this.stage > 0) NN.sendAction({ type: 'cev', k: 'bar', s: this.stage }, { to: from }); break;
+        case 'barn': { const kn = String(p.kn || '').slice(0, 32); (this.kset[from] || (this.kset[from] = new Set())).add(kn); if (p.r && this.mk.has(kn)) NN.sendAction({ type: 'cev', k: 'barn', kn }, { to: from }); break; }
         case 'cskip': if (!this.host && this.run.inCinema) { this.hostSkip = true; this.run.cineSkip = true; } break;
         case 'eresync': if (this.host && this.ready) this.resendEnemies(); break;
         case 'leave': this.removeRemote(from, true); break;
@@ -299,13 +299,13 @@
     async barrierKey(key, ms) { try { await this.barrierKey0(key, ms); } finally { this.reseed('k:' + key); } }
     async barrierKey0(key, ms) {
       if (this.solo || this.disposed) return;
-      NN.sendAction({ type: 'cev', k: 'barn', kn: key });
+      this.mk.add(key); NN.sendAction({ type: 'cev', k: 'barn', kn: key });
       let t0 = Date.now(), shown = 0, lt = t0;
       while (!this.disposed && !this.gone && !this.solo && this.netUp() && Date.now() - t0 < (ms || 60000)) {
         const tn = Date.now(); if (!NN.connected) t0 += tn - lt; lt = tn;
         const slots = NN.players.map((x) => x.slot).filter((x) => x !== this.slot), waiting = slots.filter((x) => !(this.kset[x] && this.kset[x].has(key)));
         if (!waiting.length) return;
-        if (Date.now() - shown > 1500) { shown = Date.now(); this.run.toast('WAITING FOR PLAYERS ' + (slots.length - waiting.length + 1) + '/' + (slots.length + 1), 1.6); NN.sendAction({ type: 'cev', k: 'barn', kn: key }); }
+        if (Date.now() - shown > 1500) { shown = Date.now(); this.run.toast('WAITING FOR PLAYERS ' + (slots.length - waiting.length + 1) + '/' + (slots.length + 1), 1.6); NN.sendAction({ type: 'cev', k: 'barn', kn: key, r: 1 }); }
         await new Promise((res) => setTimeout(res, 150));
       }
     }
@@ -324,7 +324,7 @@
         const tn = Date.now(); if (!NN.connected) t0 += tn - lt; lt = tn;
         const slots = NN.players.map((q) => q.slot), waiting = slots.filter((x) => (this.stages[x] | 0) < this.stage);
         if (!waiting.length) return;
-        if (Date.now() - shown > 1500) { shown = Date.now(); NN.sendAction({ type: 'cev', k: 'bar', s: this.stage }); this.run.toast('WAITING FOR PLAYERS ' + (slots.length - waiting.length + 1) + '/' + (slots.length + 1), 1.6); }
+        if (Date.now() - shown > 1500) { shown = Date.now(); NN.sendAction({ type: 'cev', k: 'bar', s: this.stage, r: 1 }); this.run.toast('WAITING FOR PLAYERS ' + (slots.length - waiting.length + 1) + '/' + (slots.length + 1), 1.6); }
         await new Promise((res) => setTimeout(res, 250));
       }
     }
