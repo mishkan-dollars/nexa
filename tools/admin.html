@@ -13,7 +13,7 @@ main{display:grid;grid-template-columns:minmax(0,2fr) minmax(280px,1fr);gap:14px
 @media(max-width:900px){main{grid-template-columns:1fr}}
 section{background:var(--pn);border:1px solid var(--ln);border-radius:6px;padding:12px;min-width:0}
 table{width:100%;border-collapse:collapse;font-size:13px}th,td{text-align:left;padding:5px 6px;border-bottom:1px solid var(--ln);white-space:nowrap}
-th{color:var(--mu);font-weight:600}.wrap{overflow:auto;max-height:52vh}
+th{color:var(--mu);font-weight:600}img.th{border-radius:4px;cursor:pointer;vertical-align:middle;image-rendering:auto}#avg{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:8px;max-height:46vh;overflow:auto}.avi{text-align:center;font-size:12px}.avi img{border-radius:6px;cursor:pointer;display:block;margin:0 auto 3px}.avi.off{opacity:.35}.avi small{display:block;color:var(--mu)}#avm{position:fixed;inset:0;background:rgba(0,0,0,.7);display:grid;place-items:center;z-index:9}#avm[hidden]{display:none}#avm>div{background:var(--pn);border:1px solid var(--ln);border-radius:8px;padding:16px;text-align:center;max-width:92vw}#avm-img{width:128px;height:128px;border-radius:8px;display:block;margin:0 auto 8px}.wrap{overflow:auto;max-height:52vh}
 input,select,button,textarea{font:inherit;color:var(--tx);background:#0b121a;border:1px solid var(--ln);border-radius:4px;padding:5px 8px}
 button{cursor:pointer;background:#16202c}button:hover{border-color:var(--ac)}button.d{border-color:#5a2a26;color:var(--bad)}button.g{border-color:#245a3a;color:var(--ok)}
 .row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:6px 0}.mu{color:var(--mu)}.ok{color:var(--ok)}.bad{color:var(--bad)}
@@ -32,8 +32,13 @@ code{background:#0b121a;border:1px solid var(--ln);padding:2px 5px;border-radius
     <section>
       <h2>Игроки в сети</h2>
       <div class="row"><input id="flt" placeholder="поиск: ник / ID / комната" size="28"><span id="cnt" class="mu"></span></div>
-      <div class="wrap"><table><thead><tr><th>ID</th><th>Ник</th><th>Ур.</th><th>Статус</th><th>Комната</th><th>Флаги</th><th>Был</th><th></th></tr></thead><tbody id="pl"></tbody></table></div>
+      <div class="wrap"><table><thead><tr><th>Ав.</th><th>ID</th><th>Ник</th><th>Ур.</th><th>Статус</th><th>Комната</th><th>Флаги</th><th>Был</th><th></th></tr></thead><tbody id="pl"></tbody></table></div>
       <pre id="prof" class="mu"></pre>
+    </section>
+    <section style="margin-top:14px" id="avsec">
+      <h2>Аватарки</h2>
+      <div class="row"><span id="avc" class="mu"></span><span class="mu">клик по картинке — крупно, бан или «Снять аватар»</span></div>
+      <div id="avg"></div>
     </section>
     <section style="margin-top:14px">
       <h2>Баны</h2>
@@ -63,6 +68,8 @@ code{background:#0b121a;border:1px solid var(--ln);padding:2px 5px;border-radius
     </section>
   </div>
 </main>
+<div id="avm" hidden><div><img id="avm-img" alt=""><p id="avm-id" class="mu" style="word-break:break-all;max-width:360px"></p>
+<div class="row" style="justify-content:center"><button id="avm-ban" class="d">Бан</button><select id="avm-d"><option value="0">навсегда</option><option value="1440">1 день</option><option value="10080">7 дней</option><option value="43200">30 дней</option></select><button id="avm-rm" class="d">Снять аватар / запретить загрузку</button><button id="avm-back" class="g">Вернуть</button><button id="avm-x">Закрыть</button></div></div></div>
 <script src="../js/schnorr.js"></script>
 <script src="../js/servers.js"></script>
 <script src="admin.js"></script>

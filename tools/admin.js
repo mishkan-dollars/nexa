@@ -10,8 +10,8 @@
   const ago = (s) => (s < 60 ? s + ' с' : s < 3600 ? Math.floor(s / 60) + ' мин' : Math.floor(s / 3600) + ' ч');
   const q = new URLSearchParams(location.search);
 
-  let lastBans = [], key = null, bans = jp(ls.get('nexaAdminBans'), {}), banAt = +ls.get('nexaAdminBanAt') || 0, LOG = jp(ls.get('nexaAdminLog'), []);
-  const P = {}, grants = {}, track = {}, socks = new Map(), subs = new Map(), outbox = [];
+  let lastBans = [], key = null, avb = jp(ls.get('nexaAdminAvb'), {}), bans = jp(ls.get('nexaAdminBans'), {}), banAt = +ls.get('nexaAdminBanAt') || 0, LOG = jp(ls.get('nexaAdminLog'), []);
+  const AVRE = /^data:image\/(webp|jpeg|png);base64,[A-Za-z0-9+/]+=*$/, AV = {}, P = {}, grants = {}, track = {}, socks = new Map(), subs = new Map(), outbox = [];
   const log = (t, d) => { LOG.push({ t: Date.now(), a: t, d }); LOG = LOG.slice(-500); ls.set('nexaAdminLog', JSON.stringify(LOG)); drawLog(); };
 
   function setKey(skHex) {
@@ -81,6 +81,7 @@
     subs.set('pres2', [{ kinds: [KPRES], since: sec() - 300, limit: 200 }]);
     subs.set('ack', [{ kinds: [KA, KA2], '#p': [key.pk], since: sec() - 3600 }]);
     subs.set('ack2', [{ kinds: [KA, KA2], since: sec() - 3600, limit: 200 }]);
+    subs.set('avs', [{ kinds: [KPROF], since: sec() - 86400 * 14, limit: 300 }]);
     subs.set('bans', [{ kinds: [KB, KB2], authors: [key.pk], '#d': ['nexa-bans'], limit: 1 }]);
     subs.set('bans2', [{ kinds: [KB, KB2], authors: [key.pk], limit: 5 }]);
     socks.forEach((r) => { if (r.open) subs.forEach((f, id) => subSend(r.ws, id, f)); });
@@ -98,17 +99,20 @@
       const c = jp(e.content, {}), g = grants[c.i] || Object.keys(grants).map((k) => grants[k]).find((x) => x.ids.indexOf((e.tags.find((t) => t[0] === 'e') || [])[1]) >= 0);
       if (g && g.to === e.pubkey && !g.ack) { g.ack = true; log('подтверждено', short(g.to) + ' получил ' + g.n + ' KP'); drawLog(); }
     } else if ((e.kind === KB || e.kind === KB2) && e.pubkey === key.pk && e.created_at > banAt) {
-      const c = jp(e.content, null); if (c && c.bans) { bans = {}; c.bans.forEach((b) => { if (b && HEX64.test(b.k)) bans[b.k] = { r: b.r || '', u: b.u | 0 }; }); banAt = e.created_at; saveBans(); drawBans(); }
-    } else if (e.kind === KPROF && P[e.pubkey] && e.pubkey === (P._want || '')) {
-      const c = jp(e.content, null); if (c) $('prof').textContent = short(e.pubkey) + ' · ' + (c.n || '') + ' LVL ' + (c.l || 0) + '\n' + JSON.stringify(c.st || {}, null, 1) + (c.cl ? '\nклан: ' + c.cl : '');
+      const c = jp(e.content, null); if (c && c.bans) { bans = {}; c.bans.forEach((b) => { if (b && HEX64.test(b.k)) bans[b.k] = { r: b.r || '', u: b.u | 0 }; }); avb = {}; (c.av || []).forEach((b) => { if (b && HEX64.test(b.k)) avb[b.k] = { r: b.r || '', u: b.u | 0 }; }); drawAv(); banAt = e.created_at; saveBans(); drawBans(); }
+    } else if (e.kind === KPROF) {
+      const c = jp(e.content, null);
+      if (c && typeof c.av === 'string' && c.av.length <= 12000 && AVRE.test(c.av) && (!AV[e.pubkey] || AV[e.pubkey].t <= e.created_at)) { AV[e.pubkey] = { u: c.av, t: e.created_at, n: String(c.n || '').slice(0, 16) }; drawAv(); }
+      else if (c && !c.av && AV[e.pubkey] && AV[e.pubkey].t <= e.created_at) { delete AV[e.pubkey]; drawAv(); }
+      if (c && P[e.pubkey] && e.pubkey === (P._want || '')) $('prof').textContent = short(e.pubkey) + ' · ' + (c.n || '') + ' LVL ' + (c.l || 0) + '\n' + JSON.stringify(c.st || {}, null, 1) + (c.cl ? '\nклан: ' + c.cl : '');
     }
   }
-  const saveBans = () => { ls.set('nexaAdminBans', JSON.stringify(bans)); ls.set('nexaAdminBanAt', String(banAt)); };
+  const saveBans = () => { ls.set('nexaAdminAvb', JSON.stringify(avb)); ls.set('nexaAdminBans', JSON.stringify(bans)); ls.set('nexaAdminBanAt', String(banAt)); };
   function pubBans() {
     if (!key) return alert('Сначала создайте ключ');
     const now = sec(); Object.keys(bans).forEach((k) => { if (bans[k].u && bans[k].u < now) delete bans[k]; });
     banAt = Math.max(now, banAt + 1);
-    const c = JSON.stringify({ v: 1, bans: Object.keys(bans).map((k) => ({ k, r: bans[k].r, u: bans[k].u })) });
+    const c = JSON.stringify({ v: 1, bans: Object.keys(bans).map((k) => ({ k, r: bans[k].r, u: bans[k].u })), av: Object.keys(avb).filter((k) => !avb[k].u || avb[k].u > now).map((k) => ({ k, r: avb[k].r, u: avb[k].u })) });
     lastBans = [KB, KB2].map((kd) => K.makeEvent(key, kd, [['d', 'nexa-bans']], c, banAt));
     saveBans(); drawBans(); return lastBans.map(publish)[0];
   }
@@ -151,12 +155,38 @@
     ks.forEach((k) => {
       const p = P[k], age = Math.floor((Date.now() - p.t) / 1000), live = age < 120; if (live) on += 1;
       const tr = document.createElement('tr');
-      tr.innerHTML = '<td><code title="' + k + '">' + short(k) + '</code></td><td>' + esc(p.n) + (bans[k] ? ' <span class="bad">[БАН]</span>' : '') + '</td><td>' + p.l + '</td><td class="' + (live ? 'st-' + p.s : 'st-off') + '">' + (live ? esc(p.s) : 'не в сети') + '</td><td>' + esc(p.rm || '') + (p.m ? ' · ' + esc(p.m) : '') + '</td><td class="bad">' + flagTxt(p.g) + '</td><td>' + ago(age) + '</td><td></td>';
+      tr.innerHTML = '<td>' + thumb(k, 28) + '</td><td><code title="' + k + '">' + short(k) + '</code></td><td>' + esc(p.n) + (bans[k] ? ' <span class="bad">[БАН]</span>' : '') + '</td><td>' + p.l + '</td><td class="' + (live ? 'st-' + p.s : 'st-off') + '">' + (live ? esc(p.s) : 'не в сети') + '</td><td>' + esc(p.rm || '') + (p.m ? ' · ' + esc(p.m) : '') + '</td><td class="bad">' + flagTxt(p.g) + '</td><td>' + ago(age) + '</td><td></td>';
       const td = tr.lastChild, mk = (t, c, fn) => { const b = document.createElement('button'); b.textContent = t; if (c) b.className = c; b.onclick = fn; td.appendChild(b); td.appendChild(document.createTextNode(' ')); };
       mk('Профиль', '', () => openProfile(k)); mk('KP', 'g', () => { $('gk').value = k; $('gn').focus(); }); mk('Бан', 'd', () => { $('bk').value = k; $('br').focus(); });
       tb.appendChild(tr);
     });
     $('cnt').textContent = 'в сети: ' + on + ' · всего видели: ' + ks.length;
+  }
+  const avOn = (pk) => avb[pk] && (!avb[pk].u || avb[pk].u > sec());
+  function thumb(pk, px) {
+    const a = AV[pk]; if (!a) return '<span class="mu">—</span>';
+    return avOn(pk) ? '<span class="bad" title="аватар снят">✖</span>' : '<img class="th" data-pk="' + pk + '" width="' + px + '" height="' + px + '" src="' + a.u + '" alt="">';
+  }
+  function avAct(pk, mins, why) {
+    if (!HEX64.test(pk)) return;
+    avb[pk] = { r: String(why || 'avatar').slice(0, 80), u: mins > 0 ? sec() + mins * 60 : 0 };
+    const n = pubBans(); log('снят аватар', short(pk) + ' · ' + (mins > 0 ? mins + ' мин' : 'навсегда') + ' · релеев: ' + n); drawAv();
+  }
+  function avRestore(pk) { if (!avb[pk]) return; delete avb[pk]; const n = pubBans(); log('аватар возвращён', short(pk) + ' · релеев: ' + n); drawAv(); }
+  function avModal(pk) {
+    const a = AV[pk], m = $('avm'); if (!a) return;
+    $('avm-img').src = a.u; $('avm-id').textContent = (a.n || (P[pk] && P[pk].n) || '') + ' · ' + pk + ' · ' + new Date(a.t * 1000).toLocaleString();
+    m.hidden = false; m.dataset.pk = pk;
+  }
+  function drawAv() {
+    const g = $('avg'); if (!g) return; g.textContent = '';
+    Object.keys(AV).sort((x, y) => AV[y].t - AV[x].t).forEach((k) => {
+      const a = AV[k], d = document.createElement('div'); d.className = 'avi' + (avOn(k) ? ' off' : '');
+      d.innerHTML = '<img src="' + a.u + '" width="64" height="64" alt="" data-pk="' + k + '"><b>' + esc(a.n || (P[k] && P[k].n) || '?') + '</b><small>' + short(k) + '<br>' + ago(sec() - a.t) + (bans[k] ? ' · БАН' : '') + (avOn(k) ? ' · снят' : '') + '</small>';
+      g.appendChild(d);
+    });
+    $('avc').textContent = 'аватарок: ' + Object.keys(AV).length + ' · снято: ' + Object.keys(avb).filter(avOn).length;
+    drawPlayers();
   }
   function openProfile(pk) {
     P._want = pk; $('prof').textContent = 'загрузка профиля…';
@@ -175,12 +205,17 @@
     const d = $('log'); d.innerHTML = LOG.slice(-60).reverse().map((l) => '<div><span class="mu">' + new Date(l.t).toLocaleTimeString() + '</span> <b>' + esc(l.a) + '</b> ' + esc(l.d) + '</div>').join('');
   }
 
+  document.addEventListener('click', (e) => { const i = e.target.closest && e.target.closest('img[data-pk]'); if (i) avModal(i.dataset.pk); });
+  $('avm-x').onclick = () => { $('avm').hidden = true; };
+  $('avm-ban').onclick = () => { const pk = $('avm').dataset.pk; $('bk').value = pk; $('br').value = 'avatar'; $('avm').hidden = true; $('br').focus(); };
+  $('avm-rm').onclick = () => { avAct($('avm').dataset.pk, +$('avm-d').value, 'avatar'); $('avm').hidden = true; };
+  $('avm-back').onclick = () => { avRestore($('avm').dataset.pk); $('avm').hidden = true; };
   $('flt').oninput = drawPlayers;
   $('bban').onclick = () => ban(($('bk').value || '').trim().toLowerCase(), $('br').value, +$('bd').value);
   $('bun').onclick = () => unban(($('bk').value || '').trim().toLowerCase());
   $('ggive').onclick = () => give(($('gk').value || '').trim().toLowerCase(), $('gn').value);
-  drawKey(); drawBans(); drawLog();
+  drawKey(); drawBans(); drawLog(); drawAv();
   const saved = ls.get('nexaAdminSk'); if (saved) setKey(saved);
   tickNet(); setInterval(tickNet, 5000); setInterval(drawPlayers, 5000); setInterval(() => { lastBans.forEach(publish); }, 60000); setInterval(summ, 4000); setInterval(() => { if (key) { socks.forEach((r) => { if (r.open) subSend(r.ws, 'pres', subs.get('pres')); }); } }, 60000);
-  window.NexaAdminConsole = { ban, unban, give, state: () => ({ P, bans, grants, key: !!key, pub: key && key.pk }) };
+  window.NexaAdminConsole = { ban, unban, give, avAct, avRestore, avb: () => avb, AV, state: () => ({ P, bans, grants, key: !!key, pub: key && key.pk }) };
 }());
