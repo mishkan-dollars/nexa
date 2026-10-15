@@ -776,7 +776,7 @@
         if (s.coreUp < 3 && s.ms > 2500 + J.tier * 3000 && J.tier < 2 && now() - (r.roundAt || 0) > 2500) { J.tier += 1; r.setEntries(roomEntries(id, J.tier, false), joinLiveMax(99)); rdv('core weak (' + s.coreUp + '/' + s.core + ' up), widening to tier ' + J.tier); }     // ядро не достучалось — расширяем набор, не дожидаясь конца раунда
       },
       offerCount: () => (J.got ? 0 : 2),
-      makeOffer: async () => { const o = await NN.rtc.newOffer('guest'); return o ? { sdp: o.sdp, token: o.link } : null; },
+      makeOffer: async () => { const o = await NN.rtc.newOffer('guest', J.attempt); return o ? { sdp: o.sdp, token: o.link } : null; },
       dropToken: (link) => { if (link && !link.attached) NN.rtc.drop(link); },
       onAnswer: async (link, sdp) => {
         if (J.got || !link || joinR !== r) { NN.rtc.drop(link); return; }
