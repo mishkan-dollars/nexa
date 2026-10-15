@@ -151,6 +151,7 @@
     '<section class="ol-pane ol-sheet" data-pane="profile"><div class="sh-in">' +
       '<div class="pf-head"><span id="pf-av"></span><div class="pf-id"><label for="pf-name">NICKNAME</label><div class="pf-nm"><input type="text" id="pf-name" maxlength="16" spellcheck="false" autocomplete="off" aria-label="Nickname"><button type="button" class="ol-btn" data-act="name">SAVE</button></div><p class="v-note" id="pf-note"></p></div>' +
         '<div class="pf-lv"><div class="pf-lvl"><small>LVL</small><b id="pf-lv" translate="no">1</b></div><div class="pf-xp"><span id="pf-rank">SUBJECT</span><div class="pf-bar"><i id="pf-bari"></i></div><em translate="no" id="pf-xpt"></em></div></div></div>' +
+      '<div class="av-box-c" id="pf-avc"></div>' +
       '<div class="pf-sw" id="pf-sw" role="group" aria-label="Color">' + PF.COLORS.map((c, i) => '<button type="button" class="pf-c" data-act="color" data-v="' + c + '" style="--c:' + c + '" aria-label="' + COLOR_NAMES[i] + '" title="' + COLOR_NAMES[i] + '"></button>').join('') + '</div>' +
       '<div id="ol-stats"></div>' +
       '<div class="pf-btns"><button type="button" class="ol-btn danger" data-act="pf-reset" id="pf-reset">RESET STATS</button></div>' +
@@ -194,7 +195,7 @@
   function updTop() {
     const p = PF.get(), lv = PF.level();
     const me = $('.ol-me'); if (!me) return;
-    $('.ol-mea').innerHTML = PF.avatar(p.name, p.color, 26);
+    $('.ol-mea').innerHTML = PF.avatar(p.name, p.color, 26, NN.PID);
     $('.ol-men').textContent = p.name;
     $('.ol-mel b').textContent = lv.level;
     const lvl = $('#ol-lvl');
@@ -369,7 +370,7 @@
     list.forEach((q) => {
       const row = document.createElement('div'); row.className = 'ro-row';
       const a = document.createElement('button'); a.type = 'button'; a.className = 'ro-p'; a.dataset.act = 'card'; a.dataset.slot = String(q.slot);
-      const av = document.createElement('span'); av.innerHTML = PF.avatar(q.name, q.color, 24);
+      const av = document.createElement('span'); av.innerHTML = PF.avatar(q.name, q.color, 24, q.pid);
       const nm = document.createElement('b'); nm.setAttribute('translate', 'no'); nm.textContent = (q.slot === 1 ? '♛ ' : '') + q.name;
       const lv = document.createElement('small'); lv.setAttribute('translate', 'no'); lv.textContent = String(q.level);
       a.appendChild(av); a.appendChild(nm); a.appendChild(lv); row.appendChild(a);
@@ -387,7 +388,8 @@
     const p = PF.get(), lv = PF.level();
     if (L.tab !== 'profile' && !force) return;
     const inp = $('#pf-name'); if (inp && document.activeElement !== inp) inp.value = p.name;
-    $('#pf-av').innerHTML = PF.avatar(p.name, p.color, 64);
+    $('#pf-av').innerHTML = PF.avatar(p.name, p.color, 64, NN.PID);
+    if (window.NexaAvatar) NexaAvatar.mount($('#pf-avc'));
     $('#pf-lv').textContent = lv.level; $('#pf-rank').textContent = lv.rank;
     $('#pf-bari').style.width = Math.round(lv.pct * 100) + '%';
     $('#pf-xpt').textContent = lv.xp + ' / ' + lv.hi + ' XP';
@@ -439,7 +441,7 @@
     const box = document.createElement('div'); box.className = 'pk-box cd-box';
     const hd = document.createElement('div'); hd.className = 'pk-h';
     const t = document.createElement('div'); t.className = 'cd-id';
-    const av = document.createElement('span'); av.innerHTML = PF.avatar(pf ? pf.name : q.name, pf ? pf.color : q.color, 54);
+    const av = document.createElement('span'); av.innerHTML = PF.avatar(pf ? pf.name : q.name, pf ? pf.color : q.color, 54, me ? NN.PID : q.pid);
     const nm = document.createElement('div'); nm.className = 'cd-nm';
     const b = document.createElement('b'); b.setAttribute('translate', 'no'); b.textContent = pf ? pf.name : q.name;
     const lv = pf ? PF.levelOf(pf) : { level: q.level, rank: PF.rankOf(q.level) };
@@ -454,6 +456,7 @@
     const act = document.createElement('div'); act.className = 'pf-btns';
     if (!me && !ex) {
       const mu = document.createElement('button'); mu.type = 'button'; mu.className = 'ol-btn'; mu.dataset.act = 'mute'; mu.dataset.slot = String(slot); mu.textContent = NN.isMuted(slot) ? 'UNMUTE' : 'MUTE'; act.appendChild(mu);
+      if (window.NexaAvatar && q.pid) { const ah = document.createElement('button'); ah.type = 'button'; ah.className = 'ol-btn'; ah.dataset.act = 'av-hide'; ah.dataset.slot = String(slot); ah.textContent = NexaAvatar.isHidden(q.pid) ? 'SHOW AVATAR' : 'HIDE AVATAR'; act.appendChild(ah); }
       const rp = document.createElement('button'); rp.type = 'button'; rp.className = 'ol-btn danger'; rp.dataset.act = 'report'; rp.dataset.slot = String(slot); rp.textContent = 'REPORT'; act.appendChild(rp);
       if (NN.isHost) { const kk = document.createElement('button'); kk.type = 'button'; kk.className = 'ol-btn danger'; kk.dataset.act = 'kick'; kk.dataset.slot = String(slot); kk.textContent = 'REMOVE FROM ROOM'; act.appendChild(kk); }
     }
@@ -649,7 +652,7 @@
     list.forEach((q) => {
       const row = mkp('div', 'pb-row tr-row'); row.setAttribute('role', 'listitem');
       const a = mkp('button', 'pb-host'); a.type = 'button'; a.dataset.act = 'card'; a.dataset.slot = String(q.slot);
-      const av = mkp('span'); av.innerHTML = PF.avatar(q.name, q.color, 26); const nm = mkp('em', '', q.name + ' · ' + q.level); nm.setAttribute('translate', 'no'); a.appendChild(av); a.appendChild(nm); row.appendChild(a);
+      const av = mkp('span'); av.innerHTML = PF.avatar(q.name, q.color, 26, q.pid); const nm = mkp('em', '', q.name + ' · ' + q.level); nm.setAttribute('translate', 'no'); a.appendChild(av); a.appendChild(nm); row.appendChild(a);
       const inp = mkp('input'); inp.type = 'number'; inp.min = '1'; inp.max = '1000000'; inp.step = '1'; inp.id = 'tr-amt-' + q.slot; inp.setAttribute('aria-label', 'Amount'); inp.value = '10'; row.appendChild(inp);
       const b = mkp('button', 'ol-btn', 'SEND'); b.type = 'button'; b.dataset.act = 'trade'; b.dataset.slot = String(q.slot); row.appendChild(b);
       box.appendChild(row);
@@ -1195,6 +1198,7 @@
       case 'card-close': closeCard(); break;
       case 'mute': { const s = Number(a.dataset.slot); NN.setMuted(s, !NN.isMuted(s)); updRoster(); if (L.cards.open === s) renderCard(s); break; }
       case 'report': { const s = Number(a.dataset.slot); NN.report(s); toast('PLAYER HIDDEN AND BLOCKED'); updRoster(); renderCard(s); break; }
+      case 'av-hide': { const s = Number(a.dataset.slot), k = pidOf(s); if (k && window.NexaAvatar) { const on = !NexaAvatar.isHidden(k), pk = NexaAvatar.pkOf(k); NexaAvatar.hide(k, on); if (on && pk && window.NexaSocial && NexaSocial.reportAvatar) NexaSocial.reportAvatar(pk); } break; }
       case 'kick': { const s = Number(a.dataset.slot); NN.kick(s); closeCard(); break; }
       // ---- серверы и комнаты
       case 'srv-probe': srvProbe(); break;
@@ -1270,6 +1274,7 @@
       if (root) { updStage(); updPlay(); updStatus(); }
     });
     NN.on('net:roster', () => { if (root) { updStage(); updPlay(); updStatus(); } });
+    if (window.NexaAvatar && !L.avSub) { L.avSub = true; NexaAvatar.on(() => { if (!root) return; updTop(); updRoster(); updProfile(true); if (L.cards.open) renderCard(L.cards.open); }); }
     NN.on('net:left', (p) => {
       NN.chat.sys('FRIEND_LEFT', p.name); delete L.readyMap[p.slot]; danceStop(p.slot, false); delete PR[p.pid || ''];
       if (NN.isHost) sendLobby();

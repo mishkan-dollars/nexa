@@ -7,7 +7,7 @@
   const sec = () => Math.floor(Date.now() / 1000);
   const clean = (s, n) => String(s || '').replace(/[\u0000-\u001f\u007f<>]/g, '').trim().slice(0, n);
   const ev = new EventTarget(), emit = (t) => ev.dispatchEvent(new Event(t));
-  let bans = {}, banAt = 0, started = false, subbed = false;
+  let bans = {}, avb = {}, banAt = 0, started = false, subbed = false;
   const pending = {};
 
   function applyBans(e, quiet) {
@@ -17,16 +17,19 @@
     if (!c || !Array.isArray(c.bans)) return false;
     const m = {};
     c.bans.slice(0, 3000).forEach((b) => { if (b && HEX64.test(b.k)) m[b.k] = { r: clean(b.r, 80), u: Math.max(0, b.u | 0) }; });
-    bans = m; banAt = e.created_at;
+    const av = {};
+    (Array.isArray(c.av) ? c.av : []).slice(0, 3000).forEach((b) => { if (b && HEX64.test(b.k)) av[b.k] = { r: clean(b.r, 80), u: Math.max(0, b.u | 0) }; });
+    bans = m; avb = av; banAt = e.created_at;
     if (!quiet) { try { localStorage.setItem(CK, JSON.stringify(e)); } catch (er) { /* ok */ } }
     fresh(); return true;
   }
   function fresh() {
-    setMsg(); emit('bans');
+    setMsg(); emit('bans'); if (window.NexaAvatar) { try { NexaAvatar.checkMod(); NexaAvatar.announce(true); NexaAvatar.refresh(); } catch (e) { /* ok */ } }
     if (NN.kickWhere) NN.kickWhere((pk) => !pk || !!banned(pk));
     if (me()) { const R = window.NexaRoom; if (R) { R.stopHost(); R.stopJoin(); R.stopQuick(); } if (NN.connected) NN.close(); }
   }
   const banned = (pk) => { const b = ADM && bans[pk]; return b && (!b.u || b.u > sec()) ? b : null; };
+  const avBlocked = (pk) => { const b = ADM && avb[pk]; return b && (!b.u || b.u > sec()) ? b : null; };
   const me = () => { const pk = T.ident.pk; return pk ? banned(pk) : null; };
   function text() {
     const b = me(); if (!b) return '';
@@ -141,7 +144,7 @@
 
   const flags = () => { const g = window.NexaGuard; return g ? g.flags() : 0; };
   window.NexaAdmin = {
-    active: !!ADM, pub: ADM, banned: (pk) => (ADM && HEX64.test(String(pk)) ? banned(pk) : null), me: ADM ? me : () => null, text, flags,
+    active: !!ADM, pub: ADM, avBlocked: (pk) => (ADM && HEX64.test(String(pk)) ? avBlocked(pk) : null), banned: (pk) => (ADM && HEX64.test(String(pk)) ? banned(pk) : null), me: ADM ? me : () => null, text, flags,
     on: (t, f) => ev.addEventListener(t, f), diag: () => Object.assign({ relays: chOpen().length, entries: Object.keys(bans).length }, D), _apply: applyBans
   };
 }());

@@ -253,6 +253,7 @@
   function setChannel(c) { S.ch = c; save(); CHAT.rows = []; subChat(); emit('chat'); }
   const mute = (pk, v) => { if (v) S.mute[pk] = 1; else delete S.mute[pk]; save(); CHAT.rows = CHAT.rows.filter((r) => !S.mute[r.pk]); emit('chat'); emit('friends'); };
   const block = (pk, v) => { if (v) { S.block[pk] = 1; delete S.friends[pk]; } else delete S.block[pk]; save(); CHAT.rows = CHAT.rows.filter((r) => !S.block[r.pk]); emit('chat'); emit('friends'); };
+  function reportAvatar(pk) { if (HEX64.test(pk || '') && netOk()) publish(mk(KIND.report, [['p', pk]], JSON.stringify({ r: 'avatar' }))); }
   function report(pk, why) { mute(pk, true); publish(mk(KIND.report, [['p', pk]], JSON.stringify({ r: clean(why || 'spam', 40) }))); }
 
   // ------------------------------------------------------------------ профили и рейтинг
@@ -261,7 +262,7 @@
   function pubProfile() {
     if (!netOk() || !me()) return;
     const p = PF.get(), pi = pinfo(), sh = PF.shareable ? PF.shareable() : null;
-    publish(mk(KIND.prof, [['d', 'nexa-profile']], JSON.stringify({ n: pi.name, l: pi.level, c: pi.color, cl: S.clan || '', st: sh && sh.stats ? sh.stats : p.stats })));
+    publish(mk(KIND.prof, [['d', 'nexa-profile']], JSON.stringify(Object.assign({ n: pi.name, l: pi.level, c: pi.color, cl: S.clan || '', st: sh && sh.stats ? sh.stats : p.stats }, window.NexaAvatar && NexaAvatar.mine() ? { av: NexaAvatar.mine() } : {}))));
     publish(mk(KIND.score, [['d', 'nexa-score']], JSON.stringify({ n: pi.name, l: pi.level, sc: myScore() })));
   }
   function loadProfile(pk, cb) {
@@ -269,6 +270,7 @@
     const id = 'nx-pf' + pk.slice(0, 8);
     subscribe(id, [{ kinds: [KIND.prof], authors: [pk], limit: 1 }], (e) => {
       const c = jparse(e.content, null); if (!c) return;
+      if (window.NexaAvatar) NexaAvatar.ingest(pk, typeof c.av === 'string' ? c.av : '', { pk });
       PROFS[pk] = { t: now(), n: validName(c.n), l: Math.max(1, Math.min(999, c.l | 0 || 1)), cl: clean(c.cl, 8), st: c.st && typeof c.st === 'object' ? c.st : {}, at: e.created_at };
       cb(PROFS[pk]); unsubscribe(id);
     });
@@ -369,6 +371,7 @@
   const h = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; };
   const btn = (text, fn, cls) => { const b = h('button', 'ol-btn' + (cls ? ' ' + cls : ''), text); b.type = 'button'; b.onclick = fn; return b; };
   let UI = null;
+  if (window.NexaAvatar) NexaAvatar.on(() => { try { render(); } catch (e) { /* ещё не смонтировано */ } });
   function mount(root) {
     if (!root) return;
     boot();
@@ -407,6 +410,7 @@
       const nm = h('button', 'pb-host sc-name'); nm.type = 'button'; nm.onclick = () => { UI.card = pk; render(); };
       const s = f.st === 'friend' ? statusOf(pk) : null;
       nm.appendChild(h('em', '', f.n && f.n !== short(pk) ? f.n : 'PLAYER')); if (f.l) nm.appendChild(h('small', '', ' · ' + f.l)); nm.appendChild(h('small', 'sc-id', ' ' + short(pk)));
+      const fav = h('span', 'sc-av'); fav.innerHTML = PF.avatar(f.n || 'P', '#8a8f98', 22, pk); row.appendChild(fav);
       row.appendChild(nm);
       row.appendChild(h('span', 'sc-st ' + (s || f.st), f.st === 'in' ? 'REQUEST' : f.st === 'out' ? 'PENDING' : ST_TXT[s]));
       if (f.st === 'in') { row.appendChild(btn('ACCEPT', () => { acceptFriend(pk); render(); })); row.appendChild(btn('DECLINE', () => { removeFriend(pk); render(); })); }
@@ -460,6 +464,7 @@
       BOARD.rows.slice(0, 25).forEach((r, i) => {
         const row = h('div', 'pb-row sc-row' + (r.pk === me() ? ' me' : '')); row.setAttribute('role', 'listitem');
         row.appendChild(h('b', 'sc-pos', String(i + 1)));
+        const bav = h('span', 'sc-av'); bav.innerHTML = PF.avatar(r.n || 'P', '#8a8f98', 22, r.pk); row.appendChild(bav);
         const nm = h('button', 'pb-host sc-name'); nm.type = 'button'; nm.onclick = () => { UI.card = r.pk; render(); }; nm.appendChild(h('em', '', r.n)); nm.appendChild(h('small', '', ' · ' + r.l)); row.appendChild(nm);
         row.appendChild(h('b', 'sc-score', String(r.sc))); list.appendChild(row);
       });
@@ -509,6 +514,7 @@
   function cardView(pk) {
     const c = h('div', 'sc-card'), f = S.friends[pk], p = PROFS[pk];
     c.appendChild(btn('←', () => { UI.card = null; render(); }));
+    const cav = h('span', 'sc-av'); cav.innerHTML = PF.avatar((p && p.n) || (f && f.n) || 'P', '#8a8f98', 64, pk === me() ? 'me' : pk); c.appendChild(cav);
     const nm = h('h3', '', pk === me() ? pinfo().name : (p && p.n) || (f && f.n) || short(pk)); c.appendChild(nm);
     c.appendChild(h('p', 'sc-short', short(pk))); const stat = h('div', 'sc-stats'); c.appendChild(stat);
     const paint = (pp) => {
@@ -532,7 +538,7 @@
 
   window.NexaSocial = {
     mount, boot, stop, publish, presEvent, subscribe, unsubscribe, addFriend, acceptFriend, removeFriend, invite, sendDM, sendChat, setChannel, mute, block, report,
-    createClan, joinClan, leaveClan, loadProfile, takeInvite() { const r = pendingInvite; pendingInvite = ''; return r; },
+    createClan, joinClan, leaveClan, loadProfile, pubProfile, reportAvatar, takeInvite() { const r = pendingInvite; pendingInvite = ''; return r; },
     get id() { return me(); }, short, state: S, board: BOARD, clans: CLANS, presence: PRES, statusOf, net: netInfo, on: (t, f) => ev.addEventListener(t, f), _seal: seal, _open: open, _dm: DM
   };
 }());

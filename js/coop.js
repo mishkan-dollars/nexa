@@ -115,6 +115,7 @@
 
   // ------------------------------------------------------------------ сессия
   // Комната из нескольких игроков: у каждого напарника своя запись Remote (слот 1..N): состояние, аватар, эмоция, плашка. Хост — авторитет (враги, волны), ретранслирует остальным.
+  const avKey = (slot) => { const q = NN.players.find((x) => x.slot === slot); return q ? q.pid : ''; };
   class Session {
     constructor(run, spec) {
       this.run = run; this.spec = spec; this.mode = spec.mode === 'mission' ? 'mission' : 'sandbox';
@@ -263,7 +264,7 @@
       tag.querySelector('span').textContent = m.name; tag.querySelector('small').textContent = 'PLAYER ' + m.slot; tag.style.color = m.color; L.appendChild(tag);
       const w = m.who = document.createElement('div'); w.className = 'nx-who'; w.hidden = true;
       w.innerHTML = '<span class="nx-av"></span><b translate="no"></b><span class="hp"><i></i></span><span class="talk"></span><span class="st" translate="no"></span>';
-      w.querySelector('.nx-av').innerHTML = PF ? PF.avatar(m.name || 'P', m.color, 24) : '';
+      w.querySelector('.nx-av').innerHTML = PF ? PF.avatar(m.name || 'P', m.color, 24, avKey(m.slot)) : '';
       w.querySelector('b').textContent = m.name || 'PLAYER';
       this.hud.appendChild(w);
     }
@@ -335,7 +336,7 @@
       m.av = { n, kind: undefined, muz: 0, dead: false, shown: false, aim: 0 };
       m.name = peer.name || m.name; m.color = peer.color || m.color;
       m.tag.querySelector('span').textContent = m.name; m.tag.querySelector('small').textContent = 'PLAYER ' + m.slot; m.tag.style.color = m.color;
-      m.who.querySelector('.nx-av').innerHTML = PF ? PF.avatar(m.name || 'P', m.color, 24) : '';
+      m.who.querySelector('.nx-av').innerHTML = PF ? PF.avatar(m.name || 'P', m.color, 24, avKey(m.slot)) : '';
       m.who.querySelector('b').textContent = m.name || 'PLAYER'; m.who.hidden = false;
     }
     gunKind(id) { return GUN[id] || (id ? 'rifle' : null); }

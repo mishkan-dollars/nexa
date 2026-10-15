@@ -109,9 +109,9 @@
 
   // ------------------------------------------------------------------ отображение
   const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-  function avatar(name, color, px) {
-    const ch = Array.from(String(name || '?').trim())[0] || '?';
-    return '<span class="pf-av" style="--c:' + esc(color || '#ff3b30') + ';--s:' + (px || 44) + 'px" translate="no" aria-hidden="true">' + esc(ch.toUpperCase()) + '</span>';
+  function avatar(name, color, px, key) {
+    const ch = Array.from(String(name || '?').trim())[0] || '?', A = window.NexaAvatar, u = key && A ? A.url(key) : '';
+    return '<span class="pf-av' + (u ? ' has-img' : '') + '" style="--c:' + esc(color || '#ff3b30') + ';--s:' + (px || 44) + 'px' + (u ? ';background-image:url(' + u + ')' : '') + '" translate="no" aria-hidden="true">' + (u ? '' : esc(ch.toUpperCase())) + '</span>';
   }
   const num = (v) => '<b translate="no">' + esc(v) + '</b>';
   function timeHTML(sec) {

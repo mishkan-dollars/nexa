@@ -22,8 +22,8 @@
   const FAST = { pos: 1, ping: 1, pong: 1, snap: 1, aim: 1, shot: 1, hit: 1 };
   const DUPE = { shot: 1, hit: 1 };
   let dupFlag = false;            // типы пакетов по ненадёжному каналу 'act' (остальные — по 'rel')
-  const RELAY = { pos: 1, shot: 1, cev: 1, boom: 1, aim: 1, bl: 1, gr: 1 };            // гость -> Хост -> все остальные
-  const DIRECT = { 'profile?': 1, profile: 1 };                          // адресные (поле to = слот получателя)
+  const RELAY = { pos: 1, shot: 1, cev: 1, boom: 1, aim: 1, bl: 1, gr: 1, av: 1 };            // гость -> Хост -> все остальные
+  const DIRECT = { 'profile?': 1, profile: 1, 'av?': 1, avd: 1 };                          // адресные (поле to = слот получателя)
   const POS_MIN = 21;
   function encPos(p, from) {
     const w = typeof p.w === 'string' ? p.w.slice(0, 12) : '', b = new ArrayBuffer(POS_MIN + w.length), v = new DataView(b);
@@ -774,7 +774,7 @@
     }
     if (L.gr === 'host') {                                      // Хост принимает от гостя
       if (RELAY[p.type]) { relayOthers(L, p, raw, fast); emit(p.type, p); return; }
-      if (DIRECT[p.type] && (p.to | 0) > 1) { const dst = findSlot(p.to | 0); if (dst) { const q = Object.assign({}, p); delete q.to; sendLink(dst, q, undefined); } return; }
+      if (DIRECT[p.type] && (p.to | 0) > 1) { const dst = findSlot(p.to | 0); if (dst) { const q = Object.assign({}, p); delete q.to; q.from = L.slot; sendLink(dst, q, undefined); } return; }
       emit(p.type, p);
     } else {
       if (DIRECT[p.type] && (p.to | 0) > 0 && (p.to | 0) !== R.mySlot) return;
