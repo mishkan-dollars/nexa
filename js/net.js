@@ -33,7 +33,7 @@
     let a = +p.a || 0; a -= Math.round(a / 6.283185307) * 6.283185307;
     v.setUint8(0, 1); v.setUint8(1, from & 255); v.setUint16(2, Math.round(performance.now()) & 65535, true);
     v.setInt32(4, Math.round((+p.x || 0) * 50), true); v.setInt32(8, Math.round((+p.z || 0) * 50), true); v.setInt16(12, Math.round(a * 5000), true);
-    v.setUint8(14, (p.c ? 1 : 0) | (p.d ? 2 : 0) | (p.r ? 4 : 0)); v.setUint8(15, Math.max(0, Math.min(100, Math.round(+p.h))) || 0); v.setUint8(16, Math.round(Math.max(0, Math.min(1, +p.q || 0)) * 255)); v.setUint8(17, p.it & 255); v.setUint8(18, p.ia & 255); v.setUint8(19, p.ip & 255); v.setUint8(20, w.length);
+    v.setUint8(14, (p.c ? 1 : 0) | (p.d ? 2 : 0) | (p.r ? 4 : 0) | (Math.round((Math.max(-1.25, Math.min(1.25, +p.pt || 0)) + 1.25) / 2.5 * 31) << 3)); v.setUint8(15, Math.max(0, Math.min(100, Math.round(+p.h))) || 0); v.setUint8(16, Math.round(Math.max(0, Math.min(1, +p.q || 0)) * 255)); v.setUint8(17, p.it & 255); v.setUint8(18, p.ia & 255); v.setUint8(19, p.ip & 255); v.setUint8(20, w.length);
     for (let i = 0; i < w.length; i += 1) v.setUint8(POS_MIN + i, w.charCodeAt(i) & 127);
     return b;
   }
@@ -43,7 +43,7 @@
     const n = v.getUint8(20); if (b.byteLength < POS_MIN + n || n > 12) return null;
     let w = ''; for (let i = 0; i < n; i += 1) w += String.fromCharCode(v.getUint8(POS_MIN + i));
     const f = v.getUint8(14);
-    return { type: 'pos', fb: v.getUint8(1), t16: v.getUint16(2, true), x: v.getInt32(4, true) / 50, z: v.getInt32(8, true) / 50, a: v.getInt16(12, true) / 5000, c: f & 1, d: (f >> 1) & 1, r: (f >> 2) & 1, h: v.getUint8(15), q: v.getUint8(16) / 255, it: v.getUint8(17), ia: v.getUint8(18), ip: v.getUint8(19), w };
+    return { type: 'pos', fb: v.getUint8(1), t16: v.getUint16(2, true), x: v.getInt32(4, true) / 50, z: v.getInt32(8, true) / 50, a: v.getInt16(12, true) / 5000, c: f & 1, d: (f >> 1) & 1, r: (f >> 2) & 1, pt: (f >> 3) / 31 * 2.5 - 1.25, h: v.getUint8(15), q: v.getUint8(16) / 255, it: v.getUint8(17), ia: v.getUint8(18), ip: v.getUint8(19), w };
   }
   const MAX_ACT = 8 * 1024, MAX_REL = 96 * 1024, CHAT_MAX = 200;
   const cfg = { forceMs: 2500, connectMs: 20000, guestWaitMs: 180000, silentMs: 7000, pingMs: 250, restartOnRtt: false, iceServers: ICE_SERVERS, iceServersExt: ICE_SERVERS_EXT, maxPlayers: MAX_PLAYERS };

@@ -103,7 +103,7 @@
     cancelHold();
     const cam = r.camera, T = window.THREE, cf = r.camFree = { pos: cam.position.clone(), look: new T.Vector3(), fov: cam.fov, roll: 0 };
     const v = new T.Vector3(); cam.getWorldDirection(v); cf.look.copy(cf.pos).add(v);
-    X.me = { t0: now(), cf, eye: cf.pos.clone(), dir: v.clone(), spec: -1, auto: false, fov: cam.fov };
+    X.me = { fp: true, t0: now(), cf, eye: cf.pos.clone(), dir: v.clone(), spec: -1, auto: false, fov: cam.fov };
     r.layer.classList.add('rv-down');
     buildSelf();
     if (NN.isHost) hostDown(me()); else send({ o: 'dn' });
@@ -192,6 +192,14 @@
     const k = 1 - Math.exp(-dt * 5);
     if (tgt) {
       const yaw = tgt.yaw || 0, px = tgt.x + Math.sin(yaw) * 2.8, pz = tgt.z + Math.cos(yaw) * 2.8;
+      if (m.fp) {      // глаза цели: позиция/взгляд/наклон из пакетов кукол, сглаживание; руки и оружие видны на кукле (голова изнутри не рисуется)
+        const kf = 1 - Math.exp(-dt * 16), pt = tgt.pitch || 0, ey = tgt.crouch ? 1.1 : 1.6;
+        if (m.fs !== m.spec || m.fyaw === undefined) { m.fs = m.spec; m.fyaw = yaw; m.fpit = pt; cf.pos.set(tgt.x, ey, tgt.z); }
+        let dy = yaw - m.fyaw; dy -= Math.round(dy / 6.2832) * 6.2832; m.fyaw += dy * kf; m.fpit += (pt - m.fpit) * kf;
+        cf.pos.x += (tgt.x - Math.sin(m.fyaw) * 0.1 - cf.pos.x) * kf; cf.pos.y += (ey - cf.pos.y) * kf; cf.pos.z += (tgt.z - Math.cos(m.fyaw) * 0.1 - cf.pos.z) * kf;
+        const cp = Math.cos(m.fpit);
+        cf.look.set(cf.pos.x - Math.sin(m.fyaw) * cp * 3, cf.pos.y + Math.sin(m.fpit) * 3, cf.pos.z - Math.cos(m.fyaw) * cp * 3); cf.roll = 0; cf.fov = 74; return;
+      }
       cf.pos.x += (px - cf.pos.x) * k; cf.pos.y += (2.0 - cf.pos.y) * k; cf.pos.z += (pz - cf.pos.z) * k;
       cf.look.x += (tgt.x - cf.look.x) * k; cf.look.y += (1.2 - cf.look.y) * k; cf.look.z += (tgt.z - cf.look.z) * k;
       cf.roll += (0 - cf.roll) * k;
@@ -249,7 +257,7 @@
       el.querySelector('u').style.width = Math.round(clamp(p, 0, 1) * 100) + '%';
       el.querySelector('.rv-rvg').hidden = !(p > 0); el.querySelector('.rv-bl').hidden = p > 0;
       el.querySelector('.rv-row em').textContent = Math.ceil(left) + ' s';
-      el.querySelector('.rv-nm').textContent = X.me.spec > 0 ? nameOf(X.me.spec) : '';
+      { const sp = X.me.spec > 0 ? posOf(X.me.spec) : null; el.querySelector('.rv-nm').textContent = X.me.spec > 0 ? nameOf(X.me.spec) + (sp ? '  ' + Math.round(sp.hp) + '%  ' + String(sp.w || '').toUpperCase() : '') + '  [V]' : ''; }
     }
     if (X.decEl && X.decT) {
       const left = Math.max(0, Math.ceil(X.decT - now()));
@@ -284,7 +292,9 @@
     X.offs.push(NN.on(TYPE, onMsg));
     run.on(document, 'keydown', (e) => {
       if (e.code === 'KeyE') X.keyE = true;
-      else if (e.code === 'KeyQ' && !e.repeat && X.me) X.me.spec = pickSpec(1);
+      else if ((e.code === 'KeyQ' || e.code === 'ArrowRight') && !e.repeat && X.me) X.me.spec = pickSpec(1);
+      else if (e.code === 'ArrowLeft' && !e.repeat && X.me) X.me.spec = pickSpec(-1);
+      else if (e.code === 'KeyV' && !e.repeat && X.me) X.me.fp = !X.me.fp;
     });
     run.on(document, 'keyup', (e) => { if (e.code === 'KeyE') X.keyE = false; });
     run.on(window, 'blur', () => { X.keyE = X.btnE = false; });
