@@ -534,6 +534,18 @@
     const fb = () => { try { el.focus(); el.select(); const ok = document.execCommand && document.execCommand('copy'); if (ok) done(); else toast('PRESS CTRL+C TO COPY', 'bad'); } catch (e) { toast('PRESS CTRL+C TO COPY', 'bad'); } };
     try { if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(el.value).then(done, fb); else fb(); } catch (e) { fb(); }
   }
+  function iceLines() {
+    const A = NN.lastAttempt ? NN.lastAttempt() : null, R0 = RM && RM.lastAttempt ? RM.lastAttempt() : null;
+    if (!A) return ['last attempt: none yet'];
+    const ct = (c) => (c ? 'host ' + c.host + ', mDNS ' + (c.mdns ? 'yes (' + c.mdns + ')' : 'no') + ', srflx ' + c.srflx + ', prflx ' + c.prflx + ', relay ' + c.relay + ', IPv6 ' + (c.v6 ? 'yes' : 'no') : 'n/a');
+    const a = ['last attempt (ICE):', '  role: ' + A.role + ', ice round: ' + A.round + (R0 && R0.rounds ? ', rendezvous rounds: ' + R0.rounds : '') + (R0 && R0.via ? ', via: ' + R0.via : ''),
+      '  result: ' + (A.ok ? 'connected in ' + A.okAt + ' ms' : A.fail ? 'failed (' + A.fail + ')' : 'in progress / no verdict') + (A.why ? ', reason: ' + A.why : ''),
+      '  local candidates: ' + ct(A.loc), '  remote candidates: ' + ct(A.rem), '  first public candidate: ' + (A.firstPub >= 0 ? A.firstPub + ' ms' : 'none')];
+    a.push('  STUN' + (A.noUrl ? ' (browser reports the server for some candidates only)' : '') + ':');
+    A.stun.forEach((x) => a.push('    ' + x.u + ' - ' + (x.ok ? 'answered in ' + x.ms + ' ms' : x.err ? 'error ' + (x.code || '?') + (x.code === 701 ? ' (no answer)' : '') : 'no answer')));
+    a.push('  ice events (ms): ' + (A.ev.length ? A.ev.map((e) => e[0] + ' ' + e[1]).join(', ') : 'none'));
+    return a;
+  }
   function netReport() {
     const ls = NN.linkStats ? NN.linkStats() : null, sm = RM && RM.servers ? RM.servers.summary() : null, st = NN.stats ? NN.stats() : {};
     const sv = (n) => { const e = document.querySelector('script[src*="' + n + '"]'), m = e && /[?&]v=([\w.]+)/.exec(e.getAttribute('src')); return m ? m[1] : '?'; };
@@ -548,6 +560,7 @@
       ls.links.forEach((l) => a.push('link #' + l.slot + ': path=' + (l.path || '?') + ' (' + (l.ct || '?') + ') ice-rtt=' + l.ice + ' ms, ping min/avg/p95/max=' + l.min + '/' + l.avg + '/' + l.p95 + '/' + l.max + ' ms'));
     }
     if (window.NexaCoop && NexaCoop.puppetStats) { const t = NexaCoop.puppetStats().trim(); if (t) a.push('puppets: ' + t); }
+    iceLines().forEach((x) => a.push(x));
     return a.join('\n');
   }
   function copyReport() {
@@ -838,6 +851,13 @@
         mk('em', 'LAST ATTEMPT');
         if (L.ok) { mk('span', 'CONNECTED IN ' + (L.ms / 1000).toFixed(1) + ' S, ROUND ' + L.rounds); if (L.via) mk('b', L.via, true); }
         else { mk('span', 'NO CONNECTION AFTER ' + L.rounds + ' ROUNDS'); mk('small', 'SERVERS ' + L.up + ' OF ' + L.total); mk('i', L.why === 'servers' ? 'NO SIGNALING SERVER REACHABLE' : L.why === 'ice' ? 'DIRECT CONNECTION FAILED (NAT / FIREWALL)' : 'NO ANSWER FROM THE HOST - IS THE ROOM OPEN?'); }
+        const A = NN.lastAttempt ? NN.lastAttempt() : null;
+        if (A) {
+          const k = A.ok ? '' : A.why === 'no-srflx' ? 'ICE: NO PUBLIC ADDRESS (STUN SILENT)' : A.why === 'remote-no-srflx' ? 'ICE: FRIEND HAS NO PUBLIC ADDRESS' : A.why === 'no-pairs' ? 'ICE: NO CONNECTION CHECKS STARTED' : A.why === 'checking-failed' ? 'ICE: CHECKS FAILED (STRICT NAT)' : A.why === 'disconnected' ? 'ICE: LINK DROPPED' : A.why === 'timeout' ? 'ICE: TIMED OUT' : '';
+          if (k) mk('i', k);
+          const c = A.loc;
+          mk('small', 'host ' + c.host + ' / srflx ' + (c.srflx + c.prflx) + ' / relay ' + c.relay + ' / mDNS ' + (c.mdns ? 'yes' : 'no') + ' / IPv6 ' + (c.v6 ? 'yes' : 'no') + (A.firstPub >= 0 ? ' / ' + A.firstPub + ' ms' : ''), true);
+        }
         ul.parentNode.insertBefore(la, ul);
       }
       const btn = blk.querySelector('[data-act="srv-probe"]'); if (btn) btn.disabled = !on;
@@ -1607,6 +1627,7 @@
     boot() { if ((NN.pendingJoin() || (RM && RM.pendingRoom())) && !L.joinFromUrl && ctx.setView) gate(() => { ctx.setView('ONLINE'); ctx.render && ctx.render(); }); },
     join(rid) { if (root) startJoin(rid, 'join', false); else { this._pend = rid; this.action('online'); } },
     get active() { return !!root; },
+    report: netReport,
     get state() { return L; },
     _st: ST, _dn: DN
   };

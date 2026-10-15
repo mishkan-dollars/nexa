@@ -17,7 +17,10 @@
 
   const VERSION = 1;
   const TELEGRAM = 'https://t.me/nexaindustries';
-  const ICE_SERVERS = [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }, { urls: 'stun:stun.cloudflare.com:3478' }];
+  // только общедоступные STUN без аккаунтов и платы; TURN нет. Основной набор — раунд 1, расширенный — со 2-го раунда (Chrome замедляется при большом числе серверов, поэтому ≤8)
+  const STUN_BASE = ['stun:stun.l.google.com:19302', 'stun:stun.cloudflare.com:3478', 'stun:stun.nextcloud.com:443', 'stun:stun.sipnet.ru:3478'];
+  const STUN_EXT = STUN_BASE.concat(['stun:stun1.l.google.com:19302', 'stun:stun.stunprotocol.org:3478', 'stun:stun.freeswitch.org:3478']);
+  const ICE_SERVERS = STUN_BASE.map((u) => ({ urls: u })), ICE_SERVERS_EXT = STUN_EXT.map((u) => ({ urls: u }));
   const MAX_PLAYERS = 6, MAX_BR = 10, MAX_VOICE = 4;                                   // см. ONLINE.md: 6 проверено по расчёту трафика Хоста; константу можно поднять до 8 на свой риск
   const FAST = { pos: 1, ping: 1, pong: 1, snap: 1, aim: 1, shot: 1, hit: 1 };
   const DUPE = { shot: 1, hit: 1 };
@@ -43,8 +46,8 @@
     return { type: 'pos', fb: v.getUint8(1), t16: v.getUint16(2, true), x: v.getInt32(4, true) / 50, z: v.getInt32(8, true) / 50, a: v.getInt16(12, true) / 5000, c: f & 1, d: (f >> 1) & 1, r: (f >> 2) & 1, h: v.getUint8(15), q: v.getUint8(16) / 255, it: v.getUint8(17), ia: v.getUint8(18), ip: v.getUint8(19), w };
   }
   const MAX_ACT = 8 * 1024, MAX_REL = 96 * 1024, CHAT_MAX = 200;
-  const cfg = { forceMs: 2500, connectMs: 20000, guestWaitMs: 180000, silentMs: 7000, pingMs: 250, restartOnRtt: false, iceServers: ICE_SERVERS, maxPlayers: MAX_PLAYERS };
-  try { if (localStorage.getItem('nexaIce') === 'none') cfg.iceServers = []; } catch (e) { /* без хранилища */ }   // тесты/сети без STUN: только локальные кандидаты
+  const cfg = { forceMs: 2500, connectMs: 20000, guestWaitMs: 180000, silentMs: 7000, pingMs: 250, restartOnRtt: false, iceServers: ICE_SERVERS, iceServersExt: ICE_SERVERS_EXT, maxPlayers: MAX_PLAYERS };
+  try { if (localStorage.getItem('nexaIce') === 'none') cfg.iceServers = cfg.iceServersExt = []; } catch (e) { /* без хранилища */ }   // тесты/сети без STUN: только локальные кандидаты
 
   // ------------------------------------------------------------------ сообщения (английские исходники; переводы — js/i18n-net.js)
   const MSG = {
@@ -81,9 +84,9 @@
     LOCAL_NO: 'This browser cannot link tabs (no BroadcastChannel).',
     LOCAL_NONE: 'No room found in the other tabs. Open a room in one tab first (both tabs must be in the same, non-private browser window set).',
     DIAG_MDNS: 'Both browsers hide local addresses (mDNS) and no public address was found — two windows on one PC often cannot reach each other this way. Use "THIS COMPUTER" mode, another network or a mobile hotspot.',
-    DIAG_NO_STUN: 'No public address was found on either side — the STUN server (stun.l.google.com) may be blocked. Try another network, a VPN or a mobile hotspot.',
+    DIAG_NO_STUN: 'STUN does not respond — no public address was found, so the browsers cannot find a path. Try another network or a VPN.',
     DIAG_ONE_SIDE: 'Only one side found a public address — the other network may block the STUN server or strictly filter UDP. Try another network or a mobile hotspot.',
-    DIAG_NAT: 'Both sides have public addresses but the NAT/firewall blocks the direct link (no relay server). Try another network, a VPN or a mobile hotspot.'
+    DIAG_NAT: 'Public addresses were found but the link still failed — strict NAT or carrier-grade NAT (CGNAT). Share internet from a phone or try another provider.'
   };
 
   // ------------------------------------------------------------------ утилиты
@@ -265,7 +268,7 @@
       close() { if (c.readyState === 'closed') return; c.readyState = 'closed'; c.dispatch('close'); } };
     return c;
   }
-  function newLink(gameRole, local, pool) {
+  function newLink(gameRole, local, pool, round) {
     const L = { id: ++linkSeq, gr: gameRole, slot: gameRole === 'guest' ? 1 : 0, state: 'creating', pc: null, act: null, rel: null, sid: '', polite: gameRole === 'guest', making: false,
       ready: false, attached: false, lastN: {}, lastRx: 0, openAt: 0, rtt: 0, rttMin: 0, pingT: 0, watchT: 0, connT: 0, restartT: 0, intentional: false, peerBye: false,
       rate: { t: 0, n: 0 }, peer: null, info: null, offerCode: '', answerCode: '', tx: 0, rx: 0, txB: 0, rxB: 0, chatGot: [], sender: null, remote: null, el: null, dest: null, rsrc: null,
@@ -273,10 +276,12 @@
     let act, rel;
     if (local) { L.local = true; act = fakeChan('act'); rel = fakeChan('rel'); }
     else {
-      const pc = L.pc = new RTCPeerConnection({ iceServers: cfg.iceServers, bundlePolicy: 'max-bundle', iceCandidatePoolSize: (pool == null ? 2 : pool) | 0 });      // pool > 0: кандидаты собираются заранее (быстрее offer/answer)
+      const srv = round >= 2 && cfg.iceServers.length ? cfg.iceServersExt : cfg.iceServers;
+      const pc = L.pc = new RTCPeerConnection({ iceServers: srv, bundlePolicy: 'max-bundle', iceCandidatePoolSize: (pool == null ? 2 : pool) | 0 });      // pool > 0: кандидаты собираются заранее (быстрее offer/answer)
       pc.addEventListener('connectionstatechange', () => onPcState(L));
       pc.addEventListener('iceconnectionstatechange', () => onPcState(L));
       pc.addEventListener('negotiationneeded', () => negotiate(L));
+      dgTrack(L, pc, srv, round);
       pc.addEventListener('track', (e) => onTrack(L, e));
       act = pc.createDataChannel('act', { negotiated: true, id: 1, ordered: false, maxRetransmits: 0 });
       act.binaryType = 'arraybuffer';
@@ -345,6 +350,7 @@
     if (L.opened) return;
     L.opened = true;
     L.state = 'open';
+    if (L.dg) { L.dg.ok = true; L.dg.okAt = Date.now() - L.dg.t0; LA = L.dg; }
     if (R.role === 'host') { L.peerAt = Date.now(); }
     L.pingT = setInterval(() => pingTick(L), cfg.pingMs);
     L.statT = setInterval(() => pathTick(L), 5000);
@@ -422,6 +428,7 @@
     }
   }
   function fail(L, code) {
+    if (L.dg && !L.dg.fail && !L.dg.ok) L.dg.fail = code;
     const was = L.attached;
     destroyLink(L);
     const i = R.links.indexOf(L); if (i >= 0) R.links.splice(i, 1);
@@ -500,6 +507,66 @@
     return c;
   }
   function diagSet(side, sdp) { DG = DG || { local: zeroC(), remote: zeroC() }; DG[side] = candStats(sdp); }
+  // итог попытки соединения (LA живёт после закрытия связи): счётчики кандидатов по типам, ответы STUN, события ICE с метками времени. Адреса не сохраняются и не показываются
+  const zeroT = () => ({ host: 0, mdns: 0, srflx: 0, prflx: 0, relay: 0, v6: 0 });
+  const STUNAGG = {};
+  let LA = null;
+  function candTypes(sdp) {
+    const c = zeroT();
+    String(sdp || '').split(/\r?\n/).forEach((l) => {
+      const m = /^a=candidate:\S+ \d+ \S+ \d+ (\S+) \d+ typ (\w+)/i.exec(l); if (!m) return;
+      const t = m[2].toLowerCase();
+      if (m[1].indexOf(':') >= 0) c.v6 += 1;
+      if (t === 'host') { if (/\.local$/i.test(m[1])) c.mdns += 1; else c.host += 1; } else if (c[t] !== undefined) c[t] += 1;
+    });
+    return c;
+  }
+  function dgTrack(L, pc, srv, round) {
+    const d = L.dg = { role: L.gr === 'host' ? 'answerer' : 'offerer', round: round | 0, t0: Date.now(), ev: [], loc: zeroT(), rem: null, urls: srv.map((x) => x.urls), noUrl: false, firstPub: -1, fail: '', ok: false, conn: 0, okAt: 0 };
+    const ev = (k, v) => { if (d.ev.length < 40) d.ev.push([Date.now() - d.t0, k + ':' + v]); };
+    pc.addEventListener('icegatheringstatechange', () => ev('gather', pc.iceGatheringState));
+    pc.addEventListener('iceconnectionstatechange', () => ev('ice', pc.iceConnectionState));
+    pc.addEventListener('icecandidate', (e) => {
+      const c = e.candidate; if (!c) return;
+      const str = c.candidate || '', m = /candidate:\S+ \d+ \S+ \d+ (\S+) \d+ typ (\w+)/.exec(str);
+      const t = (c.type || (m && m[2]) || '').toLowerCase(), ad = c.address || (m && m[1]) || '';
+      if (ad.indexOf(':') >= 0) d.loc.v6 += 1;
+      if (t === 'host') { if (/\.local$/i.test(ad)) d.loc.mdns += 1; else d.loc.host += 1; } else if (d.loc[t] !== undefined) d.loc[t] += 1;
+      if (t === 'srflx' || t === 'prflx' || t === 'relay') {
+        const ms = Date.now() - d.t0; if (d.firstPub < 0) { d.firstPub = ms; ev('first-public', t); }
+        const u = e.url || c.url || ''; if (!u) d.noUrl = true;
+        else { const a = STUNAGG[u] = STUNAGG[u] || { ok: 0, ms: -1, err: 0, code: 0 }; a.ok += 1; if (a.ms < 0 || ms < a.ms) a.ms = ms; }
+      }
+    });
+    pc.addEventListener('icecandidateerror', (e) => {
+      const u = e.url || ''; if (!u || String(u).indexOf('stun') !== 0) return;
+      const a = STUNAGG[u] = STUNAGG[u] || { ok: 0, ms: -1, err: 0, code: 0 }; a.err += 1; a.code = e.errorCode | 0;
+      ev('stun-error', (e.errorCode | 0));
+    });
+  }
+  function dgGathered(L) { const d = L.dg; if (d && !(LA && LA.conn && !LA.fail && !LA.ok)) LA = d; }
+  function dgRemote(L, sdp) { if (L.dg) L.dg.rem = candTypes(sdp); }
+  function dgConn(L) { const d = L.dg; if (d) { d.conn = Date.now() - d.t0; LA = d; } }
+  function dgWhy(d) {
+    if (!d.fail) return '';
+    if (d.loc.srflx + d.loc.prflx + d.loc.relay === 0) return 'no-srflx';
+    if (d.rem && d.rem.srflx + d.rem.prflx + d.rem.relay === 0) return 'remote-no-srflx';
+    const last = d.ev.filter((x) => x[1].indexOf('ice:') === 0).map((x) => x[1].slice(4));
+    if (last.indexOf('checking') < 0) return 'no-pairs';
+    if (last[last.length - 1] === 'disconnected') return 'disconnected';
+    return last.indexOf('failed') >= 0 ? 'checking-failed' : 'timeout';
+  }
+  function lastAttempt() {
+    const d = LA; if (!d) return null;
+    const stun = d.urls.map((u) => { const a = STUNAGG[u]; return { u, ok: a ? a.ok : 0, ms: a && a.ms >= 0 ? a.ms : -1, err: a ? a.err : 0, code: a ? a.code : 0 }; });
+    return { role: d.role, round: d.round, ok: d.ok, okAt: d.okAt, fail: d.fail, why: dgWhy(d), firstPub: d.firstPub, loc: Object.assign({}, d.loc), rem: d.rem ? Object.assign({}, d.rem) : null, noUrl: d.noUrl, stun, ev: d.ev.map((x) => x.slice()) };
+  }
+  function diagLast() {
+    if (DG) return JSON.parse(JSON.stringify(DG));
+    const a = LA; if (!a) return null;
+    const f = (t) => { const o = zeroC(); if (t) { o.host = t.host; o.mdns = t.mdns; o.srflx = t.srflx + t.prflx; o.relay = t.relay; } return o; };
+    return { local: f(a.loc), remote: f(a.rem) };
+  }
 
   // ------------------------------------------------------------------ рукопожатие: низкоуровневые операции (используют и ручной режим, и js/rendezvous.js)
   function gather(pc, t0) {
@@ -532,28 +599,33 @@
     L.connT = setTimeout(() => { if (!L.ready && (L.state === 'answering' || L.state === 'connecting')) { if (L.gr === 'child') childGone(L); else fail(L, 'CONNECT_TIMEOUT'); } }, ms);
   }
   // свободное (не присоединённое) соединение-оферент: SDP с полным набором кандидатов (для трекера). Возвращает {link, sdp, forced}
-  async function newOffer(gameRole) {
-    const L = newLink(gameRole, false, 2), t0 = Date.now();
+  async function newOffer(gameRole, round) {
+    DG = null;
+    const L = newLink(gameRole, false, 2, round), t0 = Date.now();
     try {
       await L.pc.setLocalDescription(await L.pc.createOffer());
       const g = await gather(L.pc, t0);
+      dgGathered(L);
       return { link: L, sdp: cfg.shrinkRz === false ? g.sdp : shrinkSdp(g.sdp).sdp, forced: g.forced };
     } catch (e) { destroyLink(L); return null; }
   }
-  async function newAnswer(gameRole, offerSdp) {
-    const L = newLink(gameRole, false, 2), t0 = Date.now();
+  async function newAnswer(gameRole, offerSdp, round) {
+    DG = null;
+    const L = newLink(gameRole, false, 2, round), t0 = Date.now();
     try {
+      dgRemote(L, offerSdp);
       await L.pc.setRemoteDescription({ type: 'offer', sdp: offerSdp });
       await L.pc.setLocalDescription(await L.pc.createAnswer());
       const g = await gather(L.pc, t0);
+      dgGathered(L);
       L.state = 'answering';
       return { link: L, sdp: cfg.shrinkRz === false ? g.sdp : shrinkSdp(g.sdp).sdp, forced: g.forced };
     } catch (e) { destroyLink(L); return null; }
   }
   async function applyAnswer(L, sdp) {
-    try { await L.pc.setRemoteDescription({ type: 'answer', sdp }); return true; } catch (e) { return false; }
+    try { dgRemote(L, sdp); await L.pc.setRemoteDescription({ type: 'answer', sdp }); return true; } catch (e) { return false; }
   }
-  function startConnecting(L, ms) { if (L.state !== 'closed') { L.state = 'connecting'; refreshState(); armConnectTimer(L, ms || cfg.connectMs); } }
+  function startConnecting(L, ms) { dgConn(L); if (L.state !== 'closed') { L.state = 'connecting'; refreshState(); armConnectTimer(L, ms || cfg.connectMs); } }
   function dropLink(L) { if (!L) return; if (L.attached) { const i = R.links.indexOf(L); if (i >= 0) R.links.splice(i, 1); L.attached = false; } destroyLink(L); refreshState(); }
 
   // ---- ручной режим (запасной, всегда доступен): ссылка ?join=NX1O…, ответ NX1A…
@@ -571,6 +643,7 @@
     try {
       await L.pc.setLocalDescription(await L.pc.createOffer());
       const g = await gather(L.pc, t0);
+      dgGathered(L);
       if (manual !== L || L.state === 'closed') return { ok: false, err: 'CLOSED' };
       const sh = shrinkSdp(g.sdp);
       DG = null; diagSet('local', g.sdp);
@@ -589,7 +662,7 @@
     if (p.sid !== L.sid) return { ok: false, err: 'WRONG_SESSION' };
     try {
       await L.pc.setRemoteDescription({ type: 'answer', sdp: p.sdp });
-      diagSet('remote', p.sdp);
+      diagSet('remote', p.sdp); dgRemote(L, p.sdp);
       manual = null;
       startConnecting(L);
       return { ok: true };
@@ -604,12 +677,13 @@
     manual = null;
     begin('guest');
     const L = newLink('guest'), t0 = Date.now();
-    L.sid = p.sid; L.state = 'answering'; DG = null; diagSet('remote', p.sdp);
+    L.sid = p.sid; L.state = 'answering'; DG = null; diagSet('remote', p.sdp); dgRemote(L, p.sdp);
     attach(L); refreshState();
     try {
       await L.pc.setRemoteDescription({ type: 'offer', sdp: p.sdp });
       await L.pc.setLocalDescription(await L.pc.createAnswer());
       const g = await gather(L.pc, t0);
+      dgGathered(L);
       if (L.state === 'closed') return { ok: false, err: 'CLOSED' };
       const sh = shrinkSdp(g.sdp);
       diagSet('local', g.sdp); L.answerAt = Date.now();
@@ -1133,7 +1207,7 @@
   window.addEventListener('pagehide', () => { R.links.forEach((l) => { if (l.ready) sendLink(l, { type: 'bye' }); }); });
 
   window.NexaNet = {
-    VERSION, TELEGRAM, ICE_SERVERS, MSG, config: cfg, FAST, MAX_PLAYERS, MAX_BR, MAX_VOICE, setMax(n) { if (R.role !== 'guest') cfg.maxPlayers = Math.max(2, Math.min(MAX_BR, n | 0 || MAX_PLAYERS)); }, RELAY, DIRECT, PID: MYPID,
+    VERSION, TELEGRAM, ICE_SERVERS, ICE_SERVERS_EXT, MSG, config: cfg, FAST, MAX_PLAYERS, MAX_BR, MAX_VOICE, setMax(n) { if (R.role !== 'guest') cfg.maxPlayers = Math.max(2, Math.min(MAX_BR, n | 0 || MAX_PLAYERS)); }, RELAY, DIRECT, PID: MYPID,
     supported: () => typeof RTCPeerConnection === 'function',
     canDeflate,
     get state() { return state; }, get role() { return R.role; }, get slot() { return slot(); }, get peer() { return others()[0] || null; }, get players() { return others(); },
@@ -1143,7 +1217,7 @@
     get offerCode() { return manual ? manual.offerCode : ''; }, get answerCode() { return R.role === 'guest' && R.links[0] ? R.links[0].answerCode : ''; },
     get pending() { return !!manual; }, get pendingLinks() { return R.links.filter((l) => !l.opened).length; },
     stats: () => { let tx = 0, rx = 0, txB = 0, rxB = 0, up = 0; R.links.forEach((l) => { tx += l.tx; rx += l.rx; txB += l.txB; rxB += l.rxB; if (l.openAt) up = Math.max(up, Math.round((Date.now() - l.openAt) / 1000)); }); return { tx, rx, txB, rxB, rtt: Math.round(rttMain()), up }; },
-    local: localApi, diag: () => (DG ? JSON.parse(JSON.stringify(DG)) : null), candStats,
+    local: localApi, diag: diagLast, lastAttempt, candStats,
     createOffer, acceptAnswer, createAnswer, parse: parseInput, linkFor, pendingJoin, clearJoinFromUrl,
     sendAction, on, off, close, reset: () => closeAll(false), localInfo,
     kick, kickWhere, banGate, setMuted, isMuted, report, isBlockedName, begin,
