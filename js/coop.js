@@ -299,6 +299,7 @@
     async barrierKey(key, ms) { try { await this.barrierKey0(key, ms); } finally { this.reseed('k:' + key); } }
     async barrierKey0(key, ms) {
       if (this.solo || this.disposed) return;
+      if (key.length > 32) key = 'h' + hash32(key).toString(36) + key.length;
       this.mk.add(key); NN.sendAction({ type: 'cev', k: 'barn', kn: key });
       let t0 = Date.now(), shown = 0, lt = t0;
       while (!this.disposed && !this.gone && !this.solo && this.netUp() && Date.now() - t0 < (ms || 60000)) {

@@ -33,7 +33,7 @@
         q.lo = 0; if (m.d) q.v = 'done'; q.ver += 1; emit(k); pub(k); return true;
       }
       case 'st': {
-        if (JSON.stringify(q.v) === JSON.stringify(m.v)) return true;
+        if (q.v === m.v || (typeof m.v === 'object' && JSON.stringify(q.v) === JSON.stringify(m.v))) return true;
         q.v = m.v; q.ver += 1; emit(k); pub(k); return true;
       }
       default: return false;
@@ -45,7 +45,7 @@
     if (!S) return;
     const from = p.from | 0;
     if (NN.isHost) {
-      if (p.o === 'hi') { snapTo(from); return; }
+      if (p.o === 'hi') { S.known.add(from); snapTo(from); return; }
       if (['cl', 'rn', 'rl', 'st'].indexOf(p.o) < 0) return;
       const ok = hostOp(from, p);
       if (p.id) NN.sendAction({ type: TYPE, o: 'r', id: p.id, ok }, { to: from });
@@ -67,7 +67,13 @@
     done(k) { return W.get(k) === 'done'; },
     on(k, fn) { if (!S) return () => {}; const s = { k, fn }; S.subs.push(s); return () => { const i = S.subs.indexOf(s); if (i >= 0) S.subs.splice(i, 1); }; },
     send(m) { return NN.isHost ? (hostOp(me(), m), true) : NN.sendAction(Object.assign({ type: TYPE }, m)); },
-    set(k, v) { if (!W.active) return; W.send({ o: 'st', k, v }); },
+    set(k, v) {
+      if (!W.active) return;
+      const t = Date.now(), l = S.lst.get(k) || (S.lst.set(k, { t: 0, v: undefined, h: 0 }), S.lst.get(k));
+      if (t - l.t >= 100) { l.t = t; W.send({ o: 'st', k, v }); return; }
+      l.v = v;
+      if (!l.h) l.h = setTimeout(() => { l.h = 0; if (S && W.active) { l.t = Date.now(); W.send({ o: 'st', k, v: l.v }); } }, 100 - (t - l.t));
+    },
     claim(k) {
       if (!W.active) return Promise.resolve(true);
       if (NN.isHost) return Promise.resolve(hostOp(me(), { o: 'cl', k }));
@@ -78,13 +84,13 @@
     snapshot() { const o = {}; if (S) S.recs.forEach((q, k) => { if (q.ver) o[k] = { v: q.v, ver: q.ver, lo: q.lo }; }); return o; },
     attach(run) {
       W.detach();
-      S = { run, recs: new Map(), subs: [], pend: new Map(), seq: 0, offs: [], its: new Map(), t: 0 };
+      S = { run, recs: new Map(), subs: [], pend: new Map(), seq: 0, offs: [], its: new Map(), t: 0, known: new Set(), lst: new Map() };
       S.offs.push(NN.on(TYPE, onMsg));
-      S.offs.push(NN.on('net:roster', () => { if (NN.isHost) snapTo(); }));
+      S.offs.push(NN.on('net:roster', () => { if (!NN.isHost) return; NN.players.forEach((x) => { if (!S.known.has(x.slot)) { S.known.add(x.slot); snapTo(x.slot); } }); }));
       S.offs.push(NN.on('net:left', () => { if (NN.isHost) expire(); }));
       run.hooks.push((dt) => { S.t += dt; if (NN.isHost && S.t > 0.5) { S.t = 0; expire(); } try { blocking(run); } catch (e) { /* ok */ } });
       if (!NN.isHost) NN.sendAction({ type: TYPE, o: 'hi' });
-      wireSignals(run);
+      wireSignals(run); wireWorld(run);
     },
     detach() { if (!S) return; S.offs.forEach((f) => { try { f(); } catch (e) { /* ok */ } }); S = null; }
   };
@@ -98,6 +104,17 @@
   function wireSignals(r) {
     W.on('sig:*', (k, q) => { const n = k.slice(4); if (q.v === 1 && !r.sig[n] && r.__mpSig !== n) { r.__mpSig = n; try { r.signal(n); } finally { r.__mpSig = null; } } });
     W.on('obj', (k, q) => { const v = q.v; if (v && v.by !== me() && v.t !== r.__mpObj) { r.__mpObj = v.t; r.__mpRemote = true; try { r.objective(v.t); } finally { r.__mpRemote = false; } } });
+  }
+  // ---------------------------------------------------------------- мир: разрушаемое, двери, подбор, тревога, таймер (по событию, не покадрово)
+  const rd = (v) => Math.round(v * 2) / 2;
+  function remote(r, fn) { r.__mpRem = true; try { fn(); } catch (e) { console.warn('[mpworld]', e); } finally { r.__mpRem = false; } }
+  function wireWorld(r) {
+    const on = (pat, fn) => W.on(pat, (k, q) => { if (q.v !== undefined && !r.disposed) remote(r, () => fn(k, q)); });
+    on('bk:*', (k) => { const b = (r.breakables || []).find((x) => x.mpk === k); if (b && !b.broken) r.shatter(b); });
+    on('dr:*', (k) => { const d = r.mpDoors && r.mpDoors.get(k); if (d && !(d.userData.col && d.userData.col.off)) r.openDoor(d, 0.6); });
+    on('pk:*', (k) => { const cb = r.cb; if (!cb) return; const i = cb.pickups.findIndex((x) => x.mpk === k && !x.dead); if (i >= 0) { const x = cb.pickups[i]; x.dead = true; x.mpRem = true; x.g.visible = false; cb.pickups.splice(i, 1); } });
+    on('al:*', (k, q) => { const o = r.mpStealth && r.mpStealth[k]; if (o && !o.S.alarm) o.a0.call(o.S, q.v); });
+    on('cd:*', (k, q) => { const o = r.mpCd && r.mpCd[k]; if (o && o.on && !NN.isHost && q.v && Math.abs(o.left - q.v.l) > 0.5) o.left = q.v.l; });
   }
   const progress = () => { let n = 0; S.recs.forEach((q) => { if (q.v === 'done') n += 1; }); return n; };
 
@@ -146,6 +163,59 @@
       W.on(key, () => { if (r.target === it) r.target = null; });
       if (W.done(key)) setTimeout(() => replay(key, { v: 'done' }), 0);
       return it;
+    };
+    const brk0 = RunP.breakable;
+    if (brk0) RunP.breakable = function () { const r = this, b = brk0.apply(this, arguments); if (live(r) && b) b.mpk = 'bk:' + scope(r) + ':' + (r.breakables.length - 1) + ':' + rd(b.x) + ',' + rd(b.z); return b; };
+    const sh0 = RunP.shatter;
+    if (sh0) RunP.shatter = function (b) { const r = this; if (b && b.mpk && !b.broken && !r.__mpRem && live(r)) W.set(b.mpk, 1); return sh0.apply(this, arguments); };
+    const door0 = RunP.door;
+    if (door0) RunP.door = function (x, z) { const r = this, m = door0.apply(this, arguments); if (live(r)) { m.mpk = 'dr:' + scope(r) + ':' + rd(x) + ',' + rd(z); (r.mpDoors || (r.mpDoors = new Map())).set(m.mpk, m); } return m; };
+    const od0 = RunP.openDoor;
+    if (od0) RunP.openDoor = function (d) { const r = this; if (d && d.mpk && !r.__mpRem && live(r) && !(d.userData.col && d.userData.col.off)) W.set(d.mpk, 1); return od0.apply(this, arguments); };
+    const pk0 = RunP.pickup;
+    if (pk0) RunP.pickup = function (x, z, kind, o) { const r = this, k = pk0.apply(this, arguments); if (live(r) && k) k.mpk = 'pk:' + scope(r) + ':' + rd(x) + ',' + rd(z) + ':' + kind + ((o && o.id) || ''); return k; };
+    const up0 = RunP.updatePickups;
+    if (up0) RunP.updatePickups = function () {
+      const r = this, cb = r.cb;
+      if (!cb || !cb.pickups.length || !live(r)) return up0.apply(this, arguments);
+      const before = cb.pickups.slice(), res = up0.apply(this, arguments);
+      for (let i = 0; i < before.length; i += 1) { const k = before[i]; if (k.mpk && !k.dead && !k.mpRem && cb.pickups.indexOf(k) < 0) { k.mpRem = true; W.set(k.mpk, (W.get(k.mpk) | 0) + 1); } }
+      return res;
+    };
+    const st0 = RunP.stealth;
+    if (st0) RunP.stealth = function () {
+      const r = this, S = st0.apply(this, arguments);
+      if (live(r) && S && S.alarmNow) {
+        const key = 'al:' + scope(r) + ':' + (r.mpSN = (r.mpSN | 0) + 1), a0 = S.alarmNow;
+        S.alarmNow = function (why) { if (!S.alarm && !r.__mpRem) W.set(key, String(why || 1)); return a0.apply(S, arguments); };
+        (r.mpStealth || (r.mpStealth = {}))[key] = { S, a0 };
+      }
+      return S;
+    };
+    const cd0 = RunP.countdown;
+    if (cd0) RunP.countdown = function () {
+      const r = this, c = cd0.apply(this, arguments);
+      if (live(r) && c) {
+        const key = 'cd:' + scope(r) + ':' + (r.mpCN = (r.mpCN | 0) + 1); let acc = 0;
+        (r.mpCd || (r.mpCd = {}))[key] = c;
+        if (NN.isHost) { const off = r.addHook((dt) => { acc += dt; if (acc >= 2 && c.on) { acc = 0; W.set(key, { l: Math.round(c.left * 10) / 10 }); } }); const s0 = c.stop; c.stop = function () { off(); return s0.apply(this, arguments); }; }
+      }
+      return c;
+    };
+    // «точка встречи»: r.gate(label, x, z, rad) и автоматически любое ожидание r.until по позиции игрока (r.p.x / r.p.z)
+    RunP.gate = function (label, x, z, rad) {
+      const r = this, R = rad || 3.2;
+      return r.until(() => !r.locked && Math.hypot(r.p.x - x, r.p.z - z) < R);
+    };
+    const until0 = RunP.until;
+    RunP.until = function (cond) {
+      const r = this, p = until0.apply(this, arguments);
+      if (!live(r) || r.__mpGate) return p;
+      let src = ''; try { src = String(cond); } catch (e) { return p; }
+      if (!/\.p\.[xz]\b/.test(src) || /dead|enemiesAlive|\.hp\b|inv\b/.test(src)) return p;
+      const h = src.replace(/\s+/g, '').slice(0, 60), co = r.__co, n = (r.mpGN = r.mpGN || {});
+      const key = 'u:' + scope(r) + ':' + h; n[key] = (n[key] | 0) + 1;
+      return p.then(() => (live(r) && co.barrierKey ? co.barrierKey(key + ':' + n[key], 25000) : undefined));
     };
     const hack0 = RunP.hack;
     if (hack0) RunP.hack = function () { if (this.__mpAuto) return Promise.resolve(true); return hack0.apply(this, arguments); };
