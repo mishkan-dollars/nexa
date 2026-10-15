@@ -148,6 +148,7 @@
       this.on('bl', this.onBlood); this.on('gr', this.onGrenade); this.on('eshot', this.onEShot); this.on('hurt', this.onHurt); this.on('wave', this.onWave);
       r.hooks.push((dt) => { try { this.tick(dt); } catch (e) { if (!this.errLogged) { this.errLogged = true; console.warn('[coop]', e); } } });
       this.buildUi();
+      if (window.NexaAvatar) this.offs.push(NexaAvatar.on(() => this.remotes.forEach((m) => { const k = avKey(m.slot); if (m.tag) m.tag.querySelector('.nx-tav').innerHTML = PF.avatar(m.name || 'P', m.color, 30, k); if (m.who) m.who.querySelector('.nx-av').innerHTML = PF.avatar(m.name || 'P', m.color, 24, k); })));
     }
     // запись о напарнике по слоту (создаётся при первом пакете, если игрок есть в списке комнаты)
     rmFor(slot) {
@@ -260,7 +261,7 @@
 
     mkRemoteUi(m) {
       const L = this.run.layer; if (!L) return;
-      const tag = m.tag = document.createElement('div'); tag.className = 'nx-tag'; tag.hidden = true; tag.innerHTML = '<span translate="no"></span><small></small>';
+      const tag = m.tag = document.createElement('div'); tag.className = 'nx-tag'; tag.hidden = true; tag.innerHTML = '<i class="nx-tav"></i><span translate="no"></span><small></small>'; tag.querySelector('.nx-tav').innerHTML = PF ? PF.avatar(m.name || 'P', m.color, 30, avKey(m.slot)) : '';
       tag.querySelector('span').textContent = m.name; tag.querySelector('small').textContent = 'PLAYER ' + m.slot; tag.style.color = m.color; L.appendChild(tag);
       const w = m.who = document.createElement('div'); w.className = 'nx-who'; w.hidden = true;
       w.innerHTML = '<span class="nx-av"></span><b translate="no"></b><span class="hp"><i></i></span><span class="talk"></span><span class="st" translate="no"></span>';
@@ -335,6 +336,7 @@
       // без колец и свечения: цвет игрока только в нике над головой и в плашке
       m.av = { n, kind: undefined, muz: 0, dead: false, shown: false, aim: 0 };
       m.name = peer.name || m.name; m.color = peer.color || m.color;
+      m.tag.querySelector('.nx-tav').innerHTML = PF ? PF.avatar(m.name || 'P', m.color, 30, avKey(m.slot)) : '';
       m.tag.querySelector('span').textContent = m.name; m.tag.querySelector('small').textContent = 'PLAYER ' + m.slot; m.tag.style.color = m.color;
       m.who.querySelector('.nx-av').innerHTML = PF ? PF.avatar(m.name || 'P', m.color, 24, avKey(m.slot)) : '';
       m.who.querySelector('b').textContent = m.name || 'PLAYER'; m.who.hidden = false;

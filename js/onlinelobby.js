@@ -80,7 +80,7 @@
       '<div class="ol-stage" id="ol-stage"><div class="ol-floor"></div>' +
         range(MAXP).map((i) => '<div class="ol-plat p' + i + '"><i></i></div>').join('') +
         range(MAXP).map((i) => '<div class="ol-fig f' + i + '" hidden>' + (i ? IC.fig2 : IC.fig) + '</div>').join('') +
-        range(MAXP).map((i) => '<div class="ol-tag t' + i + '" hidden data-act="card" data-slot=""><span class="tg-l" translate="no"></span><span class="tg-n" translate="no"></span><span class="tg-s"></span></div>').join('') +
+        range(MAXP).map((i) => '<div class="ol-tag t' + i + '" hidden data-act="card" data-slot=""><span class="tg-a" translate="no"></span><span class="tg-l" translate="no"></span><span class="tg-n" translate="no"></span><span class="tg-s"></span></div>').join('') +
         '<button type="button" class="ol-invite" data-act="tab" data-v="connect" hidden><b>+</b><span>INVITE A FRIEND</span></button>' +
       '</div>' +
       '<header class="ol-top">' +
@@ -480,6 +480,7 @@
       if (t) {
         t.hidden = false;
         t.dataset.slot = String(q.slot);
+        { const ah = PF.avatar(q.name, q.color, 34, q.pid), ae = t.querySelector('.tg-a'); if (ae.dataset.h !== ah) { ae.dataset.h = ah; ae.innerHTML = ah; } }
         t.querySelector('.tg-l').textContent = q.level;
         t.querySelector('.tg-n').textContent = (q.slot === 1 && open ? '♛ ' : '') + q.name;
         let status, cls;
@@ -1278,7 +1279,7 @@
       if (root) { updStage(); updPlay(); updStatus(); }
     });
     NN.on('net:roster', () => { if (root) { updStage(); updPlay(); updStatus(); } });
-    if (window.NexaAvatar && !L.avSub) { L.avSub = true; NexaAvatar.on(() => { if (!root) return; updTop(); updRoster(); updProfile(true); if (L.cards.open) renderCard(L.cards.open); }); }
+    if (window.NexaAvatar && !L.avSub) { L.avSub = true; NexaAvatar.on(() => { if (!root) return; updTop(); updStage(); updRoster(); updProfile(true); if (L.cards.open) renderCard(L.cards.open); }); }
     NN.on('net:left', (p) => {
       NN.chat.sys('FRIEND_LEFT', p.name); delete L.readyMap[p.slot]; danceStop(p.slot, false); delete PR[p.pid || ''];
       if (NN.isHost) sendLobby();

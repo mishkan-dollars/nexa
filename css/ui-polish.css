@@ -155,3 +155,5 @@
 .rl-toc { display: flex; flex-direction: column; gap: 2px; margin: 8px 0 14px; } .rl-toc b { margin-top: 8px; color: #ffd60a; } .rl-a { background: none; border: 0; color: #f2f2f2; font: inherit; font-size: 13px; text-align: left; cursor: pointer; padding: 1px 0; text-transform: none; } .rl-a:hover { text-decoration: underline; }
 .rl-title { letter-spacing: .12em; }
 .ol[data-tab="rules"] .ol-pane[data-pane="rules"] { display: block; }
+.ol-tag { grid-template-columns: auto auto auto; grid-template-areas: "a l n" ". . s"; } .ol-tag .tg-a { grid-area: a; display: inline-flex; }
+.nx-tag { display: flex; flex-direction: column; align-items: center; } .nx-tag .nx-tav { display: inline-flex; margin-bottom: 2px; }
