@@ -61,6 +61,7 @@ code{background:#0b121a;border:1px solid var(--ln);padding:2px 5px;border-radius
       <div class="row"><input id="gk" placeholder="ID игрока (64 hex)" size="30"></div>
       <div class="row"><input id="gn" type="number" min="1" max="100000" value="500" style="width:110px"><span class="mu">KP, до 100000; действует 10 минут</span></div>
       <div class="row"><button id="ggive" class="g">Выдать</button></div>
+      <div id="gl" class="mu"></div>
     </section>
     <section style="margin-top:14px">
       <h2>Журнал</h2>
@@ -72,6 +73,7 @@ code{background:#0b121a;border:1px solid var(--ln);padding:2px 5px;border-radius
 <div class="row" style="justify-content:center"><button id="avm-ban" class="d">Бан</button><select id="avm-d"><option value="0">навсегда</option><option value="1440">1 день</option><option value="10080">7 дней</option><option value="43200">30 дней</option></select><button id="avm-rm" class="d">Снять аватар / запретить загрузку</button><button id="avm-back" class="g">Вернуть</button><button id="avm-x">Закрыть</button></div></div></div>
 <script src="../js/schnorr.js"></script>
 <script src="../js/servers.js"></script>
+<script src="../js/adminkey.js"></script>
 <script src="admin.js"></script>
 </body>
 </html>

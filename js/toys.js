@@ -616,7 +616,9 @@
       if (!Number.isInteger(x) || t > x) return { ok: false, err: 'EXPIRED' };
       if (x - ev.created_at > 900 || ev.created_at > t + 120) return { ok: false, err: 'BAD' };
       if (S.adm.indexOf(gid) >= 0) return { ok: false, err: 'DUP' };
-      if (locked()) return { ok: false, err: 'LOCKED' };
+      sync();
+      const why = !SG || !SG.owner() ? 'SINGLE' : (GD && !GD.state().integ ? 'INTEG' : '');
+      if (why) return { ok: false, err: 'LOCKED', why };
       if (S.credits + n > 1e9) return { ok: false, err: 'CAP' };
       S.adm.push(gid); S.adm = S.adm.slice(-300); S.credits += n; save();
       return { ok: true, n, id: gid, bal: S.credits };

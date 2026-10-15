@@ -51,7 +51,7 @@
   function relayList() {
     const o = q.getAll('relay').filter((u) => /^wss?:\/\//.test(u));
     if (o.length) return o;
-    const S = window.NexaServers; return S ? S.NOSTR_VERIFIED.slice(0, 8) : [];
+    const S = window.NexaServers; return S ? S.NOSTR_VERIFIED.slice(0, 12) : [];
   }
   function subSend(ws, id, f) { try { ws.send(JSON.stringify(['REQ', id, ...f])); } catch (e) { /* ok */ } }
   function connect(url) {
@@ -97,7 +97,10 @@
       drawPlayers();
     } else if ((e.kind === KA || e.kind === KA2) && e.tags.some((t) => t[0] === 'p' && t[1] === key.pk)) {
       const c = jp(e.content, {}), g = grants[c.i] || Object.keys(grants).map((k) => grants[k]).find((x) => x.ids.indexOf((e.tags.find((t) => t[0] === 'e') || [])[1]) >= 0);
-      if (g && g.to === e.pubkey && !g.ack) { g.ack = true; log('подтверждено', short(g.to) + ' получил ' + g.n + ' KP'); drawLog(); }
+      if (g && g.to === e.pubkey && c.ok === 0) {
+        g.seen = true; if (g.why !== c.w) { g.why = c.w; log('не применено', short(g.to) + ' · ' + g.n + ' KP · ' + (WHY[c.w] || c.w) + (c.f ? ' · флаги: ' + flagTxt(c.f) : '')); }
+        drawGrants();
+      } else if (g && g.to === e.pubkey && !g.ack) { g.ack = true; g.seen = true; log('подтверждено', short(g.to) + ' получил ' + g.n + ' KP'); drawGrants(); }
     } else if ((e.kind === KB || e.kind === KB2) && e.pubkey === key.pk && e.created_at > banAt) {
       const c = jp(e.content, null); if (c && c.bans) { bans = {}; c.bans.forEach((b) => { if (b && HEX64.test(b.k)) bans[b.k] = { r: b.r || '', u: b.u | 0 }; }); avb = {}; (c.av || []).forEach((b) => { if (b && HEX64.test(b.k)) avb[b.k] = { r: b.r || '', u: b.u | 0 }; }); drawAv(); banAt = e.created_at; saveBans(); drawBans(); }
     } else if (e.kind === KPROF) {
@@ -130,14 +133,30 @@
     const x = sec() + 600, i = K.hex(crypto.getRandomValues(new Uint8Array(16))), c = JSON.stringify({ t: 'kp', n, x, i });
     const evs = [KG, KG2].map((kd) => K.makeEvent(key, kd, [['p', pk]], c));
     const g = grants[i] = { to: pk, n, x, i, ack: false, evs, ids: evs.map((e) => e.id), tries: 1 };
-    evs.forEach(publish); log('выдача KP', short(pk) + ' · ' + n + ' KP · релеев: ' + socks.size + ' · повторяю каждые 5 с до подтверждения (10 мин)');
+    const nr = evs.map(publish)[0]; g.relays = nr;
+    const pp = P[pk], live = pp && Date.now() - pp.t < 120000;
+    log('выдача KP', short(pk) + ' · ' + n + ' KP · релеев: ' + nr + ' · повторяю каждые 5 с до подтверждения (10 мин)' + (live ? '' : ' · ВНИМАНИЕ: игрока нет в списке «в сети» (он должен быть в онлайне/лобби, иначе админ-канал у него спит)'));
+    if (!nr) log('НЕ доставлено', 'нет открытых релеев');
+    if (window.NEXA_ADMIN_PUB && window.NEXA_ADMIN_PUB !== key.pk) log('НЕ доставлено', 'ключ админки не совпадает с js/adminkey.js игры: игроки отклонят подпись (SIG)');
+    drawGrants();
     const tm = setInterval(() => {
       if (g.ack) { clearInterval(tm); return; }
-      if (sec() > g.x) { clearInterval(tm); log('НЕ подтверждено', short(pk) + ' · ' + n + ' KP: срок истёк (игрок не в сети или не слушает админ-канал)'); return; }
-      g.tries += 1; g.evs.forEach(publish);
+      if (sec() > g.x) { clearInterval(tm); g.dead = true; drawGrants(); log('НЕ подтверждено', short(pk) + ' · ' + n + ' KP: ' + (g.seen ? 'игрок ответил: ' + (WHY[g.why] || g.why) : 'нет ответа 10 мин: игрок не в сети, не слушает админ-канал или нет общих релеев') + '; выдайте заново'); return; }
+      g.tries += 1; g.relays = g.evs.map(publish)[0];
     }, 5000);
   }
 
+  const WHY = { SINGLE: 'игра открыта в другой вкладке (нужна главная вкладка)', INTEG: 'файлы игры изменены', SIG: 'подпись не сходится: ключ админки не совпадает с js/adminkey.js игры', EXPIRED: 'грант просрочен (часы игрока/админа расходятся?)', BAD: 'неверный формат или расхождение часов более 2 мин', TARGET: 'грант для другого ID', AMOUNT: 'сумма вне лимита', CAP: 'потолок баланса' };
+  function gStatus(g) {
+    if (g.ack) return '<span class="ok">применено</span>';
+    if (g.seen) return '<span class="bad">доставлено, не применено: ' + esc(WHY[g.why] || g.why || '?') + '</span>';
+    if (g.dead) return '<span class="bad">нет ответа 10 мин</span>';
+    return '<span class="mu">отправлено в ' + g.relays + ' релеев, ждём ответ</span>';
+  }
+  function drawGrants() {
+    const d = $('gl'); if (!d) return;
+    d.innerHTML = Object.keys(grants).map((k) => grants[k]).sort((a, b) => b.x - a.x).slice(0, 15).map((g) => '<div><code>' + short(g.to) + '</code> ' + g.n + ' KP · ' + gStatus(g) + '</div>').join('');
+  }
   const said = {};
   function summ() {
     Object.keys(track).forEach((id) => {
@@ -216,6 +235,6 @@
   $('ggive').onclick = () => give(($('gk').value || '').trim().toLowerCase(), $('gn').value);
   drawKey(); drawBans(); drawLog(); drawAv();
   const saved = ls.get('nexaAdminSk'); if (saved) setKey(saved);
-  tickNet(); setInterval(tickNet, 5000); setInterval(drawPlayers, 5000); setInterval(() => { lastBans.forEach(publish); }, 60000); setInterval(summ, 4000); setInterval(() => { if (key) { socks.forEach((r) => { if (r.open) subSend(r.ws, 'pres', subs.get('pres')); }); } }, 60000);
+  tickNet(); setInterval(tickNet, 5000); setInterval(drawPlayers, 5000); setInterval(() => { lastBans.forEach(publish); }, 60000); setInterval(summ, 4000); setInterval(drawGrants, 5000); setInterval(() => { if (key) { socks.forEach((r) => { if (r.open) subSend(r.ws, 'pres', subs.get('pres')); }); } }, 60000);
   window.NexaAdminConsole = { ban, unban, give, avAct, avRestore, avb: () => avb, AV, state: () => ({ P, bans, grants, key: !!key, pub: key && key.pk }) };
 }());

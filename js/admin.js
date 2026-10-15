@@ -45,14 +45,15 @@
     d.textContent = msg; document.body.appendChild(d); setTimeout(() => d.remove(), 6000);
   }
   const log = (...a) => { try { console.log('[admin]', ...a); } catch (e) { /* ok */ } };
-  const D = { bans: 0, applied: 0, grants: 0, granted: 0, rej: {}, lastSync: 0, lastBan: 0 };
+  const D = { bans: 0, applied: 0, grants: 0, granted: 0, refused: 0, why: '', rej: {}, lastSync: 0, lastBan: 0 };
+  const nacked = new Set(), lastAck = {};
   const rej = (why) => { D.rej[why] = (D.rej[why] || 0) + 1; log('rejected:', why); };
   const CH = { socks: new Map(), seen: new Set(), bad: {} };
   const KB = [30791, 30078];
-  const MAXR = 6;
+  const MAXR = 6, POOL = 12;
   const urls = () => {
     const o = (new URLSearchParams(location.search).get('relay') || '').split(',').filter((u) => /^wss?:\/\//.test(u));
-    const SV = window.NexaServers; return (o.length ? o : (SV ? SV.NOSTR_VERIFIED : [])).slice(0, MAXR);
+    const SV = window.NexaServers; return (o.length ? o : (SV ? SV.NOSTR_VERIFIED : [])).slice(0, POOL);
   };
   const chOpen = () => Array.from(CH.socks.values()).filter((r) => r.open);
   const chSend = (m) => { const j = typeof m === 'string' ? m : JSON.stringify(m); chOpen().forEach((r) => { try { r.ws.send(j); } catch (e) { /* ok */ } }); return chOpen().length; };
@@ -91,22 +92,33 @@
     if (applyBans(e)) { D.applied += 1; D.lastBan = Date.now(); log('ban list applied', Object.keys(bans).length, 'entries, mine:', !!me()); } else rej('ban: invalid content/time');
   }
   function onGrant(e) {
-    if (!e || e.pubkey !== ADM || (e.kind !== KIND.grant && e.kind !== 27790) || CH.seen.has(e.id)) return;
+    if (!e || e.pubkey !== ADM || (e.kind !== KIND.grant && e.kind !== 27790)) return;
     if (!(e.tags || []).some((t) => t[0] === 'p' && t[1] === T.ident.pk)) return;
+    if (CH.seen.has(e.id)) { const a = lastAck[e.id]; if (a && Date.now() - a.t > 8000) { a.t = Date.now(); ack(e, a.r); } return; }
     D.grants += 1; applyGrant(e);
   }
   function ack(e, r) {
+    lastAck[e.id] = { r, t: Date.now() };
     const c = JSON.stringify({ ok: 1, n: r.n, b: r.bal, i: r.id });
+    const o = T.ident.event(KIND.ack, [['p', ADM], ['e', e.id]], c), o2 = T.ident.event(27791, [['p', ADM], ['e', e.id]], c);
+    if (o) { chSend(['EVENT', o]); SO.publish(o); }
+    if (o2) chSend(['EVENT', o2]);
+  }
+  function nack(e, why) {
+    const k = e.id + why; if (nacked.has(k)) return; nacked.add(k);
+    let gid = ''; try { gid = JSON.parse(e.content).i || ''; } catch (er) { /* ok */ }
+    const c = JSON.stringify({ ok: 0, w: why, i: gid, f: flags() });
     const o = T.ident.event(KIND.ack, [['p', ADM], ['e', e.id]], c), o2 = T.ident.event(27791, [['p', ADM], ['e', e.id]], c);
     if (o) { chSend(['EVENT', o]); SO.publish(o); }
     if (o2) chSend(['EVENT', o2]);
   }
   function applyGrant(e) {
     const r = T.adminGrant(e);
-    log('grant', e.id.slice(0, 8), r.ok ? 'applied ' + r.n : 'refused ' + r.err);
-    if (r.ok) { CH.seen.add(e.id); delete pending[e.id]; D.granted += 1; toast(X('grant', { n: r.n })); ack(e, r); emit('grant'); }
-    else if (r.err === 'LOCKED') { if (!pending[e.id]) { pending[e.id] = e; toast(X('locked')); } }
-    else { CH.seen.add(e.id); delete pending[e.id]; if (r.err === 'DUP') ack(e, { n: 0, bal: T.credits, id: '' }); else rej('grant: ' + r.err); }
+    const why = r.ok ? '' : r.err === 'LOCKED' ? r.why : r.err;
+    log('grant', e.id.slice(0, 8), r.ok ? 'applied ' + r.n : 'refused ' + why);
+    if (r.ok) { CH.seen.add(e.id); delete pending[e.id]; D.granted += 1; D.why = ''; toast(X('grant', { n: r.n })); ack(e, r); emit('grant'); }
+    else if (r.err === 'LOCKED') { D.why = why; nack(e, why); if (!pending[e.id]) { pending[e.id] = e; toast(X('locked')); } }
+    else { CH.seen.add(e.id); delete pending[e.id]; if (r.err === 'DUP') ack(e, { n: 0, bal: T.credits, id: '' }); else { D.refused += 1; D.why = why; nack(e, why); rej('grant: ' + r.err); } }
   }
   function retry() { Object.keys(pending).forEach((id) => applyGrant(pending[id])); }
   function presence() { const p0 = SO.presEvent && SO.presEvent(); if (p0) chSend(['EVENT', p0]); }
@@ -115,7 +127,7 @@
   function tick() {
     if (!active()) { CH.socks.forEach((r) => { try { r.ws.close(); } catch (e) { /* ok */ } }); CH.socks.clear(); return; }
     SO.boot();
-    urls().forEach((u) => { if (!CH.socks.has(u) && (CH.bad[u] || 0) < Date.now() && CH.socks.size < MAXR) chConnect(u); });
+    urls().forEach((u) => { if (!CH.socks.has(u) && (CH.bad[u] || 0) < Date.now() && chOpen().length < MAXR && CH.socks.size < MAXR + 3) chConnect(u); });
     retry();
   }
   function paintUi() {
@@ -127,7 +139,7 @@
     } else if (bar) bar.remove();
     document.querySelectorAll('.ol-srv').forEach((blk) => {
       let p = blk.querySelector('.adm-diag'); if (!p) { p = document.createElement('p'); p.className = 'v-note adm-diag'; blk.appendChild(p); }
-      p.textContent = X('diag', { n: Object.keys(bans).length, t: D.lastSync ? new Date(D.lastSync).toLocaleTimeString() : '-', r: chOpen().length });
+      p.textContent = X('diag', { n: Object.keys(bans).length, t: D.lastSync ? new Date(D.lastSync).toLocaleTimeString() : '-', r: chOpen().length }) + ' | ' + X('gdiag', { a: D.grants, b: D.granted, c: D.refused + Object.keys(pending).length, w: D.why || '-' });
     });
   }
   function start() {
