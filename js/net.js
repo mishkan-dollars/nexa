@@ -845,9 +845,10 @@
   function diag() {
     return { dropBuf: STAT.dropBuf, rttMain: Math.round(rttMain()), links: R.links.filter((l) => l.opened).map((l) => Object.assign({ slot: l.slot, path: l.path || '', ct: l.ct || '', ice: l.ice || 0 }, rttStats(l))) };
   }
-  function pingText() {
+  function pingText(slot) {
     const d = diag(); if (!d.links.length) return '';
-    const w = d.links.reduce((m, l) => (l.avg >= m.avg ? l : m), d.links[0]);
+    let w = slot && R.role === 'host' ? d.links.find((l) => l.slot === slot) : null;
+    if (!w) w = d.links.reduce((m, l) => (l.avg >= m.avg ? l : m), d.links[0]);
     return w.avg ? w.avg + ' ms (p95 ' + w.p95 + ')' : '';
   }
   function pingTick(L) { sendLink(L, { type: 'ping', t: now() }); }

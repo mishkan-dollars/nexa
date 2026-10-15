@@ -782,7 +782,7 @@
           if (w && !w.hidden) {
             w.querySelector('.hp i').style.width = (R.dead ? 0 : R.hp) + '%';
             w.querySelector('.talk').classList.toggle('on', !!v.peerSpeaking);
-            w.querySelector('.st').textContent = R.dead ? '✖' : (NN.pingText ? NN.pingText() : NN.rtt ? NN.rtt + ' ms' : '');
+            w.querySelector('.st').textContent = R.dead ? '✖' : (NN.pingText ? NN.pingText(m.slot) : NN.rtt ? NN.rtt + ' ms' : '');
           }
         });
         this.updBtns();

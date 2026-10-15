@@ -455,6 +455,8 @@
     'MDNS': ['MDNS', 'MDNS'],
     'PUBLIC ADDR.': ['ВНЕШН. АДРЕС', 'ÖFFENTL. ADR.'],
     'RELAY': ['РЕТРАНСЛЯТОР', 'RELAY'],
+    'DIRECT PATH': ['ПРЯМОЕ', 'DIREKT'],
+    'VIA RELAY': ['ЧЕРЕЗ РЕТРАНСЛЯТОР', 'ÜBER RELAY'],
     'LOOKING FOR PLAYERS…': ['ИЩЕМ ИГРОКОВ…', 'SUCHE SPIELER…'],
     'LOOKING FOR YOUR FRIEND…': ['ИЩЕМ ТВОЕГО ДРУГА…', 'SUCHE DEINEN FREUND…'],
     'CONNECTING TO YOUR FRIEND…': ['ПОДКЛЮЧАЕМСЯ К ДРУГУ…', 'VERBINDE MIT DEINEM FREUND…'],

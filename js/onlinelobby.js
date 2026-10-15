@@ -261,7 +261,7 @@
     if (!root) return;
     const el = $('#cn-time'); if (!el) return;
     const st = NN.state;
-    if (st === 'open' || st === 'lost') { const s = NN.stats(); const dg = NN.linkStats ? NN.linkStats().links[0] : null; el.textContent = fmtTime(s.up) + (s.rtt ? '  ·  ' + (NN.pingText ? NN.pingText() : s.rtt + ' ms') : '') + (dg && dg.path ? '  ·  ' + (dg.path === 'relay' ? 'RELAY' : 'DIRECT') : ''); }
+    if (st === 'open' || st === 'lost') { const s = NN.stats(); const ls = NN.linkStats ? NN.linkStats() : null, dg = ls ? ls.links[0] : null; if (ls) el.title = ls.links.map((l) => '#' + l.slot + ' ' + l.path + '/' + l.ct + ' min/avg/p95/max ' + l.min + '/' + l.avg + '/' + l.p95 + '/' + l.max + ' ms').join('\n') + '\ndropBuf ' + ls.dropBuf; el.textContent = fmtTime(s.up) + (s.rtt ? '  ·  ' + (NN.pingText ? NN.pingText() : s.rtt + ' ms') : '') + (dg && dg.path ? '  ·  ' + (window.I18N ? I18N.t(dg.path === 'relay' ? 'VIA RELAY' : 'DIRECT PATH') : dg.path) : ''); }
     else if (L.t0 && (st === 'creating' || st === 'waiting-answer' || st === 'answering' || st === 'connecting')) el.textContent = fmtTime(Math.floor((Date.now() - L.t0) / 1000));
     else el.textContent = '';
   }
