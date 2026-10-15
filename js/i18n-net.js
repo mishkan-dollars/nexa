@@ -313,6 +313,8 @@
     '2 · SANDBOX': ['2 · ПЕСОЧНИЦА', '2 · SANDBOX'],
     '3 · BATTLE ROYALE': ['3 · КОРОЛЕВСКАЯ БИТВА', '3 · BATTLE ROYALE'],
     'ONLINE GRAPHICS': ['ГРАФИКА В ОНЛАЙНЕ', 'ONLINE-GRAFIK'],
+    'Your network uses a strict (symmetric) NAT, so direct connections may fail. Ask a friend with an open network to host, or try another network or a mobile hotspot.': ['Ваша сеть использует строгий (симметричный) NAT, поэтому прямое подключение может не получиться. Попросите друга с открытой сетью создать комнату или смените сеть, например на мобильную точку доступа.', 'Dein Netzwerk nutzt ein striktes (symmetrisches) NAT, direkte Verbindungen können scheitern. Bitte einen Freund mit offenem Netzwerk zu hosten oder wechsle das Netzwerk bzw. nutze einen mobilen Hotspot.'],
+    'UDP looks blocked on this network, so direct connections are unlikely. Try another network or a mobile hotspot.': ['В этой сети, похоже, заблокирован UDP, прямое подключение маловероятно. Смените сеть или используйте мобильную точку доступа.', 'In diesem Netzwerk scheint UDP blockiert zu sein, direkte Verbindungen sind unwahrscheinlich. Wechsle das Netzwerk oder nutze einen mobilen Hotspot.'],
     'FRIENDLY FIRE': ['ОГОНЬ ПО СВОИМ', 'FREUNDLICHES FEUER'],
     'DAMAGE TO ALLIES': ['УРОН ПО СОЮЗНИКАМ', 'SCHADEN AN VERBÜNDETEN'],
     'ON': ['ВКЛ', 'AN'],

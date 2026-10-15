@@ -64,6 +64,8 @@
     NOT_WAITING: 'Create an invitation first.',
     GATHER_FORCED: 'ICE gathering took too long — code issued with what was found.',
     NO_PUBLIC: 'No public address found (STUN blocked?). The code will only work inside one network.',
+    NAT_SYM: 'Your network uses a strict (symmetric) NAT, so direct connections may fail. Ask a friend with an open network to host, or try another network or a mobile hotspot.',
+    NAT_BLOCKED: 'UDP looks blocked on this network, so direct connections are unlikely. Try another network or a mobile hotspot.',
     CONNECT_TIMEOUT: 'Could not connect. A strict NAT or firewall may block direct connections (no relay server). Try another network, a VPN or a mobile hotspot.',
     ICE_FAILED: 'Connection failed. A strict NAT or firewall may block direct connections (no relay server). Try another network or a mobile hotspot.',
     PEER_LEFT: 'The other player left.',
@@ -613,6 +615,7 @@
   }
   function armConnectTimer(L, ms) {
     clearTimeout(L.connT);
+    if (natType === 'symmetric') ms = Math.min(ms, 10000);
     L.connT = setTimeout(() => { if (!L.ready && (L.state === 'answering' || L.state === 'connecting')) { if (L.gr === 'child') childGone(L); else fail(L, 'CONNECT_TIMEOUT'); } }, ms);
   }
   // свободное (не присоединённое) соединение-оферент: SDP с полным набором кандидатов (для трекера). Возвращает {link, sdp, forced}

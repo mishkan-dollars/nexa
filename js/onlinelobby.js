@@ -185,6 +185,7 @@
           '<div class="cn-out" id="g-out" hidden><label for="g-code">YOUR ANSWER CODE — SEND IT TO THE HOST</label><textarea id="g-code" readonly rows="3" spellcheck="false"></textarea>' +
             '<div class="pf-btns"><button type="button" class="ol-btn" data-act="copy" data-v="g-code">COPY CODE</button></div></div><p class="v-note" id="g-note"></p></article>' +
       '</div>' +
+      '<p class="v-note" id="cn-nat" hidden></p>' +
       '<div class="cn-diag" id="cn-diag" hidden><p class="v-note bad" id="cn-diag-t"></p><p class="v-note" id="cn-diag-c" translate="no"></p><button type="button" class="ol-btn big" data-act="manual-retry">TRY AGAIN</button></div>' +
       '</details>' +
       '<div class="cn-foot"><label class="cn-lan"><input type="checkbox" id="cn-lan"><span>SAME WI-FI / LAN MODE (less private, helps when both of you are on one network)</span></label>' +
@@ -308,6 +309,7 @@
     t.textContent = '';
     const main = document.createElement('span'); main.textContent = NN.text(code || 'CONNECT_TIMEOUT'); t.appendChild(main);
     const why = document.createElement('span');
+    if (NN.natType === 'symmetric' || NN.natType === 'blocked') { const nt = document.createElement('span'); nt.textContent = ' ' + NN.text(NN.natType === 'symmetric' ? 'NAT_SYM' : 'NAT_BLOCKED'); t.appendChild(nt); }
     why.textContent = ' ' + NN.text(d.local.mdns + d.remote.mdns > 0 && none ? 'DIAG_MDNS' : (none ? 'DIAG_NO_STUN' : (d.local.srflx === 0 || d.remote.srflx === 0 ? 'DIAG_ONE_SIDE' : 'DIAG_NAT')));
     t.appendChild(why);
     candPlain(d);
@@ -1314,6 +1316,8 @@
 
   // ------------------------------------------------------------------ события сети
   function netHooks() {
+    const updNat = () => { const el = $('#cn-nat'); if (!el) return; const k = NN.natType === 'symmetric' ? 'NAT_SYM' : NN.natType === 'blocked' ? 'NAT_BLOCKED' : ''; el.hidden = !k; if (k) el.textContent = NN.text(k); };
+    NN.on('net:nat', updNat); setTimeout(updNat, 4500);
     NN.on('net:state', (s) => {
       if (s.state === 'creating' || s.state === 'answering') L.t0 = Date.now();
       if (s.state === 'open' || s.state === 'idle') { if (s.state === 'idle') L.t0 = 0; }
