@@ -21,6 +21,7 @@
   let pendingSpec = null;
 
   // ------------------------------------------------------------------ детерминированный генератор (mulberry32): общий декор у обоих игроков
+  function hash32(s) { let h = 2166136261; for (let i = 0; i < s.length; i += 1) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; }
   function seeded(seed) { let a = seed >>> 0; return function () { a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
 
   // ------------------------------------------------------------------ CO-OP SANDBOX: зал песочницы, волны врагов для двоих
@@ -121,7 +122,7 @@
       this.run = run; this.spec = spec; this.mode = spec.mode === 'mission' ? 'mission' : 'sandbox';
       this.host = spec.role !== 'guest'; this.slot = spec.role === 'guest' ? (NN.slot || 2) : 1; this.solo = !!spec.solo;
       if (!this.solo) run.noPause = true;   // в онлайне паузы нет (мир идёт у друзей): Esc/кнопка/потеря фокуса не ставят игру на паузу
-      this.story = this.mode === 'mission'; this.shared = true; this.pseq = 0; this.kset = {}; this.cinN = 0; this.act = ''; this.snapFull = 0; this.eReq = 0; this.dropCap = null;
+      this.story = this.mode === 'mission'; this.shared = true; this.pseq = 0; this.kset = {}; this.ek = {}; this.cinN = 0; this.act = ''; this.snapFull = 0; this.eReq = 0; this.dropCap = null;
       this.remotes = new Map(); this.readySet = new Set();
       this.xs = { ex: 0, ip: 0 }; this.ready = false; this.offs = []; this.sendT = 0; this.snapT = 0; this.hudT = 0; this.lastSend = 0;
       this.stage = 0; this.stages = {};
@@ -134,9 +135,11 @@
     get peerReady() { return this.readySet.size > 0; }
     seedOn() {
       if (!this.spec.seed) return;
-      this.rng0 = Math.random; this.rng = seeded(this.spec.seed); Math.random = this.rng;
+      this.rng0 = Math.random; this.rng = seeded(this.spec.seed); this.proxy = () => this.rng(); Math.random = this.proxy;
     }
-    seedOff() { if (this.rng0) { if (Math.random === this.rng) Math.random = this.rng0; this.rng0 = null; } }
+    seedOff() { if (this.rng0) { if (Math.random === this.proxy) Math.random = this.rng0; this.rng0 = null; } }
+    reseed(key) { if (this.rng0 && this.story) this.rng = seeded(hash32(this.spec.seed + '|' + key)); }
+    ekey(type) { const s = this.stage + ':' + this.act + ':' + type; this.ek[s] = (this.ek[s] | 0) + 1; return s + ':' + this.ek[s]; }
     on(type, fn) { this.offs.push(NN.on(type, fn.bind(this))); }
     hook() {
       const r = this.run;
@@ -274,7 +277,7 @@
     onReady() {
       if (this.ready) return;
       this.ready = true;
-      this.seedOff();
+      if (!this.story) this.seedOff();
       if (!this.solo) NN.sendAction({ type: 'cev', k: 'ready' });
       if (!this.solo && this.host && this.peerReady) this.resendEnemies();
     }
@@ -292,7 +295,8 @@
         default: break;
       }
     }
-    async barrierKey(key, ms) {
+    async barrierKey(key, ms) { try { await this.barrierKey0(key, ms); } finally { this.reseed('k:' + key); } }
+    async barrierKey0(key, ms) {
       if (this.solo || this.disposed) return;
       NN.sendAction({ type: 'cev', k: 'barn', kn: key });
       const t0 = Date.now(); let shown = 0;
@@ -310,7 +314,8 @@
       if (this.host) { if (r.cineSkip && !this.cskipSent) { this.cskipSent = true; NN.sendAction({ type: 'cev', k: 'cskip' }); } }
       else if (r.cineSkip && !this.hostSkip) r.cineSkip = false;
     }
-    async barrier() {
+    async barrier() { try { await this.barrier0(); } finally { this.reseed('p:' + this.stage); } }
+    async barrier0() {
       this.stage += 1; NN.sendAction({ type: 'cev', k: 'bar', s: this.stage });
       const t0 = Date.now(); let shown = 0;
       while (!this.disposed && !this.gone && !this.solo && NN.connected && Date.now() - t0 < 90000) {
@@ -322,7 +327,7 @@
     }
     partnerGone(text) {
       if (this.gone) return;
-      this.gone = true; this.solo = true; this.run.noPause = false;   // все ушли — снова одиночная игра, пауза разрешена
+      this.gone = true; this.solo = true; this.seedOff(); this.run.noPause = false;   // все ушли — снова одиночная игра, пауза разрешена
       this.note(text || 'FRIEND LEFT', 3);
       this.remotes.forEach((m) => { this.stopRemoteEmote(m); if (m.av) m.av.n.g.visible = false; if (m.tag) m.tag.hidden = true; if (m.who) m.who.hidden = true; });
       this.byId.forEach((e) => { if (e.puppet && !e.dead) { e.dead = true; e.alive = false; e.n.free = true; e.n.g.visible = false; } });
@@ -567,11 +572,12 @@
     }
 
     // -------------------------------------------------------------- враги: Хост — авторитет (песочница)
-    registerEnemy(e) {
+    registerEnemy(e, key) {
+      if (key) e.key = key;
       e.nid = ++this.nid; this.byId.set(e.nid, e);
       if (!this.solo && this.peerReady) this.sendSpawn(e);
     }
-    sendSpawn(e) { const m = e.t && e.t.hp ? Math.round(e.max / e.t.hp * 100) : 100; NN.sendAction({ type: 'espawn', i: e.nid, t: e.type, x: q(e.x, 50), z: q(e.z, 50), a: q(e.n.yaw, 50), g: e.n.gunKind || '', m: m === 100 ? undefined : m, f: e.friendly ? 1 : undefined }); }
+    sendSpawn(e) { const m = e.t && e.t.hp ? Math.round(e.max / e.t.hp * 100) : 100; NN.sendAction({ type: 'espawn', i: e.nid, t: e.type, x: q(e.x, 50), z: q(e.z, 50), a: q(e.n.yaw, 50), g: e.n.gunKind || '', m: m === 100 ? undefined : m, f: e.friendly ? 1 : undefined, k: e.key }); }
     resendEnemies() { this.byId.forEach((e) => { if (!e.dead && e.alive !== false) this.sendSpawn(e); }); }
     sendKill(e, head) { if (!e.nid || this.solo) return; const d = this.dropCap && this.dropCap.length ? this.dropCap : undefined; NN.sendAction({ type: 'ekill', i: e.nid, h: head ? 1 : 0, by: e.lastBy || 1, d }); this.byId.delete(e.nid); }
     sendGone(e) { if (e.nid && !this.solo) NN.sendAction({ type: 'egone', i: e.nid }); this.byId.delete(e.nid); }
@@ -649,26 +655,27 @@
       const x = num(p.x), z = num(p.z);
       if (this.story) {
         let best = null, bd = 6;
-        this.byId.forEach((e) => { if (e.prov && !e.dead && e.type === type) { const d = Math.hypot(e.x - x, e.z - z); if (d < bd) { bd = d; best = e; } } });
+        const ky = typeof p.k === 'string' ? p.k.slice(0, 48) : '';
+        this.byId.forEach((e) => { if (e.prov && !e.dead && e.type === type) { const d = Math.hypot(e.x - x, e.z - z); if (ky && e.key === ky && d < 25) { bd = -1; best = e; } else if (bd >= 0 && d < bd) { bd = d; best = e; } } });
         if (best) { this.byId.delete(best.nid); best.nid = id; best.prov = false; best.net.x = x; best.net.z = z; best.net.a = num(p.a); this.byId.set(id, best); return; }
       }
       this.noReg = true;
       let e;
       try { e = r.enemy(type, x, z, { exact: true, drop: false, tag: 'sbN', yaw: num(p.a), gun, hp: p.m ? clamp(num(p.m), 10, 2000) / 100 : 1, friendly: !!p.f }); } finally { this.noReg = false; }
-      e.puppet = true; e.nid = id; e.ai = () => true; e.net = { x, z, a: num(p.a), f: 0 }; e.orphan = this.story;
+      e.puppet = true; e.nid = id; e.ai = () => true; e.net = { x, z, a: num(p.a), f: 0 }; e.orphan = this.story; if (typeof p.k === 'string') e.key = p.k.slice(0, 48);
       this.byId.set(id, e);
     }
-    storyEnemy(e, o, a) {
-      if (this.host) { this.registerEnemy(e); return e; }
-      e.puppet = true; e.drop = false; e.ai = () => true; e.prov = true; e.nid = --this.pseq; e.provT = performance.now(); e.net = { x: e.x, z: e.z, a: e.n.yaw, f: 0 };
+    storyEnemy(e, o, a, key) {
+      if (this.host) { this.registerEnemy(e, key); return e; }
+      e.key = key; e.puppet = true; e.drop = false; e.ai = () => true; e.prov = true; e.nid = --this.pseq; e.provT = performance.now(); e.net = { x: e.x, z: e.z, a: e.n.yaw, f: 0 };
       this.byId.set(e.nid, e);
       return e;
     }
-    claimOrphan(type, x, z, o) {
+    claimOrphan(type, x, z, o, key) {
       let best = null, bd = 6;
-      this.byId.forEach((e) => { if (e.orphan && !e.dead && e.type === type) { const d = Math.hypot(e.x - x, e.z - z); if (d < bd) { bd = d; best = e; } } });
+      this.byId.forEach((e) => { if (e.orphan && !e.dead && e.type === type) { const d = Math.hypot(e.x - x, e.z - z); if (key && e.key === key && d < 25) { bd = -1; best = e; } else if (bd >= 0 && d < bd) { bd = d; best = e; } } });
       if (!best) return null;
-      best.orphan = false; best.onDeath = o.onDeath; if (o.tag) best.tag = o.tag; best.assist = !!o.assist;
+      best.orphan = false; best.key = key || best.key; best.onDeath = o.onDeath; if (o.tag) best.tag = o.tag; best.assist = !!o.assist;
       return best;
     }
     expireProv() {
@@ -759,7 +766,7 @@
     // -------------------------------------------------------------- такт
     tick(dt) {
       const r = this.run;
-      if (r.entered) this.seedOff();
+      if (r.entered && !this.story) this.seedOff();
       if (this.ready && !this.solo) this.remotes.forEach((m) => { if (!m.av && m.rem.got) this.buildAvatar(m); });
       if (this.pq.length && this.ready) { const L = this.pq.splice(0); L.forEach((x) => (x[0] === 's' ? this.onSpawn(x[1]) : this.onKill(x[1]))); }
       if (!this.ready) { if (r.entered && r.scene) this.onReady(); else return; }
@@ -836,6 +843,12 @@
     }
     return o.apply(this, a);
   });
+  wrap1('frame', function (o, a) {
+    const co = this.__co;
+    if (!co || !co.rng0 || !co.story || Math.random !== co.proxy) return o.apply(this, a);
+    Math.random = co.rng0;
+    try { return o.apply(this, a); } finally { if (co.rng0) Math.random = co.proxy; }
+  });
   wrap1('updateEnemies', function (o, a) { const co = this.__co; return co ? co.updateEnemies(o, a[0], a[1]) : o.apply(this, a); });
   wrap1('enemyShoot', function (o, a) {
     const co = this.__co, e = a[0];
@@ -890,10 +903,11 @@
     const co = this.__co;
     if (!co || !co.story || co.solo || co.noReg) return o.apply(this, a);
     const t = a[0], op = a[3] || {};
-    if (!co.host) { const ex = co.claimOrphan(t, a[1], a[2], op); if (ex) return ex; }
+    const key = op.noSync ? undefined : co.ekey(t);
+    if (!co.host) { const ex = co.claimOrphan(t, a[1], a[2], op, key); if (ex) return ex; }
     const e = o.apply(this, a);
     if (!co.khook && this.cb) { co.khook = true; this.cb.killHooks.push((en, head) => { if (co.host && en.nid > 0) co.sendKill(en, head); }); }
-    return e && !op.noSync ? co.storyEnemy(e, op, a) : e;
+    return e && !op.noSync ? co.storyEnemy(e, op, a, key) : e;
   });
   wrap1('pickup', function (o, a) { const co = this.__co; if (co && co.dropCap && (a[2] === 'ammo' || a[2] === 'health')) co.dropCap.push([a[2], q(a[0], 50), q(a[1], 50)]); return o.apply(this, a); });
   wrap1('killEnemy', function (o, a) {
