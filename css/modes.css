@@ -1,5 +1,6 @@
 /* NEXA: окно выбора режима (js/modepick.js) и интерфейс PvP (js/pvp.js). Монохром + красный акцент; карточки наследуют объёмные плиты лобби (.mission-row из styles.css). */
-#ol-pick.mp-open { padding: 10px; animation: mpFade .22s ease-out; }
+#ol-pick.mp-open { padding: 10px; animation: mpFade .22s ease-out; grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
+.mp.err { display: block; height: auto; padding: 0 0 20px; text-align: center; } .mp.err .mp-h { text-align: left; margin-bottom: 20px; }
 @keyframes mpFade { from { opacity: 0; } to { opacity: 1; } }
 .mp { width: min(1280px, 100%); height: min(780px, 100%); display: grid; grid-template-columns: 196px minmax(0, 1fr) minmax(340px, 430px); grid-template-rows: auto minmax(0, 1fr); background: #000; border: 1px solid var(--ink); box-shadow: 8px 8px 0 #1a1a1a; color: var(--ink); text-align: left; }
 .mp-h { grid-column: 1 / -1; display: flex; align-items: center; gap: 14px; padding: 10px 16px; border-bottom: 1px solid var(--line); }
@@ -105,3 +106,5 @@
 .pv-c .pv-mp { color: var(--red); letter-spacing: .3em; margin-top: 2px; }
 .mp-maps { display: flex; flex-wrap: wrap; gap: 4px; } .mp-mapb { display: grid; gap: 3px; padding: 3px; width: 82px; text-align: center; } .mp-mapb span { font-size: 9px; letter-spacing: .1em; } .mp-th { display: block; width: 100%; aspect-ratio: 16 / 9; background: #0a0a0a; }
 .mp-mapb.on .mp-th { outline: 2px solid var(--red); } .mp-mapb.on span { color: #000; }
+#ol-pick.mp-open { overflow: clip; }
+@media (max-height: 460px) { .mp-h { padding: 4px 12px; } .mp-h h3 { font-size: 18px; } .mp-cat { padding: 8px 10px; } .mp-tools { padding: 6px 10px; gap: 4px 10px; } .mp-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px 10px; padding: 10px; } .mp-pb { padding: 10px 12px; gap: 6px; } }

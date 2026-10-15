@@ -25,7 +25,9 @@
   const pips = (n) => '<span class="mp-df" aria-hidden="true">' + [1, 2, 3, 4, 5].map((i) => '<u' + (i <= n ? ' class="on"' : '') + '></u>').join('') + '</span>';
 
   function open(el, api) {
-    const S = api.st(), ids = Object.keys(missions()).map(Number).filter((n) => n >= 1 && n <= 48).sort((a, b) => a - b), pg = progress();
+    const S = api.st(), pg = progress();
+    let ids = Object.keys(missions()).map(Number).filter((n) => n >= 1 && n <= 48).sort((a, b) => a - b);
+    if (!ids.length) ids = Array.from({ length: 48 }, (_, i) => i + 1);
     const U = { cat: S.mode === 'ffa' ? 'ffa' : S.mode === 'hl' ? 'hl' : S.mode === 'pvp' ? 'pvp' : S.mode === 'mission' ? 'story' : 'sandbox', q: '', fs: 'ALL', fd: 0, sel: '', pvp: window.NexaPvp ? NexaPvp.norm(S.pvp) : { kind: 'ffa', goal: 'k25', wpn: 'all', map: 'arena', ff: 0 } };
     U.sel = U.cat === 'story' ? 'm:' + (S.mission || ids[0]) : U.cat === 'pvp' ? 'mode:' + (U.pvp.kind === 'duel' ? 'duel' : 'team') : 'mode:' + U.cat;
     const syncKind = () => { if (/^mode:(ffa|team|duel)$/.test(U.sel)) U.pvp = NexaPvp.norm(Object.assign({}, U.pvp, { kind: U.sel.slice(5) })); };
@@ -138,6 +140,7 @@
       if (t === root) { api.close(); return; }
       const b = t.closest('button'); if (!b || !root.contains(b)) return;
       if (b.dataset.mp === 'close') { api.close(); return; }
+      if (b.dataset.mp === 'retry') { safe(); return; }
       if (b.dataset.c) { U.cat = b.dataset.c; U.q = ''; U.fs = 'ALL'; U.fd = 0; U.sel = U.cat === 'story' ? 'm:' + (S.mode === 'mission' ? S.mission : ids[0]) : U.cat === 'pvp' ? 'mode:' + (U.pvp.kind === 'duel' ? 'duel' : 'team') : 'mode:' + U.cat; syncKind(); root.querySelectorAll('.mp-cat').forEach((x) => x.classList.toggle('on', x === b)); tools(); grid(); prev(); return; }
       if (b.dataset.fs) { U.fs = b.dataset.fs; tools(); grid(); return; }
       if (b.dataset.fd !== undefined) { U.fd = +b.dataset.fd; tools(); grid(); return; }
@@ -155,20 +158,32 @@
       if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); api.close(); return; }
       const inq = e.target.classList && e.target.classList.contains('mp-q');
       if (e.key === '/' && !inq) { const q = $(root, '.mp-q'); if (q) { e.preventDefault(); q.focus(); } return; }
-      if (inq) { if (e.key === 'ArrowDown') { const c = $(root, '.mp-card'); if (c) { e.preventDefault(); c.focus(); } } return; }
+      if (inq) { if (e.key === 'ArrowDown') { const c = $(root, '.mp-card'); if (c) { e.preventDefault(); c.focus({ preventScroll: true }); } } return; }
       if (!e.target.classList || !e.target.classList.contains('mp-card')) return;
       const cards = Array.from(root.querySelectorAll('.mp-card')), i = cards.indexOf(e.target);
       const cols = Math.max(1, cards.filter((c) => Math.abs(c.offsetTop - cards[0].offsetTop) < 4).length);
       const d = { ArrowRight: 1, ArrowLeft: -1, ArrowDown: cols, ArrowUp: -cols }[e.key];
-      if (d !== undefined) { e.preventDefault(); const n = cards[Math.max(0, Math.min(cards.length - 1, i + d))]; if (n) { n.focus(); n.scrollIntoView({ block: 'nearest' }); } }
-      else if (e.key === 'Home' || e.key === 'End') { e.preventDefault(); const n = cards[e.key === 'Home' ? 0 : cards.length - 1]; if (n) n.focus(); }
+      if (d !== undefined) { e.preventDefault(); const n = cards[Math.max(0, Math.min(cards.length - 1, i + d))]; if (n) { n.focus({ preventScroll: true }); reveal(n); } }
+      else if (e.key === 'Home' || e.key === 'End') { e.preventDefault(); const n = cards[e.key === 'Home' ? 0 : cards.length - 1]; if (n) { n.focus({ preventScroll: true }); reveal(n); } }
     };
     if (root.__fi) root.removeEventListener('focusin', root.__fi);
     root.__fi = (e) => { const b = e.target.closest && e.target.closest('.mp-card'); if (b && b.dataset.k !== U.sel && matchMedia('(min-width: 900px)').matches) pick(b.dataset.k); };
     root.addEventListener('focusin', root.__fi);
-    shell();
+    function reveal(n) {
+      const g = n.parentNode; if (!g || !g.classList.contains('mp-grid')) return;
+      const gr = g.getBoundingClientRect(), nr = n.getBoundingClientRect();
+      if (nr.top < gr.top) g.scrollTop += nr.top - gr.top - 10; else if (nr.bottom > gr.bottom) g.scrollTop += nr.bottom - gr.bottom + 10;
+      root.scrollTop = 0; if (root.parentNode) root.parentNode.scrollTop = 0;
+    }
+    function safe() {
+      try { shell(); } catch (e) {
+        console.warn('[modepick]', e);
+        root.innerHTML = '<div class="mp err"><header class="mp-h"><h3>SELECT MODE</h3><button type="button" class="ol-ic" data-mp="close" aria-label="Close">×</button></header><p class="mp-empty"><span>COULD NOT BUILD THE LIST</span></p><button type="button" class="ol-btn big" data-mp="retry"><span>RETRY</span></button></div>';
+      }
+    }
+    safe();
     const f = $(root, '.mp-card.on') || $(root, '.mp-card') || $(root, '.mp-cat.on');
-    if (f) try { f.focus({ preventScroll: true }); f.scrollIntoView({ block: 'center' }); } catch (e) { /* ok */ }
+    if (f) try { f.focus({ preventScroll: true }); reveal(f); } catch (e) { /* ok */ }
   }
   function close(el) { if (el) { if (el.__fi) { el.removeEventListener('focusin', el.__fi); el.__fi = null; } el.classList.remove('mp-open'); el.onclick = el.oninput = el.onkeydown = null; el.innerHTML = ''; } }
   window.ModePick = { open, close };

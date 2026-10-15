@@ -3,7 +3,7 @@
   'use strict';
   if (!window.I18N) return;
   const T = {
-    'SELECT MODE': ['ВЫБОР РЕЖИМА', 'MODUS WÄHLEN'], 'STORY': ['СЮЖЕТ', 'STORY'], 'SANDBOX': ['ПЕСОЧНИЦА', 'SANDBOX'], 'PVP': ['PVP', 'PVP'],
+    'COULD NOT BUILD THE LIST': ['НЕ УДАЛОСЬ ПОСТРОИТЬ СПИСОК', 'LISTE KONNTE NICHT ERSTELLT WERDEN'], 'RETRY': ['ПОВТОРИТЬ', 'WIEDERHOLEN'], 'SELECT MODE': ['ВЫБОР РЕЖИМА', 'MODUS WÄHLEN'], 'STORY': ['СЮЖЕТ', 'STORY'], 'SANDBOX': ['ПЕСОЧНИЦА', 'SANDBOX'], 'PVP': ['PVP', 'PVP'],
     'HIGH / LOW': ['HIGH / LOW', 'HIGH / LOW'], 'PLAYERS': ['ИГРОКИ', 'SPIELER'], 'SELECTED': ['ВЫБРАНО', 'GEWÄHLT'], 'DONE': ['ПРОЙДЕНО', 'ERLEDIGT'], 'NEW': ['НОВОЕ', 'NEU'], 'CLOSED': ['ЗАКРЫТО', 'GESPERRT'],
     'CO-OP': ['КООП', 'KOOP'], 'CO-OP MISSION': ['КООП-МИССИЯ', 'KOOP-MISSION'], 'CHOOSE A PVP MODE': ['ВЫБЕРИ РЕЖИМ PVP', 'PVP-MODUS WÄHLEN'], 'SINGLE MODE': ['ОДИН РЕЖИМ', 'EIN MODUS'], 'ALL': ['ВСЕ', 'ALLE'],
     'LEVEL': ['СЛОЖНОСТЬ', 'STUFE'], 'NOTHING FOUND': ['НИЧЕГО НЕ НАЙДЕНО', 'NICHTS GEFUNDEN'], 'DIFFICULTY': ['СЛОЖНОСТЬ', 'SCHWIERIGKEIT'], 'GOAL': ['ЦЕЛЬ', 'ZIEL'], 'WEAPONS': ['ОРУЖИЕ', 'WAFFEN'], 'MAP': ['КАРТА', 'KARTE'],
