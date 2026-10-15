@@ -565,8 +565,8 @@
       if (!TableOnline.start(spec, { audio: audio, playSfx: function (k) { audio.playSfx(k); }, stopMusic: function () { audio.stopMusic(); }, onEnd: backHL })) { backHL(); return false; }
       return true;
     }
-    var id = spec.mode === 'mission' ? spec.mission : spec.mode === 'br' ? 'brbox' : spec.mode === 'pvp' ? 'pvpbox' : 'coopbox';
-    if (id !== 'coopbox' && id !== 'brbox' && id !== 'pvpbox' && (id < 1 || id > 48 || !Missions._core.MISSIONS[id])) return false;
+    var id = spec.mode === 'mission' ? spec.mission : spec.mode === 'pvp' ? 'pvpbox' : 'coopbox';
+    if (id !== 'coopbox' && id !== 'pvpbox' && (id < 1 || id > 48 || !Missions._core.MISSIONS[id])) return false;
     missionActive = true;
     if (window.Lobby3D) Lobby3D.sync(false);
     audio.stopMusic();

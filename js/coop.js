@@ -34,7 +34,7 @@
       const co = r.__co, off = co ? (co.slot - 1) * 1.6 - 1.6 : 0;   // игроки в ряд у входа, слот 1 слева
       r.spawn(co ? off : 0, 17, 0);
     },
-    async play(r, br) {
+    async play(r) {
       const co = r.__co, cb = r.cb, W = C.WEAPONS;
       r.god = false;
       ['glock', 'ak', 'shotgun', 'sniper'].forEach((id) => { if (W[id]) r.giveWeapon(id, { equip: id === 'glock' }); });
@@ -46,8 +46,6 @@
       // враги и волны ведёт Хост (в соло — тоже мы)
       const auth = !co || co.host;
       const S = { wave: 0, queue: [], cd: 3, kills: 0, running: false, hostile: true, t: 0 };
-      const botsN = br ? clamp((((co ? co.spec : (r.opts && r.opts.coop)) || {}).bots | 0) || 20, 0, 99) : 0;
-      if (br) { S.wave = 1; S.running = true; S.cd = 0; S.queue = Array.from({ length: botsN }, (_, i) => (i % 7 === 6 ? 'heavy' : i % 3 === 2 ? 'rusher' : 'grunt')); S.sp = 0; }
       if (co) co.wave = S;
       const foes = () => cb.enemies.filter((e) => e.tag === 'sbE' && !e.dead);
       const spawn = (type) => {
@@ -66,15 +64,6 @@
           if (co && !co.peerReady && !co.solo && S.t < 25) { S.t += dt; return; }   // ждём, пока друг загрузится
           S.t += dt;
           const alive = foes().length;
-          if (br) {
-            if (S.done) return;
-            S.sp -= dt;
-            if (S.queue.length && alive < cap() && S.sp <= 0) { spawn(S.queue.shift()); S.sp = 1.2; }
-            if (!S.queue.length && alive === 0) { S.done = true; if (co) co.sendWave({ wave: 1, running: false, kills: S.kills }); r.toast('VICTORY', 3); r.sfx('succesfully'); }
-            if ((S.t * 2 | 0) !== S.lt) { S.lt = S.t * 2 | 0; r.objective('BATTLE ROYALE — BOTS LEFT ' + (alive + S.queue.length)); }
-            S.t += dt;
-            return;
-          }
           if (!S.running) {
             S.cd -= dt;
             if (S.cd <= 0) {
@@ -108,11 +97,10 @@
       if (box) { const h = box.querySelector('.eyebrow'); if (h) h.textContent = 'CO-OP SANDBOX PAUSED'; }
       if (abort) abort.textContent = '[LEAVE CO-OP SANDBOX]';
       await r.fade(0, 0.8);
-      r.objective(br ? 'BATTLE ROYALE — LAST ONE STANDING' : 'CO-OP SANDBOX — SURVIVE THE WAVES');
-      await r.phase(br ? 'brbox' : 'coopbox', () => new Promise(() => {}));
+      r.objective('CO-OP SANDBOX — SURVIVE THE WAVES');
+      await r.phase('coopbox', () => new Promise(() => {}));
     }
   };
-  MISSIONS.brbox = { title: 'BATTLE ROYALE', build: (r) => MISSIONS.coopbox.build(r), play: (r) => MISSIONS.coopbox.play(r, true) };
 
   // ------------------------------------------------------------------ сессия
   // Комната из нескольких игроков: у каждого напарника своя запись Remote (слот 1..N): состояние, аватар, эмоция, плашка. Хост — авторитет (враги, волны), ретранслирует остальным.
@@ -122,7 +110,7 @@
       this.run = run; this.spec = spec; this.mode = spec.mode === 'mission' ? 'mission' : 'sandbox';
       this.host = spec.role !== 'guest'; this.slot = spec.role === 'guest' ? (NN.slot || 2) : 1; this.solo = !!spec.solo;
       if (!this.solo) run.noPause = true;   // в онлайне паузы нет (мир идёт у друзей): Esc/кнопка/потеря фокуса не ставят игру на паузу
-      this.story = this.mode === 'mission'; this.shared = true; this.pseq = 0; this.ffAvail = spec.mode !== 'br' && !spec.solo; this.ff = this.ffAvail && spec.ff !== 0; this.ffm = [0.25, 0.5, 1].indexOf(+spec.ffm) >= 0 ? +spec.ffm : 1; this.ffRate = new Map(); this.ffLast = {};
+      this.story = this.mode === 'mission'; this.shared = true; this.pseq = 0; this.ffAvail = !spec.solo; this.ff = this.ffAvail && spec.ff !== 0; this.ffm = [0.25, 0.5, 1].indexOf(+spec.ffm) >= 0 ? +spec.ffm : 1; this.ffRate = new Map(); this.ffLast = {};
       this.kset = {}; this.mk = new Set(); this.ek = {}; this.cinN = 0; this.act = ''; this.snapFull = 0; this.eReq = 0; this.dropCap = null;
       this.remotes = new Map(); this.readySet = new Set();
       this.xs = { ex: 0, ip: 0 }; this.ready = false; this.offs = []; this.sendT = 0; this.snapT = 0; this.hudT = 0; this.lastSend = 0;

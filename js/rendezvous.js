@@ -703,7 +703,7 @@
     if (!serversOn()) return { ok: false, err: 'SERVERS_OFF' };
     if (typeof RTCPeerConnection !== 'function') return { ok: false, err: 'UNSUPPORTED' };
     NN.begin('host'); NN.setMax(opts.max || NN.MAX_PLAYERS); monitor.start(true);
-    Object.assign(H, { id, pub: !!opts.pub, title: String(opts.title || '').slice(0, 24), mode: opts.mode === 'mission' ? 'mission' : opts.mode === 'br' ? 'br' : 'sandbox', mission: Math.max(1, Math.min(48, opts.mission | 0 || 1)) });
+    Object.assign(H, { id, pub: !!opts.pub, title: String(opts.title || '').slice(0, 24), mode: opts.mode === 'mission' ? 'mission' : opts.mode === 'ffa' ? 'ffa' : opts.mode === 'pvp' ? 'pvp' : 'sandbox', mission: Math.max(1, Math.min(48, opts.mission | 0 || 1)) });
     H.startedAt = now();
     const byPid = new Map();
     const r = hostR = new Rendezvous('room/' + id, {
@@ -889,7 +889,8 @@
   function cleanAd(a) {
     if (!a || typeof a !== 'object') return null;
     const rid = roomName(a.rid); if (!rid) return null;
-    const mode = a.mode === 'mission' ? 'mission' : a.mode === 'br' ? 'br' : 'sandbox';
+    if (a.mode === 'br') return null;                      // режим «королевская битва» удалён: старые объявления не показываем
+    const mode = a.mode === 'mission' ? 'mission' : a.mode === 'ffa' ? 'ffa' : a.mode === 'pvp' ? 'pvp' : 'sandbox';
     const mission = mode === 'mission' ? (a.mission | 0) : 0;
     if (mode === 'mission' && (mission < 1 || mission > 48)) return null;
     const max = Math.max(2, Math.min(10, a.max | 0 || MAXP)), n = Math.max(1, Math.min(max, a.n | 0 || 1));

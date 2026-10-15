@@ -120,15 +120,6 @@
 .ol-toast .tt { background: #000; border: 1px solid var(--ink); font-size: 12px; letter-spacing: .14em; padding: 6px 12px; animation: nxIn .15s steps(3); }
 .ol-toast .tt.bad { border-color: var(--red); color: var(--red); }
 .ol-modal { background: rgba(0,0,0,.88); }
-.pk-box { background: #000; border: 1px solid var(--ink); box-shadow: 6px 6px 0 #1a1a1a; }
-.pk-sb, .pk-m { background: #000; border: 1px solid #2a2a2a; padding: 7px 10px; }
-.pk-sb b { font-size: 15px; letter-spacing: .14em; }
-.pk-sb small { font-size: 11px; color: var(--muted); }
-.pk-m b { font-size: 13px; color: var(--red); } .pk-m span { font-size: 12px; }
-.pk-sb:hover, .pk-m:hover { border-color: var(--ink); background: #0d0d0d; }
-.pk-sb.on, .pk-m.on { border-color: var(--ink); background: #111; box-shadow: inset 3px 0 0 var(--red); }
-.pk-t { font-size: 10px; letter-spacing: .3em; color: var(--muted); border-bottom: 1px solid #222; padding-bottom: 3px; }
-.pk-grid { gap: 4px; }
 
 .shop-grid { gap: 10px; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); }
 .shop-card { background: #000; border-color: #222; transition: border-color .12s, transform .12s; }

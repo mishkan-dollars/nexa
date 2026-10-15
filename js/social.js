@@ -109,7 +109,7 @@
   const PRES = {};
   function myState() {
     const R = window.Missions && window.Missions.current, co = window.NexaCoop;
-    if (R && co && co.active) { const s = co.session; return s && s.spec && s.spec.mode === 'br' ? 'battle' : 'match'; }
+    if (R && co && co.active) { const s = co.session; return s && s.spec && s.spec.mode === 'pvp' ? 'battle' : 'match'; }
     if (window.OnlineLobby && window.OnlineLobby.active) return 'lobby';
     return 'online';
   }

@@ -19,7 +19,7 @@
     const m = X.co.remotes.get(s);
     return m && m.rem && m.rem.got ? m.rem : null;
   };
-  const elig = (r) => !!(X && X.run === r && X.co && !X.co.solo && !X.co.spectator && !X.co.gone && X.co.ready && NN.connected && X.co.spec && X.co.spec.mode !== 'br' && X.co.spec.mode !== 'pvp' && NN.players.length > 0 && !r.disposed);
+  const elig = (r) => !!(X && X.run === r && X.co && !X.co.solo && !X.co.spectator && !X.co.gone && X.co.ready && NN.connected && X.co.spec && X.co.spec.mode !== 'pvp' && NN.players.length > 0 && !r.disposed);
 
   function list() {
     const a = [];

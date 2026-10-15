@@ -1,18 +1,17 @@
-// NEXA: окно выбора режима в онлайн-лобби (открывается из js/onlinelobby.js при «PLAY» / «MODE»): категории СЮЖЕТ / ПЕСОЧНИЦА / КОРОЛЕВСКАЯ БИТВА / PVP, сетка заданий 1–48 с обложками (js/modecovers.js),
+// NEXA: окно выбора режима в онлайн-лобби (открывается из js/onlinelobby.js при «PLAY» / «MODE»): категории СЮЖЕТ / ПЕСОЧНИЦА / КАЖДЫЙ САМ ЗА СЕБЯ / PVP / HIGH-LOW, сетка заданий 1–48 с обложками (js/modecovers.js),
 // фильтры и поиск, предпросмотр справа, настройки PvP. Клавиатура: стрелки по сетке, «/» — поиск, Esc — закрыть; карточки — обычные <button>, так что геймпад (padnav.js) и тач работают как везде.
 (function () {
   'use strict';
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
   const $ = (el, s) => el.querySelector(s);
-  const CATS = [['story', 'STORY'], ['sandbox', 'SANDBOX'], ['br', 'BATTLE ROYALE'], ['pvp', 'PVP'], ['hl', 'HIGH / LOW']];
-  const PVP = [['ffa', 'DEATHMATCH'], ['team', 'TEAM BATTLE'], ['duel', 'DUEL 1V1']];
+  const CATS = [['story', 'STORY'], ['sandbox', 'SANDBOX'], ['ffa', 'FREE FOR ALL'], ['pvp', 'PVP'], ['hl', 'HIGH / LOW']];
+  const PVP = [['ffa', 'FREE FOR ALL'], ['team', 'TEAM BATTLE'], ['duel', 'DUEL 1V1']];
   const WLAB = { all: 'ALL WEAPONS', random: 'RANDOM', glock: 'GLOCK', ak: 'AK', shotgun: 'SHOTGUN', sniper: 'SNIPER' };
-  const MLAB = { arena: 'TRAINING HALL', yard: 'SCRAPYARD' };
+  const MLAB = { rand: 'RANDOM', vote: 'VOTE', depot: 'DEPOT', lab: 'LAB', roof: 'ROOF', hall: 'TRAINING HALL', yard: 'SCRAPYARD' };
   const DESC = {
     sandbox: 'Waves of enemies in the training hall. Ammo never runs out. Hold the line with your friends.',
     hl: 'The table game. Bots fill empty seats.',
-    br: 'Up to 10 players in one arena. Bots fill empty seats after the timer. Last one standing wins.',
-    ffa: 'Everyone against everyone. First to the kill limit, or the best score at time-out, wins. Respawn in 3 seconds, 2 seconds of protection.',
+    ffa: 'Everyone against everyone, 2–6 players, no bots. Press READY: the game finds an open match or opens one. First to the kill limit, or the best score at time-out, wins. Respawn in 3 seconds.',
     team: 'Two teams, kills add up. Friendly fire is off by default. Respawn in 3 seconds.',
     duel: 'One on one. Pure aim: first to the limit wins.'
   };
@@ -27,8 +26,10 @@
 
   function open(el, api) {
     const S = api.st(), ids = Object.keys(missions()).map(Number).filter((n) => n >= 1 && n <= 48).sort((a, b) => a - b), pg = progress();
-    const U = { cat: S.mode === 'br' ? 'br' : S.mode === 'hl' ? 'hl' : S.mode === 'pvp' ? 'pvp' : S.mode === 'mission' ? 'story' : 'sandbox', q: '', fs: 'ALL', fd: 0, sel: '', pvp: window.NexaPvp ? NexaPvp.norm(S.pvp) : { kind: 'ffa', goal: 'k25', wpn: 'all', map: 'arena', ff: 0 } };
-    U.sel = U.cat === 'story' ? 'm:' + (S.mission || ids[0]) : U.cat === 'pvp' ? 'mode:' + U.pvp.kind : 'mode:' + U.cat;
+    const U = { cat: S.mode === 'ffa' ? 'ffa' : S.mode === 'hl' ? 'hl' : S.mode === 'pvp' ? 'pvp' : S.mode === 'mission' ? 'story' : 'sandbox', q: '', fs: 'ALL', fd: 0, sel: '', pvp: window.NexaPvp ? NexaPvp.norm(S.pvp) : { kind: 'ffa', goal: 'k25', wpn: 'all', map: 'arena', ff: 0 } };
+    U.sel = U.cat === 'story' ? 'm:' + (S.mission || ids[0]) : U.cat === 'pvp' ? 'mode:' + (U.pvp.kind === 'duel' ? 'duel' : 'team') : 'mode:' + U.cat;
+    const syncKind = () => { if (/^mode:(ffa|team|duel)$/.test(U.sel)) U.pvp = NexaPvp.norm(Object.assign({}, U.pvp, { kind: U.sel.slice(5) })); };
+    syncKind();
     const root = el; root.classList.add('mp-open');
     function items() {
       if (U.cat === 'story') {
@@ -38,7 +39,8 @@
           return (!q || t.indexOf(q) >= 0 || String(id).padStart(2, '0').indexOf(q) >= 0 || String(id) === q) && (U.fs === 'ALL' || st === U.fs) && (!U.fd || diffOf(id) === U.fd);
         }).map((id) => ({ k: 'm:' + id, id }));
       }
-      if (U.cat === 'pvp') return PVP.map((p) => ({ k: 'mode:' + p[0], kind: p[0], t: p[1] }));
+      if (U.cat === 'pvp') return PVP.filter((p) => p[0] !== 'ffa').map((p) => ({ k: 'mode:' + p[0], kind: p[0], t: p[1] }));
+      if (U.cat === 'ffa') return [{ k: 'mode:ffa', kind: 'ffa', t: 'FREE FOR ALL' }];
       return [{ k: 'mode:' + U.cat, t: (CATS.find((c) => c[0] === U.cat) || [0, ''])[1] }];
     }
     function cardHtml(it) {
@@ -48,11 +50,12 @@
         return '<button type="button" class="mission-row mp-card' + (on ? ' on' : '') + (cur ? ' cur' : '') + ' st-' + st.toLowerCase() + '" data-k="' + it.k + '" aria-label="' + esc(String(it.id).padStart(2, '0') + ' ' + (m.title || '')) + '">' +
           '<canvas class="mp-cv" width="320" height="180"></canvas><span class="mp-cap"><span class="mp-st">' + st + '</span><span class="mp-pl"><span>PLAYERS</span> <em translate="no">2–6</em></span>' + pips(diffOf(it.id)) + '</span>' + (cur ? '<i class="mp-tick"><span>SELECTED</span></i>' : '') + '</button>';
       }
-      const pl = it.k === 'mode:br' ? '2–10' : it.k === 'mode:duel' ? '2' : '2–6';
+      const pl = it.k === 'mode:duel' ? '2' : '2–6';
       return '<button type="button" class="mission-row mp-card' + (on ? ' on' : '') + (cur ? ' cur' : '') + '" data-k="' + it.k + '" aria-label="' + esc(it.t) + '"><canvas class="mp-cv" width="320" height="180"></canvas><span class="mp-cap"><span class="mp-st">' + (it.kind ? 'PVP' : 'CO-OP') + '</span><span class="mp-pl"><span>PLAYERS</span> <em translate="no">' + pl + '</em></span></span>' + (cur ? '<i class="mp-tick"><span>SELECTED</span></i>' : '') + '</button>';
     }
     function isCur(it) {
       if (it.id) return S.mode === 'mission' && S.mission === it.id;
+      if (it.kind === 'ffa') return S.mode === 'ffa';
       if (it.kind) return S.mode === 'pvp' && NexaPvp.norm(S.pvp).kind === it.kind;
       return S.mode === it.k.slice(5);
     }
@@ -63,7 +66,7 @@
         return { t: String(m.title || 'MISSION'), no: id, d, st, pl: '2–6', df: diffOf(id), tag: 'CO-OP MISSION' };
       }
       const key = k.slice(5), c = ModeCovers.MODES[key] || {};
-      return { t: c.t || key.toUpperCase(), no: 0, d: DESC[key] || '', st: '', pl: key === 'br' ? '2–10' : key === 'duel' ? '2' : '2–6', df: 0, tag: c.s || '' };
+      return { t: c.t || key.toUpperCase(), no: 0, d: DESC[key] || '', st: '', pl: key === 'duel' ? '2' : '2–6', df: 0, tag: c.s || '' };
     }
     function optBtn(act, v, label, on) { return '<button type="button" class="mp-opt' + (on ? ' on' : '') + '" data-o="' + act + '" data-v="' + v + '"><span>' + label + '</span></button>'; }
     function pvpOpts() {
@@ -71,7 +74,7 @@
       const gl = (g) => { const m = /^([kt])(\d+)$/.exec(g); return m[1] === 'k' ? '<em translate="no">' + m[2] + '</em> <span>KILLS</span>' : '<em translate="no">' + m[2] + '</em> <span>MIN</span>'; };
       let h = '<div class="mp-og"><label>GOAL</label><div>' + G.map((g) => optBtn('goal', g, gl(g), P.goal === g)).join('') + '</div></div>';
       h += '<div class="mp-og"><label>WEAPONS</label><div>' + NexaPvp.WPNS.map((w) => optBtn('wpn', w, WLAB[w], P.wpn === w)).join('') + '</div></div>';
-      h += '<div class="mp-og"><label>MAP</label><div>' + NexaPvp.MAPS.map((m) => optBtn('map', m, MLAB[m], P.map === m)).join('') + '</div></div>';
+      h += '<div class="mp-og"><label>MAP</label><div class="mp-maps">' + NexaPvp.MAPS.map((m) => '<button type="button" class="mp-opt mp-mapb' + (P.map === m ? ' on' : '') + '" data-o="map" data-v="' + m + '"><canvas class="mp-th" width="128" height="72" data-m="map:' + m + '"></canvas><span>' + MLAB[m] + '</span></button>').join('') + '</div></div>';
       if (P.kind === 'team') h += '<div class="mp-og"><label>FRIENDLY FIRE</label><div>' + optBtn('pff', '0', 'OFF', !P.ff) + optBtn('pff', '1', 'ON', !!P.ff) + '</div></div>';
       return h;
     }
@@ -82,11 +85,11 @@
     }
     function previewHtml() {
       const I = info(U.sel), k = U.sel, pv = k.indexOf('mode:') === 0 && PVP.some((p) => 'mode:' + p[0] === k), story = k.indexOf('m:') === 0;
-      const needP = pv ? (k === 'mode:duel' ? 'DUEL NEEDS EXACTLY 2 PLAYERS' : 'PVP NEEDS 2–6 PLAYERS') : '';
+      const needP = pv ? (k === 'mode:duel' ? 'DUEL NEEDS EXACTLY 2 PLAYERS' : k === 'mode:ffa' ? 'PRESS READY IN THE LOBBY TO FIND A MATCH' : 'PVP NEEDS 2–6 PLAYERS') : '';
       return '<div class="mp-pc"><canvas class="mp-big" width="960" height="540"></canvas></div><div class="mp-pb"><div class="mp-tag"><span>' + esc(I.tag) + '</span>' + (I.st ? ' <i class="mp-chip st-' + I.st.toLowerCase() + '"><span>' + I.st + '</span></i>' : '') + '</div>' +
         '<h3' + (story ? ' translate="no"' : '') + '>' + (I.no ? '<b>' + String(I.no).padStart(2, '0') + '</b> ' : '') + esc(I.t) + '</h3><p class="mp-d">' + (I.no === 48 ? '<span translate="no">' + esc(I.d) + '</span>' : esc(I.d) ) + '</p>' +
         '<div class="mp-meta"><div><label>PLAYERS</label><b translate="no">' + I.pl + '</b></div>' + (I.df ? '<div><label>DIFFICULTY</label>' + pips(I.df) + '</div>' : '') + '</div>' +
-        (pv ? '<div class="mp-opts">' + pvpOpts() + '</div><p class="mp-note"><span>' + needP + '</span></p>' : '') +
+        (pv ? '<div class="mp-opts">' + pvpOpts() + '</div><p class="mp-note"><span>' + needP + '</span></p>' : '') + (story ? '<p class="mp-note"><span>Story missions: every player waits for the team at each stage.</span></p>' : '') +
         (!pv && !story && k === 'mode:sandbox' ? '<div class="mp-opts">' + ffOpts() + '</div>' : '') + (story ? '<div class="mp-opts">' + ffOpts() + '</div>' : '') +
         '<div class="mp-go"><button type="button" class="action primary mp-play" data-o="play"><span>PLAY</span></button><button type="button" class="link-button mp-set" data-o="set"><span>SELECT</span></button></div></div>';
     }
@@ -114,6 +117,7 @@
       const p = $(root, '.mp-prev'); if (!p) return;
       p.innerHTML = previewHtml(); p.classList.remove('mp-in'); void p.offsetWidth; p.classList.add('mp-in');
       const big = $(p, '.mp-big'); if (big) ModeCovers.paint(big, U.sel);
+      p.querySelectorAll('canvas.mp-th').forEach((c) => ModeCovers.paint(c, c.dataset.m));
     }
     function mark() {
       root.querySelectorAll('.mp-card').forEach((b) => b.classList.toggle('on', b.dataset.k === U.sel));
@@ -126,7 +130,7 @@
     function apply() {
       const k = U.sel;
       if (k.indexOf('m:') === 0) api.setMode('mission', k.slice(2) | 0);
-      else if (k === 'mode:ffa' || k === 'mode:team' || k === 'mode:duel') { api.setPvp(U.pvp); api.setMode('pvp'); }
+      else if (k === 'mode:ffa' || k === 'mode:team' || k === 'mode:duel') { api.setPvp(U.pvp); api.setMode(k === 'mode:ffa' ? 'ffa' : 'pvp'); }
       else api.setMode(k.slice(5));
     }
     root.onclick = (e) => {
@@ -134,7 +138,7 @@
       if (t === root) { api.close(); return; }
       const b = t.closest('button'); if (!b || !root.contains(b)) return;
       if (b.dataset.mp === 'close') { api.close(); return; }
-      if (b.dataset.c) { U.cat = b.dataset.c; U.q = ''; U.fs = 'ALL'; U.fd = 0; U.sel = U.cat === 'story' ? 'm:' + (S.mode === 'mission' ? S.mission : ids[0]) : U.cat === 'pvp' ? 'mode:' + U.pvp.kind : 'mode:' + U.cat; root.querySelectorAll('.mp-cat').forEach((x) => x.classList.toggle('on', x === b)); tools(); grid(); prev(); return; }
+      if (b.dataset.c) { U.cat = b.dataset.c; U.q = ''; U.fs = 'ALL'; U.fd = 0; U.sel = U.cat === 'story' ? 'm:' + (S.mode === 'mission' ? S.mission : ids[0]) : U.cat === 'pvp' ? 'mode:' + (U.pvp.kind === 'duel' ? 'duel' : 'team') : 'mode:' + U.cat; syncKind(); root.querySelectorAll('.mp-cat').forEach((x) => x.classList.toggle('on', x === b)); tools(); grid(); prev(); return; }
       if (b.dataset.fs) { U.fs = b.dataset.fs; tools(); grid(); return; }
       if (b.dataset.fd !== undefined) { U.fd = +b.dataset.fd; tools(); grid(); return; }
       if (b.classList.contains('mp-card')) { pick(b.dataset.k); return; }

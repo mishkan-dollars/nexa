@@ -16,13 +16,27 @@
   const KINDS = ['ffa', 'team', 'duel'];
   const GOALS = { ffa: ['k15', 'k25', 'k50', 't5', 't10'], team: ['k15', 'k25', 'k50', 't5', 't10'], duel: ['k5', 'k10', 'k15', 't3', 't5'] };
   const WPNS = ['all', 'random', 'glock', 'ak', 'shotgun', 'sniper'];
-  const MAPS = ['arena', 'yard'];
+  const POOL = ['depot', 'lab', 'roof', 'hall'], MAPS = ['rand', 'vote', 'depot', 'lab', 'roof', 'hall', 'yard'];
+  const MAPN = { depot: 'DEPOT', lab: 'LAB', roof: 'ROOF', hall: 'HALL', yard: 'YARD' };
+  const pick = (a) => a[Math.floor(Math.random() * a.length)];
 
   function norm(c) {
     c = c || {};
     const kind = KINDS.indexOf(c.kind) >= 0 ? c.kind : 'ffa';
     const goal = GOALS[kind].indexOf(c.goal) >= 0 ? c.goal : kind === 'duel' ? 'k10' : 'k25';
-    return { kind, goal, wpn: WPNS.indexOf(c.wpn) >= 0 ? c.wpn : 'all', map: MAPS.indexOf(c.map) >= 0 ? c.map : 'arena', ff: kind === 'team' && c.ff ? 1 : 0 };
+    const map = c.map === 'arena' ? 'hall' : MAPS.indexOf(c.map) >= 0 ? c.map : 'rand', mm = c.mm === 'rand' || c.mm === 'vote' || c.mm === 'fixed' ? c.mm : '';
+    const o = { kind, goal, wpn: WPNS.indexOf(c.wpn) >= 0 ? c.wpn : 'all', map, ff: kind === 'team' && c.ff ? 1 : 0 };
+    if (mm) o.mm = mm;
+    return o;
+  }
+  function resolveMap(c, votes) {
+    c = norm(c); const mm = c.map === 'rand' || c.map === 'vote' ? c.map : 'fixed'; let m = c.map;
+    if (m === 'vote') {
+      const t = {}; Object.keys(votes || {}).forEach((k) => { const v = votes[k]; if (POOL.indexOf(v) >= 0) t[v] = (t[v] || 0) + 1; });
+      const mx = Math.max.apply(null, [0].concat(Object.keys(t).map((k) => t[k]))), top = POOL.filter((x) => t[x] === mx && mx > 0);
+      m = pick(top.length ? top : POOL);
+    } else if (m === 'rand') m = pick(POOL);
+    return Object.assign({}, c, { map: m, mm });
   }
   const goalOf = (g) => { const m = /^([kt])(\d{1,3})$/.exec(g) || ['', 'k', '25']; return m[1] === 'k' ? { k: +m[2], t: 0 } : { k: 0, t: +m[2] * 60 }; };
   const fmt = (s) => { s = Math.max(0, Math.round(s)); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
@@ -37,7 +51,7 @@
 
   class Pvp {
     constructor(run, co, spec) {
-      this.r = run; this.co = co; this.cfg = norm(spec.pvp); this.goal = goalOf(this.cfg.goal); this.host = co.host; this.me = co.slot;
+      this.r = run; this.co = co; this.cfg = norm(spec.pvp); this.mm = this.cfg.mm || (this.cfg.map === 'rand' || this.cfg.map === 'vote' ? 'rand' : 'fixed'); this.goal = goalOf(this.cfg.goal); this.host = co.host; this.me = co.slot;
       this.team = this.cfg.kind === 'team';
       this.pl = new Map(); this.phase = 'wait'; this.rd = 0; this.items = []; this.tm = 0; this.tl = 0; this.warm = 0; this.cands = []; this.inSet = new Set();
       this.self = { dead: false, till: 0, by: 0, t0: 0 }; this.tab = false; this.offs = []; this.rate = new Map(); this.waitT = 0; this.sbT = 0; this.pgT = 0; this.hudT = 0; this.tagT = 0; this.over = null; this.fov0 = run.camera ? run.camera.fov : 0;
@@ -83,16 +97,23 @@
     }
 
     // ---------------------------------------------------------------- карта и точки спауна
-    bounds() {
-      const r = this.r, s = r.mm && r.mm.secs && r.mm.secs[0];
-      if (this.cfg.map === 'yard' && s) { const hw = s.W / 2 - 1.6; return { x0: -hw, x1: hw, z0: s.zB + 1.6, z1: s.zA - 1.6 }; }
-      return { x0: -9.5, x1: 9.5, z0: -45, z1: 18 };
-    }
+    bounds() { const h = this.r.__pvmap; return h && h.b ? h.b : { x0: -9.5, x1: 9.5, z0: -45, z1: 18 }; }
+    free(x, z) { const r = this.r; return [[0, 0], [0.9, 0], [-0.9, 0], [0, 0.9], [0, -0.9], [0.65, 0.65], [-0.65, 0.65], [0.65, -0.65], [-0.65, -0.65]].every((d) => !r.blocked(x + d[0], z + d[1])); }
     scan() {
-      const r = this.r, b = this.bounds(), out = [], o = [[0, 0], [0.9, 0], [-0.9, 0], [0, 0.9], [0, -0.9], [0.65, 0.65], [-0.65, 0.65], [0.65, -0.65], [-0.65, -0.65]];
-      for (let x = b.x0; x <= b.x1 + 0.01; x += 2.5) for (let z = b.z1; z >= b.z0 - 0.01; z -= 2.5) if (o.every((d) => !r.blocked(x + d[0], z + d[1]))) out.push({ x: q(x, 100), z: q(z, 100) });
+      const h = this.r.__pvmap, b = this.bounds(); let out = [];
+      if (h && h.sp) out = h.sp.map((a) => ({ x: a[0], z: a[1] })).filter((c) => this.free(c.x, c.z));
+      if (out.length < 6) { out = []; for (let x = b.x0; x <= b.x1 + 0.01; x += 2.5) for (let z = b.z1; z >= b.z0 - 0.01; z -= 2.5) if (this.free(x, z)) out.push({ x: q(x, 100), z: q(z, 100) }); }
       this.cands = out; this.bd = b;
       return out;
+    }
+    switchMap(name) {
+      const r = this.r, PM = window.PvpMaps; if (!PM || !name) return;
+      if (r.__pvmap && r.__pvmap.name === name) return;
+      PM.unload(r, r.__pvmap); r.__pvmap = PM.load(r, name); this.bd = null;
+    }
+    nextMap() {
+      const cur = this.r.__pvmap ? this.r.__pvmap.name : 'hall';
+      return this.mm === 'fixed' ? cur : pick(POOL.filter((x) => x !== cur));
     }
     yawTo(x, z) { const b = this.bd || this.bounds(); return q(Math.atan2(-((b.x0 + b.x1) / 2 - x), -((b.z0 + b.z1) / 2 - z)), 100); }
     pos(s) {
@@ -116,7 +137,8 @@
     startRound() {
       const slots = [1].concat(NN.players.map((x) => x.slot)).filter((s) => this.inSet.has(s) || s === 1);
       if (slots.length < 2) return;
-      this.scan();
+      const mapName = this.rd ? this.nextMap() : (this.r.__pvmap ? this.r.__pvmap.name : 'hall');
+      this.switchMap(mapName); this.scan();
       const order = slots.slice().sort(() => Math.random() - 0.5), used = [], list = [];
       this.pl = new Map();
       order.forEach((s, i) => {
@@ -127,16 +149,19 @@
         const P = this.pl.get(s), sp = this.spawnFor(used, this.team ? P.team : undefined);
         used.push({ x: sp.x, z: sp.z }); list.push([s, P.team, sp.x, sp.z, this.yawTo(sp.x, sp.z), P.name]);
       });
-      const it = [], taken = [];
-      const place = (n, kind) => { for (let i = 0; i < n && this.cands.length; i += 1) { let best = null, bd = -1; for (let j = 0; j < 8; j += 1) { const c = this.cands[Math.floor(Math.random() * this.cands.length)], d = taken.length ? Math.min.apply(null, taken.map((t) => Math.hypot(t.x - c.x, t.z - c.z))) : 99; if (d > bd) { bd = d; best = c; } } taken.push(best); it.push([best.x, best.z, kind]); } };
-      place(Math.min(5, Math.ceil(this.cands.length / 8)), 0); place(Math.min(4, Math.ceil(this.cands.length / 10)), 1);
+      const it = [], taken = [], h = this.r.__pvmap;
+      if (h && h.it) h.it.forEach((a) => { if (a[2] === 2 && this.cfg.wpn !== 'all' && this.cfg.wpn !== 'random') return; if (this.free(a[0], a[1])) it.push(a.slice()); });
+      else {
+        const place = (n, kind) => { for (let i = 0; i < n && this.cands.length; i += 1) { let best = null, bd = -1; for (let j = 0; j < 8; j += 1) { const c = this.cands[Math.floor(Math.random() * this.cands.length)], d = taken.length ? Math.min.apply(null, taken.map((t) => Math.hypot(t.x - c.x, t.z - c.z))) : 99; if (d > bd) { bd = d; best = c; } } taken.push(best); it.push([best.x, best.z, kind]); } };
+        place(Math.min(5, Math.ceil(this.cands.length / 8)), 0); place(Math.min(4, Math.ceil(this.cands.length / 10)), 1);
+      }
       this.rd += 1;
-      this.bc({ o: 'go', rd: this.rd, cfg: this.cfg, pl: list, it });
+      this.bc({ o: 'go', rd: this.rd, cfg: this.cfg, map: mapName, pl: list, it });
     }
     hPick(slot, i) {
       const it = this.items[i], P = this.pl.get(slot), p = this.pos(slot);
       if (this.phase !== 'live' || !it || !it.on || !P || !P.alive || !p || Math.hypot(p.x - it.x, p.z - it.z) > 3.4) return;
-      it.on = false; it.back = now() + (it.kind ? 30000 : 22000);
+      it.on = false; it.back = now() + (it.kind === 2 ? 40000 : it.kind ? 30000 : 22000);
       if (it.kind === 1) { if (P.hp >= HP) { it.on = true; return; } P.hp = Math.min(HP, P.hp + 45); this.bc({ o: 'hp', t: slot, hp: P.hp, heal: 1 }, slot); }
       this.bc({ o: 'pu', i, t: slot });
     }
@@ -224,6 +249,7 @@
         const s = a[0] | 0, P = { slot: s, name: String(a[5] || nameOf(s)).slice(0, 14), team: a[1] | 0, k: 0, d: 0, hs: 0, hp: HP, alive: true, inv: now() + (WARM + PROT) * 1000, rt: 0, resp: 0 };
         this.pl.set(s, P); if (s === this.me) mine = a;
       });
+      if (!this.host && typeof p.map === 'string') this.switchMap(p.map);
       this.buildItems(Array.isArray(p.it) ? p.it : []);
       this.phase = 'warm'; this.warm = WARM; this.tm = 0; this.tl = this.goal.t; this.sbT = 0; this.rate.clear();
       if (this.self.dead) this.undie();
@@ -281,10 +307,11 @@
       it.on = false; it.m.visible = false;
       if ((p.t | 0) === this.me && !this.r.dead) {
         const r = this.r;
-        if (!it.kind && r.inv) r.inv.forEach((w) => { w.reserve = Math.min(w.def.maxReserve, w.reserve + Math.ceil(w.def.mag * 1.5)); });
+        if (it.kind === 2) { try { r.giveWeapon(it.w, { equip: true }); } catch (e) { /* ok */ } }
+        if (it.kind === 0 && r.inv) r.inv.forEach((w) => { w.reserve = Math.min(w.def.maxReserve, w.reserve + Math.ceil(w.def.mag * 1.5)); });
         try { r.sfx && r.sfx('notification'); } catch (e) { /* ok */ }
         r.refreshHud && r.refreshHud();
-        this.say(it.kind ? 'HEALTH' : 'AMMO', '', 0.8, true);
+        this.say(it.kind === 2 ? 'WEAPON' : it.kind ? 'HEALTH' : 'AMMO', '', 0.8, true);
       }
     }
     onPi(p) { const it = this.items[p.i | 0]; if (it) { it.on = true; it.m.visible = true; } }
@@ -356,14 +383,13 @@
     // ---------------------------------------------------------------- предметы
     buildItems(list) {
       this.clearItems();
-      const T = window.THREE, geo = [new T.BoxGeometry(0.5, 0.32, 0.34), new T.BoxGeometry(0.46, 0.46, 0.46)], mat = [new T.MeshBasicMaterial({ color: 0xffd60a }), new T.MeshBasicMaterial({ color: 0x34c759 })];
-      const ring = new T.RingGeometry(0.5, 0.62, 28), rm = [new T.MeshBasicMaterial({ color: 0xffd60a, transparent: true, opacity: 0.55, side: T.DoubleSide }), new T.MeshBasicMaterial({ color: 0x34c759, transparent: true, opacity: 0.55, side: T.DoubleSide })];
-      this.igeo = { geo, mat, ring, rm };
-      list.slice(0, 16).forEach((a) => {
-        const kind = a[2] ? 1 : 0, g = new T.Group(), b = new T.Mesh(geo[kind], mat[kind]), rg = new T.Mesh(ring, rm[kind]);
+      const T = window.THREE, geo = [new T.BoxGeometry(0.5, 0.32, 0.34), new T.BoxGeometry(0.46, 0.46, 0.46), new T.BoxGeometry(0.9, 0.16, 0.3)], col = [0xffd60a, 0x34c759, 0xe6e9e6];
+      const mat = col.map((c) => new T.MeshBasicMaterial({ color: c })), ring = new T.RingGeometry(0.5, 0.62, 28), rm = col.map((c) => new T.MeshBasicMaterial({ color: c, transparent: true, opacity: 0.55, side: T.DoubleSide }));
+      list.slice(0, 20).forEach((a) => {
+        const kind = a[2] === 2 ? 2 : a[2] ? 1 : 0, g = new T.Group(), b = new T.Mesh(geo[kind], mat[kind]), rg = new T.Mesh(ring, rm[kind]);
         rg.rotation.x = -Math.PI / 2; rg.position.y = -0.55; g.add(b); g.add(rg); g.position.set(num(a[0]), 0.9, num(a[1]));
-        if (kind) { const cx = new T.Mesh(new T.BoxGeometry(0.1, 0.36, 0.5), new T.MeshBasicMaterial({ color: 0xffffff })); g.add(cx); }
-        this.r.scene.add(g); this.items.push({ x: num(a[0]), z: num(a[1]), kind, on: true, back: 0, m: g, ph: Math.random() * 6, req: 0 });
+        if (kind === 1) { const cx = new T.Mesh(new T.BoxGeometry(0.1, 0.36, 0.5), new T.MeshBasicMaterial({ color: 0xffffff })); g.add(cx); }
+        this.r.scene.add(g); this.items.push({ x: num(a[0]), z: num(a[1]), kind, w: kind === 2 && WPN.indexOf(a[3]) >= 0 ? a[3] : 'ak', on: true, back: 0, m: g, ph: Math.random() * 6, req: 0 });
       });
     }
     clearItems() {
@@ -376,8 +402,9 @@
         it.ph += dt * 2; it.m.rotation.y += dt * 1.6; it.m.position.y = 0.9 + Math.sin(it.ph) * 0.08;
         if (!it.on || this.phase !== 'live' || r.dead || !P || t < it.req) return;
         if (Math.hypot(r.p.x - it.x, r.p.z - it.z) > 1.3) return;
-        if (it.kind && P.hp >= HP && r.hp >= (r.maxHp || HP)) return;
-        if (!it.kind && r.inv && !r.inv.some((w) => w.reserve < w.def.maxReserve)) return;
+        if (it.kind === 1 && P.hp >= HP && r.hp >= (r.maxHp || HP)) return;
+        if (it.kind === 0 && r.inv && !r.inv.some((w) => w.reserve < w.def.maxReserve)) return;
+        if (it.kind === 2 && r.inv && r.inv.some((w) => w.id === it.w && w.reserve >= w.def.maxReserve)) return;
         it.req = t + 600;
         if (this.host) this.hPick(1, i); else this.toHost({ o: 'pk', i });
       });
@@ -408,7 +435,7 @@
     buildUi() {
       const r = this.r, ui = this.ui = document.createElement('div'); ui.className = 'pv-ui'; ui.setAttribute('data-i18n', 'net');
       const k = this.cfg.kind;
-      ui.innerHTML = '<div class="pv-top"><div class="pv-a"><small></small><b>0</b></div><div class="pv-c"><b class="pv-tm">0:00</b><small class="pv-goal"></small></div><div class="pv-b"><small></small><b>0</b></div></div>' +
+      ui.innerHTML = '<div class="pv-top"><div class="pv-a"><small></small><b>0</b></div><div class="pv-c"><b class="pv-tm">0:00</b><small class="pv-goal"></small><small class="pv-mp" translate="no"></small></div><div class="pv-b"><small></small><b>0</b></div></div>' +
         '<div class="pv-feed"></div><div class="pv-msg" hidden><b></b><small translate="no"></small></div><div class="pv-prot" hidden><span>SPAWN PROTECTION</span></div><div class="pv-sb" hidden></div><div class="pv-res" hidden></div>';
       r.layer.appendChild(ui);
       this.feedEl = ui.querySelector('.pv-feed'); this.msgEl = ui.querySelector('.pv-msg'); this.sbEl = ui.querySelector('.pv-sb'); this.resEl = ui.querySelector('.pv-res'); this.protEl = ui.querySelector('.pv-prot');
@@ -434,6 +461,7 @@
         a.querySelector('b').textContent = M ? M.k : 0; b.querySelector('b').textContent = top; a.style.color = ''; b.style.color = '';
       }
       const tm = ui.querySelector('.pv-tm'); tm.textContent = this.phase === 'wait' ? '--:--' : g.t ? fmt(this.tl) : fmt(this.tm);
+      const mp = ui.querySelector('.pv-mp'), mh = r.__pvmap; if (mp && mh) mp.textContent = MAPN[mh.name] || '';
       const ge = ui.querySelector('.pv-goal');
       const gs = g.k ? 'k' + g.k : 't';
       if (ge.dataset.g !== gs) { ge.dataset.g = gs; ge.innerHTML = g.k ? '<span>FIRST TO</span> <em translate="no">' + g.k + '</em> <span>KILLS</span>' : '<span>TIME LIMIT</span>'; }
@@ -479,7 +507,7 @@
       if (this.team) t1 = win < 0 ? 'DRAW' : (M && M.team === win ? 'VICTORY' : 'DEFEAT'); else t1 = win < 0 ? 'DRAW' : win === this.me ? 'VICTORY' : 'DEFEAT';
       const sub = this.team ? (win < 0 ? '' : '<span>' + TEAMN[win] + ' TEAM WINS</span>') : (win > 0 && this.pl.get(win) ? '<span translate="no">' + esc(this.pl.get(win).name) + '</span> <span>WINS</span>' : '');
       const mvpP = this.pl.get(mvp);
-      el.innerHTML = '<div class="pv-rbox"><small>' + (this.cfg.kind === 'duel' ? 'DUEL' : this.team ? 'TEAM DEATHMATCH' : 'DEATHMATCH') + '</small><h2 class="' + t1.toLowerCase() + '"><span>' + t1 + '</span></h2><p class="pv-sub">' + sub + '</p>' +
+      el.innerHTML = '<div class="pv-rbox"><small>' + (this.cfg.kind === 'duel' ? 'DUEL' : this.team ? 'TEAM BATTLE' : 'FREE FOR ALL') + '</small><h2 class="' + t1.toLowerCase() + '"><span>' + t1 + '</span></h2><p class="pv-sub">' + sub + '</p>' +
         (mvpP ? '<p class="pv-mvp"><span>MVP</span> <b translate="no">' + esc(mvpP.name) + '</b> <em translate="no">' + mvpP.k + ' / ' + mvpP.d + '</em></p>' : '') +
         '<div class="pv-rt"></div>' + '<p class="pv-kp">' + (kp > 0 ? '<span>REWARD</span> <b translate="no">+' + kp + ' KP</b>' : '') + '</p>' +
         '<div class="pv-bt">' + (this.host ? '<button type="button" data-v="again">PLAY AGAIN</button>' : '<p class="pv-wt"><span>WAITING FOR THE HOST…</span></p>') + '<button type="button" data-v="lobby">BACK TO LOBBY</button></div></div>';
@@ -516,8 +544,10 @@
   MIS.pvpbox = {
     title: 'PVP',
     build(r) {
-      const sp = r.opts && r.opts.coop, cfg = norm(sp && sp.pvp);
-      if (cfg.map === 'yard' && MIS[20] && MIS[20].build) MIS[20].build(r); else { MIS.sandbox.build(r); r.spawn(0, 17, 0); }
+      const sp = r.opts && r.opts.coop, cfg = norm(sp && sp.pvp), PM = window.PvpMaps;
+      const name = PM.M[cfg.map] && cfg.map !== 'rand' && cfg.map !== 'vote' ? cfg.map : POOL[((sp && sp.seed) | 0) % POOL.length];
+      const h = r.__pvmap = PM.load(r, name);
+      if (h.sp && h.sp.length) r.spawn(h.sp[0][0], h.sp[0][1], 0); else if (name === 'hall') r.spawn(0, 17, 0);
     },
     async play(r) {
       const pv = attach(r), co = r.__co;
@@ -545,5 +575,5 @@
     return run;
   };
 
-  window.NexaPvp = { norm, goalOf, GOALS, KINDS, WPNS, MAPS, TEAMC, get active() { return !!cur; }, get state() { return cur ? { phase: cur.phase, rd: cur.rd, tm: cur.tm, tl: cur.tl, pl: Array.from(cur.pl.values()).map((P) => ({ slot: P.slot, team: P.team, k: P.k, d: P.d, alive: P.alive, hp: Math.round(P.hp) })), items: cur.items.map((i) => ({ kind: i.kind, on: i.on, x: i.x, z: i.z })), dead: cur.self.dead, over: cur.over } : null; } };
+  window.NexaPvp = { norm, resolveMap, goalOf, GOALS, KINDS, WPNS, MAPS, POOL, MAPN, TEAMC, get active() { return !!cur; }, get state() { return cur ? { phase: cur.phase, rd: cur.rd, tm: cur.tm, tl: cur.tl, pl: Array.from(cur.pl.values()).map((P) => ({ slot: P.slot, team: P.team, k: P.k, d: P.d, alive: P.alive, hp: Math.round(P.hp) })), items: cur.items.map((i) => ({ kind: i.kind, on: i.on, x: i.x, z: i.z })), dead: cur.self.dead, over: cur.over } : null; } };
 }());

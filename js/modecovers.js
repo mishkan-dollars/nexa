@@ -12,7 +12,7 @@
   };
   const DAY = { 17: 1, 13: 1, 38: 1, 40: 1, 20: 1, 28: 1, 33: 1, 31: 1, 21: 1 };
   const MODES = {
-    sandbox: { t: 'SANDBOX', s: 'CO-OP · WAVES', m: 'range' }, br: { t: 'BATTLE ROYALE', s: 'LAST ONE STANDING', m: 'br' }, ffa: { t: 'DEATHMATCH', s: 'PVP · FREE FOR ALL', m: 'ffa' },
+    sandbox: { t: 'SANDBOX', s: 'CO-OP · WAVES', m: 'range' }, ffa: { t: 'FREE FOR ALL', s: 'PVP · QUICK MATCH', m: 'ffa' },
     team: { t: 'TEAM BATTLE', s: 'PVP · TWO TEAMS', m: 'team' }, duel: { t: 'DUEL', s: 'PVP · 1 VS 1', m: 'duel' }, hl: { t: 'HIGH / LOW', s: 'TABLE GAME', m: 'hl' }, story: { t: 'STORY', s: 'CO-OP MISSIONS 01–48', m: 'story' }
   };
   const cache = new Map();
@@ -228,14 +228,33 @@
       const x = W * 0.5, y = H * 0.44; c.strokeStyle = 'rgba(239,75,69,.85)'; c.lineWidth = 1.5; c.beginPath(); c.arc(x, y, 90, 0, 7); c.moveTo(x - 140, y); c.lineTo(x - 20, y); c.moveTo(x + 20, y); c.lineTo(x + 140, y); c.moveTo(x, y - 140); c.lineTo(x, y - 20); c.moveTo(x, y + 20); c.lineTo(x, y + 140); c.stroke();
       c.beginPath(); c.arc(x, y, 3, 0, 7); c.fillStyle = RED; c.fill(); for (let i = -4; i <= 4; i += 1) { c.beginPath(); c.moveTo(x + i * 18, y - 5); c.lineTo(x + i * 18, y + 5); c.stroke(); }
     },
-    br(c, W, H, rnd) {
-      c.fillStyle = '#060606'; c.fillRect(0, 0, W, H); c.strokeStyle = 'rgba(230,233,230,.06)'; for (let x = 0; x < W; x += 32) { c.beginPath(); c.moveTo(x, 0); c.lineTo(x, H); c.stroke(); } for (let y = 0; y < H; y += 32) { c.beginPath(); c.moveTo(0, y); c.lineTo(W, y); c.stroke(); }
-      const x = W * 0.58, y = H * 0.52;
-      [190, 130, 76].forEach((r, i) => { c.beginPath(); c.arc(x, y, r, 0, 7); c.strokeStyle = i === 0 ? RED : 'rgba(230,233,230,' + (0.45 - i * 0.12) + ')'; c.lineWidth = i === 0 ? 3 : 1.4; c.setLineDash(i === 1 ? [6, 6] : []); c.stroke(); c.setLineDash([]); });
-      c.save(); c.beginPath(); c.rect(0, 0, W, H); c.arc(x, y, 190, 0, 7, true); c.clip('evenodd'); c.fillStyle = 'rgba(239,75,69,.2)'; c.fillRect(0, 0, W, H); c.restore();
-      for (let i = 0; i < 26; i += 1) { const a = rnd() * 7, r = Math.sqrt(rnd()) * 170; c.fillStyle = i < 3 ? RED : 'rgba(230,233,230,.6)'; c.fillRect(x + Math.cos(a) * r - 2, y + Math.sin(a) * r - 2, 4, 4); }
-      c.strokeStyle = 'rgba(230,233,230,.5)'; c.setLineDash([10, 8]); c.beginPath(); c.moveTo(0, H * 0.9); c.lineTo(W, H * 0.12); c.stroke(); c.setLineDash([]);
-      glow(c, x, y, 220, RGLOW, 0.22);
+    depot(c, W, H, rnd) {
+      c.fillStyle = '#060606'; c.fillRect(0, 0, W, H); const b = H * 0.8;
+      for (let r = 0; r < 2; r += 1) for (let k = 0; k < 5; k += 1) { const x = 30 + k * 118 + r * 40, y = b - 54 - r * 50, w = 104; c.fillStyle = (k + r) % 3 === 0 ? '#3a1210' : ['#101010', '#171717'][(k + r) % 2]; c.fillRect(x, y, w, 48); c.strokeStyle = '#333'; c.strokeRect(x + 0.5, y + 0.5, w, 48); for (let q2 = 1; q2 < 6; q2 += 1) { c.fillStyle = 'rgba(0,0,0,.4)'; c.fillRect(x + q2 * 17, y, 2, 48); } }
+      c.fillStyle = '#080808'; c.fillRect(0, b, W, H); c.fillStyle = '#222'; c.fillRect(0, 70, W, 8); c.fillStyle = RED; c.fillRect(0, 66, W, 2); for (let x = 20; x < W; x += 90) { c.fillStyle = '#1a1a1a'; c.fillRect(x, 78, 4, 120); }
+      glow(c, W * 0.2, 20, 160, RGLOW, 0.45); glow(c, W * 0.8, 20, 160, WGLOW, 0.25);
+    },
+    lab_(c, W, H, rnd) {
+      c.fillStyle = '#0a0a0a'; c.fillRect(0, 0, W, H); c.strokeStyle = '#3a3a3a'; c.lineWidth = 3;
+      for (let i = 1; i < 3; i += 1) { c.beginPath(); c.moveTo(W * 0.1 + i * W * 0.267, 30); c.lineTo(W * 0.1 + i * W * 0.267, H - 60); c.moveTo(W * 0.1, 30 + i * (H - 90) / 3); c.lineTo(W * 0.9, 30 + i * (H - 90) / 3); c.stroke(); }
+      for (let i = 0; i < 9; i += 1) { const x = W * 0.1 + (i % 3) * W * 0.267 + W * 0.133, y = 30 + (H - 90) / 6 + ((i / 3) | 0) * (H - 90) / 3; c.fillStyle = i === 4 ? RED : 'rgba(230,233,230,.25)'; c.fillRect(x - 14, y - 3, 28, 6); }
+      glow(c, W * 0.5, H * 0.45, 200, RGLOW, 0.3);
+    },
+    roof(c, W, H, rnd) {
+      M.city(c, W, H, rnd); c.fillStyle = 'rgba(0,0,0,.4)'; c.fillRect(0, 0, W, H); const b = H * 0.8;
+      c.fillStyle = '#0d0d0d'; c.fillRect(0, b - 30, W, 90); c.strokeStyle = '#3a3a3a'; c.strokeRect(0.5, b - 29.5, W, 12);
+      [[90, 70], [330, 90], [500, 60]].forEach((p) => { c.fillStyle = '#161616'; c.fillRect(p[0], b - 30 - p[1] * 0.45, p[1], p[1] * 0.45); c.strokeStyle = '#333'; c.strokeRect(p[0] + 0.5, b - 30 - p[1] * 0.45, p[1], p[1] * 0.45); c.fillStyle = '#050505'; c.fillRect(p[0] + 8, b - 30 - p[1] * 0.45 - 4, p[1] - 16, 4); });
+      c.fillStyle = RED; c.fillRect(W * 0.52, b - 120, 3, 90); glow(c, W * 0.52 + 1, b - 122, 50, RGLOW, 0.8);
+    },
+    rand(c, W, H, rnd) {
+      c.fillStyle = '#060606'; c.fillRect(0, 0, W, H);
+      for (let i = 0; i < 4; i += 1) { const x = 50 + i * 140, y = 70 + (i % 2) * 40; c.fillStyle = '#0d0d0d'; c.fillRect(x, y, 112, 112); c.strokeStyle = i === 1 ? RED : '#3a3a3a'; c.lineWidth = 2; c.strokeRect(x + 0.5, y + 0.5, 112, 112); c.fillStyle = i === 1 ? RED : 'rgba(230,233,230,.55)'; c.font = '900 76px ' + FONT; c.textAlign = 'center'; c.fillText('?', x + 56, y + 84); }
+      glow(c, W * 0.5, H * 0.5, 240, RGLOW, 0.25);
+    },
+    vote(c, W, H, rnd) {
+      c.fillStyle = '#060606'; c.fillRect(0, 0, W, H);
+      [0.7, 0.45, 0.9, 0.3].forEach((v, i) => { const x = 60 + i * 135, h = 190 * v; c.fillStyle = i === 2 ? RED : '#1b1b1b'; c.fillRect(x, 250 - h, 100, h); c.strokeStyle = '#444'; c.strokeRect(x + 0.5, 250 - h + 0.5, 100, h); c.fillStyle = '#e6e9e6'; for (let k = 0; k < Math.round(v * 5); k += 1) c.fillRect(x + 12 + k * 17, 260, 9, 12); });
+      glow(c, W * 0.75, H * 0.4, 220, RGLOW, 0.3);
     },
     ffa(c, W, H, rnd) {
       c.fillStyle = '#060606'; c.fillRect(0, 0, W, H); const x = W * 0.58, y = H * 0.48;
@@ -344,6 +363,9 @@
       info = { num: id, title: String(meta.title || 'MISSION ' + id).toUpperCase(), sub: '', tag: 'CO-OP' };
       motif = MOTIF[id] || 'tunnel'; rnd = mulberry(id * 7919 + 13); day = !!DAY[id] || meta.theme === 'day';
       if (id === 48) { finale(c, W, H, rnd); noise(c, w, h, mulberry(48), 0.06); return cv; }
+    } else if (key.indexOf('map:') === 0) {
+      const nm = key.slice(4), t = { depot: ['DEPOT', 'depot'], lab: ['LAB', 'lab_'], roof: ['ROOF', 'roof'], hall: ['TRAINING HALL', 'range'], yard: ['SCRAPYARD', 'yard'], rand: ['RANDOM MAP', 'rand'], vote: ['MAP VOTE', 'vote'] }[nm] || ['MAP', 'range'];
+      info = { num: 0, title: t[0], sub: 'PVP MAP', tag: 'NEXA/OS' }; motif = t[1]; rnd = mulberry(hash(key));
     } else {
       const m = MODES[key.slice(5)] || MODES.sandbox; info = { num: 0, title: m.t, sub: m.s, tag: 'NEXA/OS' }; motif = m.m; rnd = mulberry(hash(key));
     }

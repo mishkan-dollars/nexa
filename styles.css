@@ -1385,16 +1385,6 @@ body.in-online .terminal { animation: none !important; transform: none !importan
 @keyframes olIn { from { opacity: 0; transform: translateY(-6px); } }
 .ol-modal { position: absolute; inset: 0; z-index: 16; display: grid; place-items: center; background: rgba(0,0,0,.72); padding: 12px; }
 .ol-modal[hidden] { display: none; }
-.pk-box { width: min(780px, 100%); max-height: 88vh; overflow: auto; background: #0b0d11; border: 1px solid #3a3f48; border-radius: 10px; padding: 14px 16px 16px; }
-.pk-h { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; } .pk-h h3 { margin: 0; font-size: 28px; letter-spacing: .12em; }
-.pk-sb { width: 100%; text-align: left; background: #1d2027; border: 2px solid #3a3f48; color: #fff; border-radius: 8px; padding: 10px 14px; display: grid; }
-.pk-sb b { font-size: 22px; letter-spacing: .08em; } .pk-sb small { color: #9aa2ad; font-size: 15px; letter-spacing: .08em; }
-.pk-sb.on, .pk-m.on { border-color: var(--yel); background: #2a2810; }
-.pk-t { margin: 14px 0 6px; font-size: 15px; letter-spacing: .2em; color: #9aa2ad; }
-.pk-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(158px, 1fr)); gap: 6px; }
-.pk-m { text-align: left; display: flex; gap: 8px; align-items: baseline; background: #14161b; border: 2px solid #2a2d34; color: #fff; border-radius: 6px; padding: 6px 10px; }
-.pk-m b { color: var(--acc); font-size: 18px; } .pk-m span { font-size: 15px; letter-spacing: .04em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pk-m:hover, .pk-sb:hover { border-color: #8a909c; }
 
 @media (max-width: 720px) {
   .ol { font-size: 16px; }
@@ -1452,7 +1442,6 @@ body.in-online .terminal { animation: none !important; transform: none !importan
 .ol-plat { background: radial-gradient(ellipse at 50% 40%, #232323 0, #121212 68%, #080808 100%); }
 .ol-fig svg { filter: none; }
 .ol-tag .tg-l { border-color: rgba(255,255,255,.35); }
-.pk-sb.on, .pk-m.on { background: #1e1e1e; }
 .nx-in input { border-color: #f2f2f2; } .nx-in button { background: #f2f2f2; } .nx-tag small { color: #ef4b45; }
 
 /* ---- онлайн-лобби: комната из нескольких игроков, публичные комнаты, серверы сигналинга, карточка профиля, эмоции, подключение по ссылке ---- */
