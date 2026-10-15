@@ -99,7 +99,7 @@
   }
   function ack(e, r) {
     lastAck[e.id] = { r, t: Date.now() };
-    const c = JSON.stringify({ ok: 1, n: r.n, b: r.bal, i: r.id });
+    const c = JSON.stringify({ ok: 1, n: r.n, b: r.bal, i: r.id, p: r.bal - r.n });
     const o = T.ident.event(KIND.ack, [['p', ADM], ['e', e.id]], c), o2 = T.ident.event(27791, [['p', ADM], ['e', e.id]], c);
     if (o) { chSend(['EVENT', o]); SO.publish(o); }
     if (o2) chSend(['EVENT', o2]);
@@ -117,7 +117,7 @@
     const why = r.ok ? '' : r.err === 'LOCKED' ? r.why : r.err;
     log('grant', e.id.slice(0, 8), r.ok ? 'applied ' + r.n : 'refused ' + why);
     if (r.ok) { CH.seen.add(e.id); delete pending[e.id]; D.granted += 1; D.why = ''; if (window.NexaGift && NexaGift.add({ id: 'a' + r.id, k: 'a', a: r.n })) { /* подарок покажет gift.js */ } else toast(X('grant', { n: r.n })); ack(e, r); emit('grant'); }
-    else if (r.err === 'LOCKED') { D.why = why; nack(e, why); if (!pending[e.id]) { pending[e.id] = e; toast(X('locked')); } }
+    else if (r.err === 'LOCKED' || r.err === 'STORE' || r.err === 'VERIFY') { D.why = why; nack(e, why); if (!pending[e.id]) { pending[e.id] = e; toast(X('locked')); } }
     else { CH.seen.add(e.id); delete pending[e.id]; if (r.err === 'DUP') ack(e, { n: 0, bal: T.credits, id: '' }); else { D.refused += 1; D.why = why; nack(e, why); rej('grant: ' + r.err); } }
   }
   function retry() { Object.keys(pending).forEach((id) => applyGrant(pending[id])); }

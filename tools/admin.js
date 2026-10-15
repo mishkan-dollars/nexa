@@ -100,7 +100,7 @@
       if (g && g.to === e.pubkey && c.ok === 0) {
         g.seen = true; if (g.why !== c.w) { g.why = c.w; log('не применено', short(g.to) + ' · ' + g.n + ' KP · ' + (WHY[c.w] || c.w) + (c.f ? ' · флаги: ' + flagTxt(c.f) : '')); }
         drawGrants();
-      } else if (g && g.to === e.pubkey && !g.ack) { g.ack = true; g.seen = true; log('подтверждено', short(g.to) + ' получил ' + g.n + ' KP'); drawGrants(); }
+      } else if (g && g.to === e.pubkey && !g.ack) { g.ack = true; g.seen = true; g.bal = c.n > 0 && Number.isInteger(c.b) ? [c.b - c.n, c.b] : null; log('подтверждено', short(g.to) + ' получил ' + g.n + ' KP' + (g.bal ? ' · баланс игрока: ' + g.bal[0] + ' → ' + g.bal[1] : (Number.isInteger(c.b) ? ' · баланс игрока: ' + c.b : ''))); drawGrants(); }
     } else if ((e.kind === KB || e.kind === KB2) && e.pubkey === key.pk && e.created_at > banAt) {
       const c = jp(e.content, null); if (c && c.bans) { bans = {}; c.bans.forEach((b) => { if (b && HEX64.test(b.k)) bans[b.k] = { r: b.r || '', u: b.u | 0 }; }); avb = {}; (c.av || []).forEach((b) => { if (b && HEX64.test(b.k)) avb[b.k] = { r: b.r || '', u: b.u | 0 }; }); drawAv(); banAt = e.created_at; saveBans(); drawBans(); }
     } else if (e.kind === KPROF) {
@@ -146,9 +146,9 @@
     }, 5000);
   }
 
-  const WHY = { SINGLE: 'игра открыта в другой вкладке (нужна главная вкладка)', INTEG: 'файлы игры изменены', SIG: 'подпись не сходится: ключ админки не совпадает с js/adminkey.js игры', EXPIRED: 'грант просрочен (часы игрока/админа расходятся?)', BAD: 'неверный формат или расхождение часов более 2 мин', TARGET: 'грант для другого ID', AMOUNT: 'сумма вне лимита', CAP: 'потолок баланса' };
+  const WHY = { SINGLE: 'игра открыта в другой вкладке (нужна главная вкладка)', INTEG: 'файлы игры изменены', SIG: 'подпись не сходится: ключ админки не совпадает с js/adminkey.js игры', EXPIRED: 'грант просрочен (часы игрока/админа расходятся?)', BAD: 'неверный формат или расхождение часов более 2 мин', TARGET: 'грант для другого ID', AMOUNT: 'сумма вне лимита', CAP: 'потолок баланса', STORE: 'не удалось записать в хранилище игрока (nonce не сожжён, повтор позже)', VERIFY: 'запись в хранилище не прошла проверку (nonce не сожжён)' };
   function gStatus(g) {
-    if (g.ack) return '<span class="ok">применено</span>';
+    if (g.ack) return '<span class="ok">применено' + (g.bal ? ', баланс ' + g.bal[0] + ' → ' + g.bal[1] : '') + '</span>';
     if (g.seen) return '<span class="bad">доставлено, не применено: ' + esc(WHY[g.why] || g.why || '?') + '</span>';
     if (g.dead) return '<span class="bad">нет ответа 10 мин</span>';
     return '<span class="mu">отправлено в ' + g.relays + ' релеев, ждём ответ</span>';

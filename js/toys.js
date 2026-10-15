@@ -140,14 +140,31 @@
       ST.set(BK, js); ST.set(KEY, js);
       DEV.q = q; DEV.h = r.h; lastRec = r; saveDev();
     } catch (e) { /* ignore */ }
+    announce();
+  }
+  let lastAnn = -1;
+  function announce() {
+    const c = S.credits; if (c === lastAnn) return; lastAnn = c;
+    try { document.dispatchEvent(new CustomEvent('nexacredits', { detail: c })); } catch (e) { /* ok */ }
+  }
+  function paintBal() {
+    document.querySelectorAll('.session-tag strong').forEach((e) => { if (/CR$/.test(e.textContent)) e.textContent = S.credits + ' CR'; });
+  }
+  document.addEventListener('nexacredits', paintBal);
+  function verifyRec() {
+    const raw = ST.get(KEY); if (!raw) return 'STORE';
+    let r; try { r = JSON.parse(raw); } catch (e) { return 'STORE'; }
+    if (!r || r.h !== (lastRec && lastRec.h)) return 'STORE';
+    const g = readRec(raw); return g && g.d.credits === S.credits ? '' : 'VERIFY';
   }
   S = load();
   if (devNew || tampered) save();
+  lastAnn = S.credits;
   function sync() {
     let d; try { d = JSON.parse(ST.get(DK)); } catch (e) { return; }
     if (!d || !(d.q > DEV.q)) return;
     const t0 = tampered; DEV.q = d.q | 0; DEV.h = String(d.h || '');
-    const n = load(); if (tampered === t0) S = n;
+    const n = load(); if (tampered === t0) { S = n; announce(); }
   }
   window.addEventListener('storage', (e) => { if (e.key === DK || e.key === KEY) sync(); });
 
@@ -620,7 +637,10 @@
       const why = !SG || !SG.owner() ? 'SINGLE' : (GD && !GD.state().integ ? 'INTEG' : '');
       if (why) return { ok: false, err: 'LOCKED', why };
       if (S.credits + n > 1e9) return { ok: false, err: 'CAP' };
-      S.adm.push(gid); S.adm = S.adm.slice(-300); S.credits += n; save();
+      const adm0 = S.adm, cr0 = S.credits;
+      S.adm = S.adm.concat(gid).slice(-300); S.credits = cr0 + n; save();
+      const bad = verifyRec();
+      if (bad) { S.adm = adm0; S.credits = cr0; save(); return { ok: false, err: bad }; }
       return { ok: true, n, id: gid, bal: S.credits };
     },
     rankReward(place) {

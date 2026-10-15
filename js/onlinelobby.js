@@ -206,6 +206,7 @@
     updKP();
   }
   const kp = () => { try { return window.Toys ? Toys.credits | 0 : 0; } catch (e) { return 0; } };
+  document.addEventListener('nexacredits', () => { try { updKP(); } catch (e) { /* ok */ } });
   function updKP() {
     const e = $('#ol-kp b'); if (e) e.textContent = String(kp());
     const b = $('#tr-bal'); if (b) b.textContent = String(kp());
