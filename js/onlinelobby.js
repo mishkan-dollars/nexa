@@ -144,7 +144,7 @@
     '<section class="ol-pane ol-sheet" data-pane="trade"><div class="sh-in">' +
       '<div class="pb-top"><h3>TRADES</h3><div class="tr-bal"><small>YOUR BALANCE</small><b id="tr-bal" translate="no">0</b><em>KP</em></div></div>' +
       '<p class="cn-priv">You can send KP only to players who are in your room right now. Every transfer is confirmed first; the host checks it and a duplicate or negative amount is rejected.</p>' +
-      '<p class="v-note" id="tr-note"></p><div class="pb-list" id="tr-list" role="list"></div>' +
+      '<p class="v-note" id="tr-note"></p><input id="tr-msg" type="text" maxlength="80" autocomplete="off" spellcheck="false" aria-label="Message"><div class="pb-list" id="tr-list" role="list"></div>' +
     '</div></section>' +
     // -------- SOCIAL: друзья, чат, рейтинг, кланы (js/social.js)
     '<section class="ol-pane ol-sheet" data-pane="social"><div class="sh-in"><div class="sc-root" id="sc-root"></div></div></section>' +
@@ -661,6 +661,14 @@
   // ------------------------------------------------------------------ вкладка TRADES: передача KP игрокам комнаты (хост — авторитет, дубли и отрицательные суммы отклоняются)
   const validAmt = (n) => Number.isInteger(n) && n >= 1 && n <= 1000000;
   const validTid = (t) => typeof t === 'string' && /^[0-9a-f]{12}$/.test(t);
+  const GF = () => window.NexaGift;
+  const gmsg = (m) => (typeof m === 'string' && GF() ? GF().clean(m, 80) : '');
+  const tp = (a, m) => (m ? a.concat([m]) : a);
+  function giftIn(src, amt, tid, msg) {
+    const g = GF(); if (!g) return;
+    const q = NN.players.find((x) => x.slot === src);
+    g.add({ id: 't' + tid, k: 'p', n: q ? q.name : 'HOST', c: q ? q.color : '#ff3b30', p: q ? q.pid : '', m: msg, a: amt });
+  }
   function renderTrade() {
     const box = $('#tr-list'); if (!box) return;
     updKP(); box.textContent = '';
@@ -683,7 +691,7 @@
     if (!validAmt(amt)) { nt.textContent = NN.text('TRADE_AMT'); return; }
     if (amt > kp()) { nt.textContent = NN.text('TRADE_FUNDS'); return; }
     nt.textContent = ''; nt.className = 'v-note';
-    L.tradeAsk = { slot, amt };
+    const mi = $('#tr-msg'); L.tradeAsk = { slot, amt, msg: mi ? gmsg(mi.value) : '' };
     const el = $('#ol-trade'); el.textContent = '';
     const box = mkp('div', 'pk-box jn-box'); box.appendChild(mkp('h3', '', 'CONFIRM TRANSFER'));
     const p = mkp('p', 'jn-st'); const b1 = mkp('b', '', String(amt)); b1.setAttribute('translate', 'no'); const ar = mkp('span', '', ' KP → '); const b2 = mkp('b', '', q.name); b2.setAttribute('translate', 'no'); p.appendChild(b1); p.appendChild(ar); p.appendChild(b2); box.appendChild(p);
@@ -701,20 +709,20 @@
     if (!VAULT || !VAULT.debit(a.amt)) { toast(NN.text('TRADE_FUNDS'), 'bad'); return; }
     TRD.sent[tid] = { slot: a.slot, amt: a.amt, name: q.name };
     updKP();
-    if (NN.isHost) trRoute(1, a.slot, a.amt, tid); else { const t = Date.now(), bal = kp(); NN.sendAction({ type: 'trq', dst: a.slot, amt: a.amt, tid, t, bal, sg: sg(SIG.mine, ['trq', a.slot, a.amt, tid, t, bal]) }); }
+    if (NN.isHost) trRoute(1, a.slot, a.amt, tid, a.msg); else { const t = Date.now(), bal = kp(); NN.sendAction({ type: 'trq', dst: a.slot, amt: a.amt, tid, t, bal, msg: a.msg || undefined, sg: sg(SIG.mine, tp(['trq', a.slot, a.amt, tid, t, bal], a.msg)) }); }
     toast('TRANSFER SENT — WAITING FOR CONFIRMATION');
   }
   function trResult(src, tid, ok, amt) { if (src === 1) onTrf({ tid, ok, amt }); else NN.sendAction({ type: 'trf', tid, ok: ok ? 1 : 0, amt, sg: sg(SIG.key[src], ['trf', tid, ok ? 1 : 0, amt]) }, { to: src }); }
-  function trRoute(src, dst, amt, tid) {                       // только хост
+  function trRoute(src, dst, amt, tid, msg) {                       // только хост
     if (!TRADES_ENABLED) { trResult(src, tid, false, 0); return; }
     const key = src + ':' + tid;
     if (TRD.hseen.has(key)) return;
     TRD.hseen.add(key); if (TRD.hseen.size > 500) TRD.hseen.clear();
     if (!validTid(tid) || !validAmt(amt) || dst === src || !window.Toys) { trResult(src, tid, false, 0); return; }
-    if (dst === 1) { if (!VAULT || !VAULT.credit(amt)) { trResult(src, tid, false, 0); return; } toastFrom(src, amt); updKP(); trResult(src, tid, true, amt); return; }
+    if (dst === 1) { if (!VAULT || !VAULT.credit(amt)) { trResult(src, tid, false, 0); return; } toastFrom(src, amt); giftIn(src, amt, tid, msg || ''); updKP(); trResult(src, tid, true, amt); return; }
     if (!NN.players.some((q) => q.slot === dst)) { trResult(src, tid, false, 0); return; }
     TRD.route[tid] = { src, dst, amt };
-    const t = Date.now(); NN.sendAction({ type: 'trd', src, amt, tid, t, sg: sg(SIG.key[dst], ['trd', src, amt, tid, t]) }, { to: dst });
+    const t = Date.now(); NN.sendAction({ type: 'trd', src, amt, tid, t, msg: msg || undefined, sg: sg(SIG.key[dst], tp(['trd', src, amt, tid, t], msg)) }, { to: dst });
   }
   function toastFrom(src, amt) { const q = src === 1 ? null : NN.players.find((x) => x.slot === src); if (root) toast('+' + amt + ' KP — ' + (q ? q.name : 'HOST')); }
   function onTrf(p) {
@@ -730,15 +738,17 @@
       if (!NN.isHost) return;
       const src = p.from | 0;
       if (!TRADES_ENABLED) { if (validTid(p.tid)) trResult(src, p.tid, false, 0); return; }
-      if (!sgOk(SIG.key[src], ['trq', p.dst, p.amt, p.tid, p.t, p.bal], p.sg) || !tOk(p.t) || !validAmt(p.amt)) return;
+      const rm = typeof p.msg === 'string' ? p.msg.slice(0, 240) : '';
+      if (!sgOk(SIG.key[src], tp(['trq', p.dst, p.amt, p.tid, p.t, p.bal], rm), p.sg) || !tOk(p.t) || !validAmt(p.amt)) return;
       if (!TRD.hseen.has(src + ':' + p.tid) && !ledgerOk(src, p.amt, p.bal)) { TRD.hseen.add(src + ':' + p.tid); trResult(src, p.tid, false, 0); return; }
-      trRoute(src, p.dst | 0, p.amt, p.tid);
+      trRoute(src, p.dst | 0, p.amt, p.tid, gmsg(rm));
     });
     NN.on('trd', (p) => {
       if (!TRADES_ENABLED || (p.from | 0) !== 1 || NN.isHost || !validTid(p.tid) || !validAmt(p.amt) || TRD.seen.has(p.tid)) return;
-      if (!sgOk(SIG.mine, ['trd', p.src | 0, p.amt, p.tid, p.t], p.sg) || !tOk(p.t)) return;
+      const rm = typeof p.msg === 'string' ? p.msg.slice(0, 240) : '';
+      if (!sgOk(SIG.mine, tp(['trd', p.src | 0, p.amt, p.tid, p.t], rm), p.sg) || !tOk(p.t)) return;
       TRD.seen.add(p.tid); if (TRD.seen.size > 500) TRD.seen.clear();
-      if (VAULT && VAULT.credit(p.amt)) { toastFrom(p.src | 0, p.amt); updKP(); }
+      if (VAULT && VAULT.credit(p.amt)) { toastFrom(p.src | 0, p.amt); giftIn(p.src | 0, p.amt, p.tid, gmsg(rm)); updKP(); }
       NN.sendAction({ type: 'tra', src: p.src | 0, tid: p.tid, amt: p.amt, sg: sg(SIG.mine, ['tra', p.src | 0, p.tid, p.amt]) });
     });
     NN.on('tra', (p) => {
