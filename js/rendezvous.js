@@ -120,14 +120,16 @@
       ev.tags.forEach((x) => { if (x[0] === 'r' && x[1]) add(x[1]); });
     }
   }
-  const DS = { running: false, rounds: 0, last: 0 };
+  const rdv = (msg) => { try { console.info('[rdv] ' + msg); } catch (e) { /* ok */ } };
+  const DS = { running: false, rounds: 0, last: 0, rep: [] };
   // один релей: по каждому виду событий листаем назад по времени (until), пока приходят новые страницы
-  function pageRelay(url, add, budget) {
+  function pageRelay(url, add, budget, rp) {
     return new Promise((res) => {
       let ws, done = false, total = 0;
-      const fin = () => { if (done) return; done = true; clearTimeout(tm); try { ws && ws.close(); } catch (e) { /* ok */ } res(); };
+      rp = rp || {};
+      const fin = () => { if (done) return; done = true; rp.ev = total; if (!rp.open && !rp.err) rp.err = 'timeout'; clearTimeout(tm); try { ws && ws.close(); } catch (e) { /* ok */ } res(); };
       const tm = setTimeout(fin, budget || 20000);
-      try { ws = new WebSocket(url); } catch (e) { fin(); return; }
+      try { ws = new WebSocket(url); } catch (e) { rp.err = String(e && e.message || e).slice(0, 60); fin(); return; }
       const plan = []; [30166, 10002].forEach((k) => plan.push({ kind: k, until: 0, page: 0 }));
       let cur = null, n = 0, oldest = 0, pend = 0;
       const next = () => {
@@ -136,10 +138,11 @@
         const f = { kinds: [cur.kind], limit: 700 }; if (cur.until) f.until = cur.until;
         try { ws.send(JSON.stringify(['REQ', 'nxd', f])); } catch (e) { fin(); }
       };
-      ws.onopen = next;
+      ws.onopen = () => { rp.open = true; next(); };
       ws.onmessage = (m) => {
         let j; try { j = JSON.parse(m.data); } catch (e) { return; }
         if (!Array.isArray(j)) return;
+        if (j[0] === 'NOTICE' && !rp.note) rp.note = String(j[1] || '').slice(0, 60);
         if (j[0] === 'EVENT' && j[2] && total < 12000) { n += 1; total += 1; const t = j[2].created_at | 0; if (t && (!oldest || t < oldest)) oldest = t; discEvent(j[2], add); }
         else if (j[0] === 'EOSE' || j[0] === 'CLOSED') {
           try { ws.send(JSON.stringify(['CLOSE', 'nxd'])); } catch (e) { /* ok */ }
@@ -147,36 +150,45 @@
           next();
         }
       };
-      ws.onerror = fin; ws.onclose = fin;
+      ws.onerror = () => { if (!rp.open) rp.err = 'ws error'; fin(); }; ws.onclose = () => { if (!rp.open && !rp.err) rp.err = 'closed'; fin(); };
     });
   }
   // раунды: сначала проверенные релеи, затем найденные и ответившие; повторяем, пока приток новых адресов не иссякнет (потолок 4 раунда)
   function discover(force) {
     if (DS.running || !serversOn()) return Promise.resolve(0);
-    if (!force && Date.now() - DISC.t < 6 * 3600000 && Object.keys(DISC.list).length > 50) return Promise.resolve(0);
-    DS.running = true; DS.rounds = 0;
+    const few = summary().online < 15;
+    if (!force && !few && Date.now() - DISC.t < 6 * 3600000 && Object.keys(DISC.list).length > 50) return Promise.resolve(0);
+    if (!force && Date.now() - DS.last < (Object.keys(DISC.list).length ? 120000 : 180000)) return Promise.resolve(0);
+    DS.running = true; DS.rounds = 0; DS.last = Date.now(); DS.rep = [];
     const used = new Set();
     let added = 0;
     const add = (u) => { const c = cleanRelay(u); if (!c) return; if (!DISC.list[c]) { added += 1; roundNew += 1; } DISC.list[c] = Date.now(); };
     let roundNew = 0;
     const pickSrc = (first) => {
       let list;
-      if (first) list = (paramList('discrelay') || paramList('relay') || (SV.NOSTR_VERIFIED || []).filter((u) => { const r = store[u]; return !r || r.ok || !fresh(r); })).slice(0, 6);
-      else list = Object.keys(DISC.list).filter((u) => !used.has(u) && store[u] && store[u].ok && fresh(store[u])).slice(0, 6);
+      if (first) {
+        list = paramList('discrelay') || paramList('relay') || (SV.NOSTR_VERIFIED || []).filter((u) => { const r = store[u]; return !r || r.ok || !fresh(r); });
+        if (!list.length) list = Object.keys(store).filter((u) => store[u].ok && fresh(store[u])).sort((a, b) => store[a].ms - store[b].ms);
+        if (!list.length) list = (SV.NOSTR_VERIFIED || []).concat(SV.NOSTR_CANDIDATES || []);
+        list = list.slice(0, 6);
+      } else list = Object.keys(DISC.list).filter((u) => !used.has(u) && store[u] && store[u].ok && fresh(store[u])).slice(0, 6);
       return list.filter((u) => !used.has(u));
     };
     const round = async (first) => {
       const src = pickSrc(first); if (!src.length) return;
       src.forEach((u) => used.add(u)); roundNew = 0; DS.rounds += 1;
-      await Promise.all(src.map((u) => pageRelay(u, add)));
+      await Promise.all(src.map((u) => { const rp = {}; DS.rep.push({ u, rp }); return pageRelay(u, add, 0, rp); }));
       saveDisc(); seAt = 0; emitServers();
     };
     return (async () => {
       try {
         await round(true);
         for (let i = 0; i < 3 && roundNew >= 20; i += 1) { await probe(false, 48); await round(false); }
-      } catch (e) { /* ok */ }
-      DS.running = false; DISC.t = Date.now(); saveDisc(); seAt = 0; emitServers(); return added;
+      } catch (e) { rdv('discover: ' + (e && e.message || e)); }
+      DS.running = false; if (Object.keys(DISC.list).length) DISC.t = Date.now(); saveDisc(); seAt = 0; emitServers();
+      const okN = DS.rep.filter((x) => x.rp.open).length;
+      rdv('discover: +' + added + ', всего ' + discUrls().length + ', релеев опрошено ' + DS.rep.length + ', открылось ' + okN + (okN ? '' : ' (' + DS.rep.slice(0, 4).map((x) => x.rp.err || '?').join(', ') + ')') + (added || !okN ? '' : ', события: ' + DS.rep.reduce((a, x) => a + (x.rp.ev || 0), 0)));
+      return added;
     })();
   }
   // [{url, type:'tracker'|'nostr'}]: параметры ?tracker= / ?relay= (через запятую) или localStorage 'nexaTrackers' / 'nexaRelays' заменяют списки по умолчанию
@@ -489,9 +501,9 @@
     return probing;
   }
   // фоновый монитор: сразу и раз в 4 минуты. Работает только если игрок согласился на публичный режим или комнаты уже используются (до этого сторонних серверов не трогаем)
-  const MON = { t: 0, last: 0 };
+  const MON = { t: 0, last: 0, use: false };
   const inUse = () => !!(hostR || joinR || quickR || G.on);
-  const monitorOk = () => serversOn() && (consented() || inUse());
+  const monitorOk = () => serversOn() && (consented() || inUse() || MON.use);
   function monitorTick() {
     if (!monitorOk()) return;
     discover(false);
@@ -499,8 +511,8 @@
     probe(false, pending > 24 ? 64 : consented() ? 24 : 12);
   }   // без согласия, только при использовании комнат: не больше 12 серверов
   const monitor = {
-    start() { if (MON.t || !monitorOk()) return; monitorTick(); MON.t = setInterval(monitorTick, 40000); },       // каждый заход — до 24 непроверенных (по приоритету), проверенные живут 30 минут
-    stop() { clearInterval(MON.t); MON.t = 0; },
+    start(use) { if (use) MON.use = true; if (MON.t || !monitorOk()) return; monitorTick(); MON.t = setInterval(monitorTick, 40000); },       // каждый заход — до 24 непроверенных (по приоритету), проверенные живут 30 минут
+    stop() { clearInterval(MON.t); MON.t = 0; MON.use = false; },
     get running() { return !!MON.t; }
   };
 
@@ -689,7 +701,7 @@
     if (!id) return { ok: false, err: 'ROOM_NAME_BAD' };
     if (!serversOn()) return { ok: false, err: 'SERVERS_OFF' };
     if (typeof RTCPeerConnection !== 'function') return { ok: false, err: 'UNSUPPORTED' };
-    NN.begin('host'); NN.setMax(opts.max || NN.MAX_PLAYERS); monitor.start();
+    NN.begin('host'); NN.setMax(opts.max || NN.MAX_PLAYERS); monitor.start(true);
     Object.assign(H, { id, pub: !!opts.pub, title: String(opts.title || '').slice(0, 24), mode: opts.mode === 'mission' ? 'mission' : opts.mode === 'br' ? 'br' : 'sandbox', mission: Math.max(1, Math.min(48, opts.mission | 0 || 1)) });
     H.startedAt = now();
     const byPid = new Map();
@@ -729,7 +741,6 @@
   // Один транспорт на все раунды: серверы ядра остаются подключёнными, раунд = новые offer'ы (новый ICE) + расширение набора серверов (ядро -> ядро2 -> все).
   const JOIN_TRIES = 3;
   const LAST = { role: '', id: '', ok: null, rounds: 0, ms: 0, via: '', up: 0, total: 0, why: '', log: [] };
-  const rdv = (msg) => { try { console.info('[rdv] ' + msg); } catch (e) { /* ok */ } };
   async function joinRoom(id, opts) {
     opts = opts || {};
     { const bg = NN.banGate(); if (bg) { emit('join', { stage: 'error', err: 'BANNED' }); return bg; } }
@@ -738,7 +749,7 @@
     if (!id) { emit('join', { stage: 'error', err: 'ROOM_BAD' }); return { ok: false, err: 'ROOM_BAD' }; }
     if (!serversOn()) { emit('join', { stage: 'error', err: 'SERVERS_OFF' }); return { ok: false, err: 'SERVERS_OFF' }; }
     if (typeof RTCPeerConnection !== 'function') { emit('join', { stage: 'error', err: 'UNSUPPORTED' }); return { ok: false, err: 'UNSUPPORTED' }; }
-    NN.begin('guest'); monitor.start();
+    NN.begin('guest'); monitor.start(true);
     Object.assign(J, { id, t0: now(), stage: 'searching', got: false, attempt: 1, tier: 0, pid: randBin(20), of: opts.tries || JOIN_TRIES, roundMs: opts.roundMs || (opts.timeoutMs ? Math.floor(opts.timeoutMs / (opts.tries || JOIN_TRIES)) : (NN.config.roundMs || 9000)) });
     Object.assign(LAST, { role: 'guest', id, ok: null, rounds: 1, ms: 0, via: '', up: 0, total: 0, why: '', log: [] });
     await joinRound();
