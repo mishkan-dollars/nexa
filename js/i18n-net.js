@@ -18,6 +18,8 @@
     '@net:RETRY MISSION': ['ПОВТОРИТЬ ЗАДАНИЕ', 'AUFTRAG WIEDERHOLEN'],
     '@net:BACK TO LOBBY': ['В ЛОББИ', 'ZUR LOBBY'],
     '@net:WAITING FOR THE HOST…': ['ЖДЁМ РЕШЕНИЯ ХОСТА…', 'WARTE AUF DEN HOST…'],
+    '@net:COPY NETWORK REPORT': ['СКОПИРОВАТЬ ОТЧЁТ СЕТИ', 'NETZWERKBERICHT KOPIEREN'],
+    'REPORT COPIED': ['ОТЧЁТ СКОПИРОВАН', 'BERICHT KOPIERT'],
     'ONLINE LOBBY': ['ОНЛАЙН ЛОББИ', 'ONLINE-LOBBY'],
     '@net:PLAY': ['ИГРАТЬ', 'SPIELEN'],
     '@net:PROFILE': ['ПРОФИЛЬ', 'PROFIL'],

@@ -158,7 +158,7 @@
     // -------- CONNECTION
     '<section class="ol-pane ol-sheet" data-pane="connect"><div class="sh-in">' +
       '<ol class="cn-steps" id="cn-steps"><li>INVITE</li><li>ANSWER</li><li>LINK</li><li>PLAY</li></ol>' +
-      '<div class="cn-bar"><b id="cn-state">NOT CONNECTED</b><span id="cn-time" translate="no"></span><button type="button" class="ol-btn danger" data-act="disconnect" id="cn-dis" hidden>DISCONNECT</button></div>' +
+      '<div class="cn-bar"><b id="cn-state">NOT CONNECTED</b><span id="cn-time" translate="no"></span><button type="button" class="ol-btn danger" data-act="disconnect" id="cn-dis" hidden>DISCONNECT</button><button type="button" class="ol-btn" data-act="net-report" id="cn-rep">COPY NETWORK REPORT</button></div>' +
       '<article class="cn-card cn-room" id="cn-room"><h3>ONE-CLICK INVITE LINK</h3><p class="cn-p">Create a room and send the link. Your friend opens it and connects automatically — no codes. Several friends can join one link (up to 6 players).</p>' +
         '<button type="button" class="ol-btn big" data-act="room-create" id="rm-create">CREATE ROOM LINK</button>' +
         '<div class="cn-out" id="rm-out" hidden><label for="rm-link">ROOM LINK</label><textarea id="rm-link" readonly rows="2" spellcheck="false"></textarea>' +
@@ -526,6 +526,27 @@
     const done = () => { toast(label || 'COPIED'); L.copied = Date.now(); };
     const fb = () => { try { el.focus(); el.select(); const ok = document.execCommand && document.execCommand('copy'); if (ok) done(); else toast('PRESS CTRL+C TO COPY', 'bad'); } catch (e) { toast('PRESS CTRL+C TO COPY', 'bad'); } };
     try { if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(el.value).then(done, fb); else fb(); } catch (e) { fb(); }
+  }
+  function netReport() {
+    const ls = NN.linkStats ? NN.linkStats() : null, sm = RM && RM.servers ? RM.servers.summary() : null, st = NN.stats ? NN.stats() : {};
+    const sv = (n) => { const e = document.querySelector('script[src*="' + n + '"]'), m = e && /[?&]v=([\w.]+)/.exec(e.getAttribute('src')); return m ? m[1] : '?'; };
+    const q = /[?&]v=([\w.]+)/.exec(location.search);
+    const a = ['NEXA network report', 'time: ' + new Date().toISOString(), 'game: net.js v' + sv('net.js') + ', onlinelobby.js v' + sv('onlinelobby.js') + (q ? ', url v=' + q[1] : ''),
+      'userAgent: ' + navigator.userAgent, 'language: ' + (navigator.language || '?'), 'state: ' + NN.state + ', role: ' + (NN.role || '-') + ', uptime: ' + (st.up | 0) + ' s',
+      'mode: ' + L.mode + (L.mode === 'mission' ? ' ' + L.mission : '') + (window.NexaCoop && NexaCoop.active ? ' (in match)' : ''), 'players: ' + (NN.connected ? NN.players.length + 1 : 1),
+      'relays online/total: ' + (sm ? sm.online + '/' + sm.total + ' (found ' + sm.found + ', in use ' + sm.active + ', down ' + sm.down + ')' : 'n/a'), 'rtt: ' + (NN.rtt || 0) + ' ms'];
+    if (ls) {
+      a.push('dropBuf: ' + ls.dropBuf);
+      if (!ls.links.length) a.push('links: none');
+      ls.links.forEach((l) => a.push('link #' + l.slot + ': path=' + (l.path || '?') + ' (' + (l.ct || '?') + ') ice-rtt=' + l.ice + ' ms, ping min/avg/p95/max=' + l.min + '/' + l.avg + '/' + l.p95 + '/' + l.max + ' ms'));
+    }
+    if (window.NexaCoop && NexaCoop.puppetStats) { const t = NexaCoop.puppetStats().trim(); if (t) a.push('puppets: ' + t); }
+    return a.join('\n');
+  }
+  function copyReport() {
+    const txt = netReport(), done = () => { toast('REPORT COPIED'); L.copied = Date.now(); };
+    const fb = () => { try { const t = document.createElement('textarea'); t.value = txt; t.style.cssText = 'position:fixed;left:-999px;top:0'; document.body.appendChild(t); t.select(); const ok = document.execCommand && document.execCommand('copy'); t.remove(); if (ok) done(); else toast('PRESS CTRL+C TO COPY', 'bad'); } catch (e) { toast('PRESS CTRL+C TO COPY', 'bad'); } };
+    try { if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(txt).then(done, fb); else fb(); } catch (e) { fb(); }
   }
   async function hostCreate() {
     L.t0 = Date.now(); if (!NN.connected) { NN.chat.clear(); renderLog(true); }
@@ -1153,6 +1174,7 @@
       case 'local-host': localHost(); break;
       case 'local-join': localJoin(); break;
       case 'copy': copyFrom($('#' + v), 'COPIED'); break;
+      case 'net-report': copyReport(); break;
       case 'copy-code': { const l = $('#h-link'); if (l && l.value) { const t = document.createElement('textarea'); t.value = NN.offerCode; t.style.cssText = 'position:fixed;left:-999px;top:0'; document.body.appendChild(t); copyFrom(t, 'COPIED'); setTimeout(() => t.remove(), 300); } break; }
       case 'disconnect': if (RM) { RM.stopHost(); RM.stopJoin(); } if (NN.local) NN.local.stop(); NN.close(); L.ready = false; L.readyMap = {}; L.readyList = []; L.roomLink = ''; $('#h-out').hidden = true; $('#g-out').hidden = true; L.t0 = 0; danceStopAll(); refreshAll(); break;
       case 'name': {
