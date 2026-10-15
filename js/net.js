@@ -796,7 +796,7 @@
       let s = '', bin = null;
       R.links.forEach((l) => {
         if (!l.ready || !l.opened || (to && l.slot !== to)) return;
-        if (isPos && !l.virtual && !l.local) { if (!bin) bin = encPos(data, 1); if (sendLink(l, null, true, bin)) ok = true; return; }
+        if (isPos && !l.virtual && !l.local) { if (!bin) bin = encPos(data, 1); (l.pb || (l.pb = new Map())).set(1, { b: bin, x: data.x, z: data.z }); if (!posTm) posTm = setInterval(flushPos, 33); ok = true; return; }
         if (!s) { const pkt = Object.assign({}, data); pkt.n = ++seq; pkt.ts = Date.now(); try { s = JSON.stringify(pkt); } catch (e) { s = '!'; } }
         if (s !== '!' && sendLink(l, null, fast, s)) ok = true;                 // сериализуем один раз на всех получателей
       });
@@ -813,7 +813,31 @@
     const n = now(), rn = n + L.off, d = ((((t16 - (Math.round(rn) & 65535)) + 98304) % 65536) - 32768), at = rn + d - L.off;
     return at > n - 1500 && at <= n + 20 ? Math.min(at, n) : 0;
   }
+  let posTm = 0, posFl = 0;
+  function flushPos() {           // хост: одна пачка pos на получателя вместо пакета на каждого отправителя; дальних (>40 м) — каждый третий такт
+    if (R.role !== 'host' || !R.links.length) { clearInterval(posTm); posTm = 0; return; }
+    posFl += 1;
+    R.links.forEach((l) => {
+      const m = l.pb; if (!m || !m.size) return;
+      const out = [];
+      m.forEach((e, slot) => {
+        if (l.px !== undefined && posFl % 3 && Math.hypot(e.x - l.px, e.z - l.pz) > 40) return;
+        out.push(e.b); m.delete(slot);
+      });
+      if (!out.length) return;
+      if (out.length === 1) { sendLink(l, null, true, out[0]); return; }
+      let n = 2; out.forEach((b) => { n += 1 + b.byteLength; });
+      const buf = new ArrayBuffer(n), u = new Uint8Array(buf); u[0] = 2; u[1] = out.length;
+      let o = 2; out.forEach((b) => { u[o] = b.byteLength; u.set(new Uint8Array(b), o + 1); o += 1 + b.byteLength; });
+      sendLink(l, null, true, buf);
+    });
+  }
   function onBinary(L, raw) {
+    if (new Uint8Array(raw)[0] === 2) {       // пачка pos от хоста
+      const u = new Uint8Array(raw), c = u[1]; let o = 2;
+      for (let i = 0; i < c && o < u.length; i += 1) { const ln = u[o]; if (o + 1 + ln > u.length) break; onBinary(L, raw.slice(o + 1, o + 1 + ln)); o += 1 + ln; }
+      return;
+    }
     const t = now();
     if (t - L.rate.t > 1000) { L.rate.t = t; L.rate.n = 0; }
     if (++L.rate.n > 400) return;
@@ -831,8 +855,10 @@
         if (l === L || !l.opened || !l.ready) return;
         if (l.virtual || l.local) { if (!js) { const q = Object.assign({}, p); q.from = L.slot; q.n = ++seq; q.ts = Date.now(); delete q.fb; delete q.t16; js = JSON.stringify(q); } sendLink(l, null, true, js); return; }
         if (!cp) { cp = raw.slice(0); new Uint8Array(cp)[1] = L.slot; if (p.at) new DataView(cp).setUint16(2, Math.round(p.at) & 65535, true); }
-        sendLink(l, null, true, cp);
+        (l.pb || (l.pb = new Map())).set(L.slot, { b: cp, x: p.x, z: p.z });
+        if (!posTm) posTm = setInterval(flushPos, 33);
       });
+      L.px = p.x; L.pz = p.z;
     }
     p.now = t;
     emit('pos', p);
