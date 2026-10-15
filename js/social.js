@@ -53,6 +53,19 @@
     const FIX = ((window.NexaServers && window.NexaServers.NOSTR_VERIFIED) || []).slice(0, 3), pr = (x) => (FIX.indexOf(x.url) >= 0 ? -1 : x.ms || 9e9);
     return RM.servers.list().filter((x) => x.type === 'nostr' && (x.state === 'online' || x.state === 'active') && !have.has(x.url) && (NET.bad[x.url] || 0) < now()).sort((a, b) => pr(a) - pr(b));
   }
+  const VQ = { q: [], ids: new Set(), on: 0 };
+  function vDrain() {
+    VQ.on = 0; const t0 = performance.now();
+    while (VQ.q.length && performance.now() - t0 < 6) {
+      const [e, sid] = VQ.q.shift(); VQ.ids.delete(e.id);
+      if (NET.seen.has(e.id) || !K.checkEvent(e)) continue;
+      NET.seen.add(e.id); if (NET.seen.size > 4000) NET.seen.clear();
+      if (AD() && AD().banned(e.pubkey)) continue;
+      const s = NET.subs.get(sid); if (s && s.cb) s.cb(e);
+    }
+    if (VQ.q.length) vSched();
+  }
+  function vSched() { if (VQ.on) return; VQ.on = 1; if (window.requestIdleCallback) requestIdleCallback(vDrain, { timeout: 500 }); else setTimeout(vDrain, 30); }
   function subSend(ws, id, f) { try { ws.send(JSON.stringify(['REQ', id, ...f])); } catch (e) { /* ok */ } }
   function connect(url) {
     let ws; try { ws = new WebSocket(url); } catch (e) { NET.bad[url] = now() + 300000; return; }
@@ -65,11 +78,8 @@
       let j; try { j = JSON.parse(m.data); } catch (e) { return; }
       if (!Array.isArray(j) || j[0] !== 'EVENT' || !j[2]) return;
       const e = j[2];
-      if (!e.id || NET.seen.has(e.id)) return;
-      if (!K.checkEvent(e)) return;
-      NET.seen.add(e.id); if (NET.seen.size > 4000) NET.seen.clear();
-      if (AD() && AD().banned(e.pubkey)) return;
-      const s = NET.subs.get(j[1]); if (s && s.cb) s.cb(e);
+      if (!e.id || NET.seen.has(e.id) || VQ.ids.has(e.id)) return;
+      VQ.ids.add(e.id); VQ.q.push([e, j[1]]); vSched();
     };
     ws.onerror = () => { if (!r.open) { clearTimeout(to); fail(); } };
     ws.onclose = () => { clearTimeout(to); NET.socks.delete(url); if (r.open) emit('net', netInfo()); };
@@ -278,6 +288,7 @@
   }
   const BOARD = { rows: [] };
   function subBoard() {
+    if (BOARD.on) return; BOARD.on = 1;
     subscribe('nx-board', [{ kinds: [KIND.score], limit: 300 }], (e) => {
       const c = jparse(e.content, null); if (!c) return;
       const sc = Math.max(0, Math.min(1e7, c.sc | 0));
@@ -298,6 +309,7 @@
   const CLANS = { list: {}, reqs: [] };
   const cid = (e) => { const d = (e.tags.find((t) => t[0] === 'd') || [])[1] || ''; return /^clan:[0-9a-f]{6}$/.test(d) ? d.slice(5) : ''; };
   function subClans() {
+    if (CLANS.on) return; CLANS.on = 1;
     subscribe('nx-clans', [{ kinds: [KIND.clan], limit: 120 }], (e) => {
       const id = cid(e), c = jparse(e.content, null); if (!id || !c) return;
       const cur = CLANS.list[id];
@@ -360,11 +372,18 @@
     if (started) return; started = true;
     me();
     netTick(); tm = setInterval(netTick, 8000);
-    const go = () => { if (!netInfo().up) return false; subFriends(); subDM(); subChat(); subBoard(); subClans(); sendPresence(); pubProfile(); return true; };
+    const go = () => { if (!netInfo().up) return false; subFriends(); subDM(); subChat(); if (S.clan) subClans(); sendPresence(); pubProfile(); return true; };
     let tries = 0;
     const w = setInterval(() => { tries += 1; if (go() || tries > 40) clearInterval(w); }, 1000);
-    ev.addEventListener('net', () => { if (netInfo().up) { subFriends(); subDM(); subChat(); subBoard(); subClans(); } });
-    tp = setInterval(() => { sendPresence(); resendReqs(); if (sec() % 3 === 0) pubProfile(); rewardCheck(); }, 45000);
+    ev.addEventListener('net', () => { if (netInfo().up) { subFriends(); subDM(); subChat(); if (BOARD.on) { BOARD.on = 0; subBoard(); } if (CLANS.on || S.clan) { CLANS.on = 0; subClans(); } } });
+    let tk = 0;
+    tp = setInterval(() => { sendPresence(); resendReqs(); if (sec() % 3 === 0) pubProfile(); rewardCheck(); if (++tk % 8 === 0) peek(); }, 45000);
+    setTimeout(peek, 20000);
+  }
+  function peek() {   // редкий «подсмотр» рейтинга и кланов без открытой вкладки: награды за рейтинг и вступление в клан
+    if (!netInfo().up) return;
+    const b0 = BOARD.on, c0 = CLANS.on; subBoard(); subClans();
+    setTimeout(() => { if (!b0 && !(UI && UI.tab === 'ranking')) { unsubscribe('nx-board'); BOARD.on = 0; } if (!c0 && !S.clan && !(UI && UI.tab === 'clans')) { unsubscribe('nx-clans'); CLANS.on = 0; } rewardCheck(); }, 12000);
   }
   function stop() { started = false; clearInterval(tm); clearInterval(tp); NET.socks.forEach((r) => { try { r.ws.close(); } catch (e) { /* ok */ } }); NET.socks.clear(); }
 
@@ -395,6 +414,7 @@
     const body = h('div', 'sc-body'); r.appendChild(body);
     if (banMe()) { body.appendChild(h('p', 'v-note bad sc-note', AD().text())); return; }
     if (UI.card) { body.appendChild(cardView(UI.card)); return; }
+    if (UI.tab === 'ranking') subBoard(); else if (UI.tab === 'clans') subClans();
     ({ friends: vFriends, chat: vChat, ranking: vRanking, clans: vClans, id: vId })[UI.tab](body);
   }
   function note(el, text, bad) { el.textContent = text || ''; el.className = 'v-note sc-note' + (bad ? ' bad' : ''); }

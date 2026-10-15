@@ -832,6 +832,7 @@
   function renderServers() {
     if (!root || !RM) return;
     const list = RM.servers.list(), on = RM.servers.on, sm = RM.servers.summary();
+    { let sg = ''; try { sg = JSON.stringify([list, sm, on]); } catch (e) { sg = String(Math.random()); } if (root.__srvSig === sg) return; root.__srvSig = sg; }
     $$('.ol-srv').forEach((blk) => {
       blk.classList.toggle('is-off', !on);
       const cnt = blk.querySelector('.srv-count'); cnt.textContent = '';
@@ -973,6 +974,12 @@
   function ageText(s) { return s < 5 ? 'NOW' : s + ' s'; }
   function renderPublic() {
     const box = $('#pub-list'); if (!box || !RM) return;
+    {
+      const on0 = RM.servers.on, ok0 = RM.consented(), bm0 = window.NexaAdmin && NexaAdmin.me(), mine0 = !bm0 && RM.hosting && RM.hosting.pub ? RM.adOf() : null;
+      const sig = [on0, ok0, !!bm0, JSON.stringify(mine0, (k, v) => (k === 'age' ? Math.floor(v / 20) : v)), JSON.stringify(ok0 && on0 && !bm0 ? RM.gossip.rooms() : [], (k, v) => (k === 'age' ? Math.floor(v / 20) : v)), RM.gossip.peers].join('|');
+      if (box.__sig === sig && box.firstChild) return;
+      box.__sig = sig;
+    }
     box.textContent = '';
     const nt = $('#pub-note');
     const on = RM.servers.on, ok = RM.consented();

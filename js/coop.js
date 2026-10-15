@@ -429,8 +429,10 @@
       const d = Math.hypot(g.position.x - r.p.x, g.position.z - r.p.z);
       if (v.z > 1 || v.z < -1 || Math.abs(v.x) > 1.1 || d > 40) { tg.hidden = true; return; }
       tg.hidden = false;
-      tg.style.left = ((v.x * 0.5 + 0.5) * r.w).toFixed(0) + 'px'; tg.style.top = ((-v.y * 0.5 + 0.5) * r.h).toFixed(0) + 'px';
-      tg.style.fontSize = clamp(22 - d * 0.5, 13, 20).toFixed(0) + 'px';
+      const tx = Math.round((v.x * 0.5 + 0.5) * r.w), ty = Math.round((-v.y * 0.5 + 0.5) * r.h), fs = Math.round(clamp(22 - d * 0.5, 13, 20));
+      if (tg.__x === undefined) { tg.style.left = '0'; tg.style.top = '0'; }
+      if (tg.__x === undefined || Math.abs(tx - tg.__x) >= 1 || Math.abs(ty - tg.__y) >= 1) { tg.__x = tx; tg.__y = ty; tg.style.transform = 'translate(' + tx + 'px,' + ty + 'px) translate(-50%,-100%)'; }
+      if (tg.__f !== fs) { tg.__f = fs; tg.style.fontSize = fs + 'px'; }
     }
 
     // -------------------------------------------------------------- эмоции напарников: тот же танцор, что у игрока (EmoteCore.makeFigure)
@@ -897,7 +899,7 @@
         this.remotes.forEach((m) => {
           const w = m.who, R = m.rem;
           if (w && !w.hidden) {
-            w.querySelector('.hp i').style.width = (R.dead ? 0 : R.hp) + '%';
+            { const hw = (R.dead ? 0 : R.hp) + '%', hi = w.querySelector('.hp i'); if (hi.__w !== hw) { hi.__w = hw; hi.style.width = hw; } }
             w.querySelector('.talk').classList.toggle('on', !!v.peerSpeaking);
             w.querySelector('.st').textContent = R.dead ? '✖' : (NN.pingText ? NN.pingText(m.slot) : NN.rtt ? NN.rtt + ' ms' : '');
           }
