@@ -56,8 +56,10 @@
   function reqs(r) {
     const pk = T.ident.pk, t = sec() - 900; if (!pk) return;
     const send = (id, f) => { try { r.ws.send(JSON.stringify(['REQ', id].concat(f))); } catch (e) { /* ok */ } };
-    send('adm-bans', [{ kinds: KB, authors: [ADM], '#d': ['nexa-bans'], limit: 5 }, { kinds: KB, authors: [ADM], limit: 10 }]);
-    send('adm-grant', [{ kinds: [KIND.grant, 27790], authors: [ADM], '#p': [pk], since: t }, { kinds: [KIND.grant, 27790], authors: [ADM], since: t, limit: 100 }]);
+    send('adm-bans', [{ kinds: KB, authors: [ADM], '#d': ['nexa-bans'], limit: 5 }]);
+    send('adm-bans2', [{ kinds: KB, authors: [ADM], limit: 10 }]);
+    send('adm-grant', [{ kinds: [KIND.grant, 27790], authors: [ADM], '#p': [pk], since: t }]);
+    send('adm-grant2', [{ kinds: [KIND.grant, 27790], authors: [ADM], since: t, limit: 100 }]);
   }
   function chConnect(url) {
     let ws; try { ws = new WebSocket(url); } catch (e) { CH.bad[url] = Date.now() + 60000; return; }
@@ -68,11 +70,11 @@
     ws.onmessage = (m) => {
       let j; try { j = JSON.parse(m.data); } catch (e) { return; }
       if (!Array.isArray(j)) return;
-      if (j[0] === 'EOSE' && j[1] === 'adm-bans') { D.lastSync = Date.now(); return; }
+      if (j[0] === 'EOSE' && /^adm-bans/.test(j[1])) { D.lastSync = Date.now(); return; }
       if (j[0] === 'OK' && j[2] === false) { log('relay refused our event', url, String(j[3] || '').slice(0, 80)); return; }
       if (j[0] !== 'EVENT' || !j[2]) return;
       const e = j[2];
-      if (j[1] === 'adm-bans') { D.lastSync = Date.now(); onBanEv(e); } else if (j[1] === 'adm-grant') onGrant(e);
+      if (/^adm-bans/.test(j[1])) { D.lastSync = Date.now(); onBanEv(e); } else if (/^adm-grant/.test(j[1])) onGrant(e);
     };
     ws.onerror = () => { clearTimeout(to); try { ws.close(); } catch (e) { /* ok */ } };
     ws.onclose = () => { clearTimeout(to); drop(); };

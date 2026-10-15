@@ -3,7 +3,7 @@
   const T = window.Toys, K = window.NexaSchnorr, RM = window.NexaRoom, NN = window.NexaNet, PF = window.NexaProfile;
   if (!T || !T.ident || !K || !RM || !NN || !PF) return;
   const ID = T.ident;
-  const KIND = { pres: 27780, msg: 27781, chat: 27783, clanChat: 27784, report: 27785, prof: 30780, score: 30781, clan: 30782, dm: 4 };
+  const KIND = { pres: 27780, msg: 27781, fmsg: 7781, chat: 27783, clanChat: 27784, report: 27785, prof: 30780, score: 30781, clan: 30782, dm: 4 };
   const SKEY = 'nexaSocial', DMKEY = 'nexaDM';
   const now = () => Date.now(), sec = () => Math.floor(Date.now() / 1000);
   const ls = { get: (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch (e) { /* ok */ } } };
@@ -13,9 +13,9 @@
   const CHANNELS = ['all', 'en', 'ru', 'de'];
 
   // ------------------------------------------------------------------ состояние
-  const S = Object.assign({ friends: {}, mute: {}, block: {}, clan: '', seen: 0, ch: '', score: 0 }, jparse(ls.get(SKEY), {}));
+  const S = Object.assign({ friends: {}, mute: {}, block: {}, clan: '', seen: 0, ch: '', score: 0, fids: [], dec: {} }, jparse(ls.get(SKEY), {}));
   const DM = jparse(ls.get(DMKEY), {});
-  const save = () => { ls.set(SKEY, JSON.stringify({ friends: S.friends, mute: S.mute, block: S.block, clan: S.clan, seen: S.seen, ch: S.ch })); };
+  const save = () => { ls.set(SKEY, JSON.stringify({ friends: S.friends, mute: S.mute, block: S.block, clan: S.clan, seen: S.seen, ch: S.ch, fids: S.fids.slice(-300), dec: S.dec })); };
   const saveDM = () => { Object.keys(DM).forEach((k) => { if (DM[k].length > 100) DM[k] = DM[k].slice(-100); }); const ks = Object.keys(DM); if (ks.length > 60) ks.slice(0, ks.length - 60).forEach((k) => { delete DM[k]; }); ls.set(DMKEY, JSON.stringify(DM)); };
   const me = () => ID.pk;
   const short = (pk) => (pk ? pk.slice(0, 4) + '-' + pk.slice(4, 8) + '-' + pk.slice(8, 12) : '');
@@ -50,7 +50,8 @@
   const netOk = () => !!(RM.servers.on && RM.consented()) && (!window.NexaSingle || window.NexaSingle.owner());
   function pickRelays() {
     const have = new Set(NET.socks.keys());
-    return RM.servers.list().filter((x) => x.type === 'nostr' && (x.state === 'online' || x.state === 'active') && !have.has(x.url) && (NET.bad[x.url] || 0) < now()).sort((a, b) => (a.ms || 9e9) - (b.ms || 9e9));
+    const FIX = ((window.NexaServers && window.NexaServers.NOSTR_VERIFIED) || []).slice(0, 3), pr = (x) => (FIX.indexOf(x.url) >= 0 ? -1 : x.ms || 9e9);
+    return RM.servers.list().filter((x) => x.type === 'nostr' && (x.state === 'online' || x.state === 'active') && !have.has(x.url) && (NET.bad[x.url] || 0) < now()).sort((a, b) => pr(a) - pr(b));
   }
   function subSend(ws, id, f) { try { ws.send(JSON.stringify(['REQ', id, ...f])); } catch (e) { /* ok */ } }
   function connect(url) {
@@ -81,7 +82,7 @@
   const netInfo = () => ({ on: netOk(), up: Array.from(NET.socks.values()).filter((r) => r.open).length });
   function publish(e) {
     if (!e || !netOk()) return false;
-    if ((e.kind === KIND.chat || e.kind === KIND.clanChat || e.kind === KIND.msg || e.kind === KIND.dm || e.kind === KIND.clan || e.kind === KIND.score || e.kind === KIND.prof) && banMe()) return false;
+    if ((e.kind === KIND.chat || e.kind === KIND.clanChat || e.kind === KIND.msg || e.kind === KIND.fmsg || e.kind === KIND.dm || e.kind === KIND.clan || e.kind === KIND.score || e.kind === KIND.prof) && banMe()) return false;
     const m = JSON.stringify(['EVENT', e]); let n = 0;
     NET.socks.forEach((r) => { if (r.open) { try { r.ws.send(m); n += 1; } catch (er) { /* ok */ } } });
     if (e.kind >= 30000 || e.kind === KIND.dm) { NET.outbox.push(m); if (NET.outbox.length > 60) NET.outbox.shift(); }
@@ -126,9 +127,9 @@
     });
   }
   const statusOf = (pk) => { const p = PRES[pk]; return p && now() - p.t < 120000 ? p.s : 'offline'; };
-  function sendMsg(to, obj, encrypt) {
+  function sendMsg(to, obj, encrypt, stored) {
     const base = JSON.stringify(obj);
-    if (!encrypt) return publish(mk(KIND.msg, [['p', to]], base));
+    if (!encrypt) return publish(mk(stored ? KIND.fmsg : KIND.msg, [['p', to]], base));
     return seal(to, base).then((c) => publish(mk(KIND.msg, [['p', to], ['x', '1']], c)));
   }
   function addFriend(code) {
@@ -141,14 +142,19 @@
     if (f && f.st === 'in') return acceptFriend(code);
     S.friends[code] = { st: 'out', n: (f && f.n) || short(code), t: now() }; save();
     const p = pinfo();
-    sendMsg(code, { t: 'req', n: p.name, l: p.level });
+    sendMsg(code, { t: 'req', n: p.name, l: p.level }, false, true);
+    loadProfile(code, (pp) => { const g = S.friends[code]; if (g && pp && pp.n && g.st === 'out') { g.n = pp.n; save(); emit('friends'); } });
     emit('friends'); return { ok: true };
+  }
+  function resendReqs() {
+    const p = pinfo();
+    Object.keys(S.friends).forEach((k) => { const f = S.friends[k]; if (f.st === 'out' && now() - f.t < 600000) sendMsg(k, { t: 'req', n: p.name, l: p.level }, false, true); });
   }
   function acceptFriend(pk) {
     const f = S.friends[pk]; if (!f) return { ok: false };
-    f.st = 'friend'; save(); const p = pinfo(); sendMsg(pk, { t: 'acc', n: p.name, l: p.level }); subFriends(); sendPresence(); emit('friends'); return { ok: true };
+    f.st = 'friend'; save(); const p = pinfo(); sendMsg(pk, { t: 'acc', n: p.name, l: p.level }, false, true); subFriends(); sendPresence(); emit('friends'); return { ok: true };
   }
-  function removeFriend(pk) { if (S.friends[pk]) { const was = S.friends[pk].st; delete S.friends[pk]; save(); if (was === 'friend') sendMsg(pk, { t: 'rm' }); subFriends(); emit('friends'); } }
+  function removeFriend(pk) { if (S.friends[pk]) { const was = S.friends[pk].st; delete S.friends[pk]; save(); if (was === 'friend' || was === 'in') sendMsg(pk, { t: 'rm' }, false, true); if (was === 'in') S.dec[pk] = now(); subFriends(); emit('friends'); } }
   let pendingInvite = '';
   function invite(pk) {
     const h = RM.hosting;
@@ -167,12 +173,16 @@
     if (e.pubkey === me() || S.block[e.pubkey]) return;
     const tags = e.tags || [], to = tags.find((t) => t[0] === 'p');
     if (!to || to[1] !== me()) return;
+    if (e.kind === KIND.fmsg) {
+      if (S.fids.indexOf(e.id) >= 0 || e.created_at < sec() - 86400 * 7) return;
+      S.fids.push(e.id); if (S.fids.length > 300) S.fids.shift();
+    }
     let c = null;
     if (tags.some((t) => t[0] === 'x')) { try { c = jparse(await open(e.pubkey, e.content), null); } catch (er) { return; } } else c = jparse(e.content, null);
     if (!c || typeof c.t !== 'string') return;
     const pk = e.pubkey, name = validName(c.n), f = S.friends[pk];
     if (c.t === 'req') {
-      if (S.mute[pk]) return;
+      if (S.mute[pk] || e.created_at * 1000 <= (S.dec[pk] || 0)) return;
       if (f && f.st === 'out') { acceptFriend(pk); return; }
       if (f && f.st === 'friend') return;
       S.friends[pk] = { st: 'in', n: name, l: c.l | 0, t: now() }; save(); emit('friends'); popup(name + ' WANTS TO BE FRIENDS', () => acceptFriend(pk));
@@ -194,6 +204,8 @@
   }
   function subDM() {
     subscribe('nx-msg', [{ kinds: [KIND.msg], '#p': [me()], since: sec() - 600 }], onMsg);
+    subscribe('nx-fmsg', [{ kinds: [KIND.fmsg], '#p': [me()], since: sec() - 86400 * 7 }], onMsg);
+    subscribe('nx-fmsg2', [{ kinds: [KIND.fmsg], since: sec() - 86400 * 2, limit: 300 }], onMsg);
     subscribe('nx-dm', [{ kinds: [KIND.dm], '#p': [me()], since: Math.max(sec() - 86400 * 3, Math.floor((S.seen || 0) / 1000)) }], async (e) => {
       if (S.block[e.pubkey] || S.mute[e.pubkey] || e.pubkey === me()) return;
       let c; try { c = jparse(await open(e.pubkey, e.content), null); } catch (er) { return; }
@@ -349,7 +361,7 @@
     let tries = 0;
     const w = setInterval(() => { tries += 1; if (go() || tries > 40) clearInterval(w); }, 1000);
     ev.addEventListener('net', () => { if (netInfo().up) { subFriends(); subDM(); subChat(); subBoard(); subClans(); } });
-    tp = setInterval(() => { sendPresence(); if (sec() % 3 === 0) pubProfile(); rewardCheck(); }, 45000);
+    tp = setInterval(() => { sendPresence(); resendReqs(); if (sec() % 3 === 0) pubProfile(); rewardCheck(); }, 45000);
   }
   function stop() { started = false; clearInterval(tm); clearInterval(tp); NET.socks.forEach((r) => { try { r.ws.close(); } catch (e) { /* ok */ } }); NET.socks.clear(); }
 
@@ -370,8 +382,9 @@
     if (!UI || !UI.root.isConnected) return;
     const r = UI.root; r.textContent = '';
     const info = netInfo();
+    const inc = Object.keys(S.friends).filter((x) => S.friends[x].st === 'in').length;
     const nav = h('div', 'sc-nav'); nav.setAttribute('role', 'tablist');
-    SUBS.forEach((k) => { const b = h('button', 'sc-sub' + (UI.tab === k ? ' on' : ''), SUBN[k]); b.type = 'button'; b.setAttribute('role', 'tab'); b.onclick = () => { UI.tab = k; UI.open = ''; render(); }; nav.appendChild(b); });
+    SUBS.forEach((k) => { const b = h('button', 'sc-sub' + (UI.tab === k ? ' on' : ''), SUBN[k] + (k === 'friends' && inc ? ' (' + inc + ')' : '')); b.type = 'button'; b.setAttribute('role', 'tab'); b.onclick = () => { UI.tab = k; UI.open = ''; render(); }; nav.appendChild(b); });
     r.appendChild(nav);
     const st = h('p', 'v-note sc-net', !RM.servers.on ? 'SIGNALING SERVERS ARE OFF — SOCIAL FEATURES NEED THEM' : !RM.consented() ? 'ALLOW PUBLIC MODE FIRST (PUBLIC TAB)' : info.up ? 'RELAYS CONNECTED: ' + info.up : 'CONNECTING TO RELAYS…');
     r.appendChild(st);
@@ -393,7 +406,7 @@
       const f = S.friends[pk], row = h('div', 'pb-row sc-row'); row.setAttribute('role', 'listitem');
       const nm = h('button', 'pb-host sc-name'); nm.type = 'button'; nm.onclick = () => { UI.card = pk; render(); };
       const s = f.st === 'friend' ? statusOf(pk) : null;
-      nm.appendChild(h('em', '', f.n || short(pk))); if (f.l) nm.appendChild(h('small', '', ' · ' + f.l));
+      nm.appendChild(h('em', '', f.n && f.n !== short(pk) ? f.n : 'PLAYER')); if (f.l) nm.appendChild(h('small', '', ' · ' + f.l)); nm.appendChild(h('small', 'sc-id', ' ' + short(pk)));
       row.appendChild(nm);
       row.appendChild(h('span', 'sc-st ' + (s || f.st), f.st === 'in' ? 'REQUEST' : f.st === 'out' ? 'PENDING' : ST_TXT[s]));
       if (f.st === 'in') { row.appendChild(btn('ACCEPT', () => { acceptFriend(pk); render(); })); row.appendChild(btn('DECLINE', () => { removeFriend(pk); render(); })); }

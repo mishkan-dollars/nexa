@@ -5,12 +5,13 @@
 //   --pow     отвечать на каждое событие ["OK",id,false,"pow: required"] (релей, который нам не подходит — клиент должен его бросить)
 //   --silent  принимать соединение, но ничего не отвечать (проверка «молчащего» сервера)
 //   --kind=N  принимать только события kind N, остальные отвергать ["OK",id,false,"blocked: kind not allowed"]
+//   --real    как настоящие релеи: эфемерные (20000–29999) не хранятся, тег-фильтры (#p/#d/#t) не поддерживаются (CLOSED)
 //   --notag   на REQ с тег-фильтром (#t) отвечать ["CLOSED",sub,"error: tag filters not supported"]
 //   --auth    сразу слать ["AUTH",challenge] и на REQ отвечать CLOSED "auth-required"
 'use strict';
 const http = require('http'), crypto = require('crypto'), path = require('path');
 const S = require(path.join(__dirname, '..', 'js', 'schnorr.js'));
-const KIND = (process.argv.find((a) => /^--kind=\d+$/.test(a)) || '').slice(7) | 0, NOTAG = process.argv.includes('--notag'), AUTHR = process.argv.includes('--auth');
+const KIND = (process.argv.find((a) => /^--kind=\d+$/.test(a)) || '').slice(7) | 0, NOTAG = process.argv.includes('--notag'), REAL = process.argv.includes('--real'), AUTHR = process.argv.includes('--auth');
 const PORT = Number(process.argv.find((a) => /^\d+$/.test(a))) || 8791, POW = process.argv.includes('--pow'), SILENT = process.argv.includes('--silent');
 const DISC = (process.argv.find((a) => /^--disc=\d+$/.test(a)) || '').slice(7) | 0;
 function discEvents(kind) {
@@ -42,6 +43,7 @@ function onMsg(c, text) {
   if (m[0] === 'REQ' && typeof m[1] === 'string') {
     stats.reqs += 1;
     if (AUTHR) { send(c, ['CLOSED', m[1], 'auth-required: please authenticate']); return; }
+    if (REAL && m.slice(2).some((f) => f && Object.keys(f).some((k) => k[0] === '#'))) { send(c, ['CLOSED', m[1], 'error: tag filters not supported']); return; }
     if (NOTAG && m.slice(2).some((f) => f && f['#t'])) { send(c, ['CLOSED', m[1], 'error: tag filters not supported']); return; }
     c.subs.set(m[1], m.slice(2));
     if (STORE) m.slice(2).forEach((f) => { kept.filter((e) => match(f, e)).slice(-(f.limit || 100)).forEach((e) => send(c, ['EVENT', m[1], e])); });
@@ -56,7 +58,7 @@ function onMsg(c, text) {
     if (POW) { send(c, ['OK', ev.id, false, 'pow: required']); return; }
     if (KIND && ev.kind !== KIND) { stats.kindRej = (stats.kindRej || 0) + 1; send(c, ['OK', ev.id, false, 'blocked: kind not allowed']); return; }
     send(c, ['OK', ev.id, true, '']);
-    if (STORE && ev.kind !== 27780) { const d = (ev.tags.find((t) => t[0] === 'd') || [])[1]; const i = d !== undefined ? kept.findIndex((e) => e.kind === ev.kind && e.pubkey === ev.pubkey && (e.tags.find((t) => t[0] === 'd') || [])[1] === d) : -1; if (i >= 0) kept.splice(i, 1); kept.push(ev); }
+    if (STORE && ev.kind !== 27780 && !(REAL && ev.kind >= 20000 && ev.kind < 30000)) { const d = (ev.tags.find((t) => t[0] === 'd') || [])[1]; const i = d !== undefined ? kept.findIndex((e) => e.kind === ev.kind && e.pubkey === ev.pubkey && (e.tags.find((t) => t[0] === 'd') || [])[1] === d) : -1; if (i >= 0) kept.splice(i, 1); kept.push(ev); }
     conns.forEach((o) => o.subs.forEach((fs, sub) => { if (fs.some((f) => match(f, ev))) { stats.delivered += 1; send(o, ['EVENT', sub, ev]); } }));
   }
 }
