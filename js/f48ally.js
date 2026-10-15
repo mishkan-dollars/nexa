@@ -189,7 +189,7 @@
     for (let i = 0; i < list.length; i += 1) { const a = list[i]; if (a !== n && a.g.visible) push(a.g.position.x, a.g.position.z, 0.95, 1.1); }
     for (let i = 0; i < r.npcs.length; i += 1) {
       const o = r.npcs[i];
-      if (o === n || o.ai || !o.g.visible || o.free) continue;
+      if (o === n || o.fai || !o.g.visible || o.free) continue;
       push(o.g.position.x, o.g.position.z, 0.62, 0.9);
     }
     return [sx, sz];
@@ -197,15 +197,15 @@
 
   const init = (r, n, o) => {
     const st = K.st(r);
-    if (!n.ai) {
+    if (!n.fai) {
       n.nav = true;
-      n.ai = { base: 'idle', go: null, path: null, pi: 0, pg: null, rp: 0, lf: 0, stuck: 0, lost: 0, t: 0, moved: 0, side: 1, back: 2.3, spread: 1.25, far: 4.8, ph: Math.random() * 6, fg: null, post: null, wait: 0 };
+      n.fai = { base: 'idle', go: null, path: null, pi: 0, pg: null, rp: 0, lf: 0, stuck: 0, lost: 0, t: 0, moved: 0, side: 1, back: 2.3, spread: 1.25, far: 4.8, ph: Math.random() * 6, fg: null, post: null, wait: 0 };
     }
-    Object.assign(n.ai, o || {});
+    Object.assign(n.fai, o || {});
     const L = st.allies || (st.allies = []);
     if (L.indexOf(n) < 0) L.push(n);
     if (!st.allyHook) { st.allyHook = true; K.hook(r, (dt) => tickAll(r, dt)); }
-    return n.ai;
+    return n.fai;
   };
 
   const finish = (ai) => { const res = ai.go && ai.go.res; ai.go = null; ai.path = null; ai.pg = null; ai.wait = 0; if (res) res(); };
@@ -233,7 +233,7 @@
   };
 
   const tickOne = (r, n, dt, S, list) => {
-    const ai = n.ai, g = n.g.position;
+    const ai = n.fai, g = n.g.position;
     if (!n.g.visible) { n.creeping = false; return; }
     const nv = navOf(r);
     ai.t += dt; ai.fgT = (ai.fgT || 0) - dt; ai.rp -= dt; ai.lf -= dt;
@@ -345,7 +345,7 @@
     for (let i = L.length - 1; i >= 0; i -= 1) {
       const n = L[i];
       if (!n.g.parent) { L.splice(i, 1); continue; }
-      try { tickOne(r, n, dt, S, L); } catch (e) { if (!n.ai.err) { n.ai.err = 1; console.error('[f48 ally]', e); } }
+      try { tickOne(r, n, dt, S, L); } catch (e) { if (!n.fai.err) { n.fai.err = 1; console.error('[f48 ally]', e); } }
     }
   };
 
@@ -369,7 +369,7 @@
     // держать пост (охранять место), поворачиваясь к врагам
     hold(r, n, x, z, yaw, o) { init(r, n, Object.assign({ base: 'hold', post: { x, z, yaw } }, o || {})); },
     idle(r, n) { const ai = init(r, n); ai.base = 'idle'; ai.fg = null; ai.post = null; },
-    stop(n) { const ai = n.ai; if (ai) { ai.go = null; ai.path = null; ai.pg = null; ai.fg = null; ai.stuck = 0; } n.goal = null; n.creeping = false; },
+    stop(n) { const ai = n.fai; if (ai) { ai.go = null; ai.path = null; ai.pg = null; ai.fg = null; ai.stuck = 0; } n.goal = null; n.creeping = false; },
     plan: (r, ax, az, bx, bz) => findPath(r, ax, az, bx, bz),
     free: (r, x, z, rad) => !solid(navOf(r), x, z, rad === undefined ? BODY : rad),
     nearFree: (r, x, z, rad, maxR) => freeNear(navOf(r), x, z, rad === undefined ? BODY : rad, maxR || 3),
