@@ -130,6 +130,7 @@
       this.hitRate = { t: 0, n: 0 }; this.rng0 = null; this.wave = null; this.pq = []; this.gone = false; this.lastSnapRx = 0; this.lastPos = { x: 1e9, z: 1e9, a: 1e9, c: 0, w: '', h: -1, d: 0, q: 0 };
       this.seedOn();
       this.hook();
+      if (this.mode === 'mission' && !this.solo) this.defSkip();
       if (!this.solo && PF) { PF.count('matches'); if (this.host) PF.count('hostMatches'); }
     }
     get peerReady() { return this.readySet.size > 0; }
@@ -289,7 +290,9 @@
         case 'emoteoff': { const m = this.remotes.get(from); if (m) this.stopRemoteEmote(m); break; }
         case 'bar': this.stages[from] = Math.max(this.stages[from] | 0, p.s | 0); if (p.r && this.stage > 0) NN.sendAction({ type: 'cev', k: 'bar', s: this.stage }, { to: from }); break;
         case 'barn': { const kn = String(p.kn || '').slice(0, 32); (this.kset[from] || (this.kset[from] = new Set())).add(kn); if (p.r && this.mk.has(kn)) NN.sendAction({ type: 'cev', k: 'barn', kn }, { to: from }); break; }
-        case 'cskip': if (!this.host && this.run.inCinema) { this.hostSkip = true; this.run.cineSkip = true; } break;
+        case 'cskip': if (!this.host && this.run.inCinema) this.skipGo = true; break;
+        case 'sv': if (this.host && this.votes) { if (p.v) this.votes.add(from); else this.votes.delete(from); } break;
+        case 'svn': if (!this.host) this.skipTxt(p.a | 0, p.b | 0); break;
         case 'eresync': if (this.host && this.ready) this.resendEnemies(); break;
         case 'leave': this.removeRemote(from, true); break;
         default: break;
@@ -310,12 +313,44 @@
         await new Promise((res) => setTimeout(res, 150));
       }
     }
+    // пропуск катсцены голосованием: r.cineSkip — свойство; нажатие (клавиша/кнопка/геймпад) = голос, повтор снимает; пропуск, когда проголосовали все живые и не AFK
+    defSkip() {
+      const r = this.run; this.votes = new Set(); this.skipGo = false; this.myV = false; this.vAt = 0; this.rep = 0; this.vShown = ''; this.myAct = performance.now(); this.afk = null;
+      Object.defineProperty(r, 'cineSkip', { configurable: true, get: () => this.skipGo, set: (v) => this.setSkip(v) });
+      const kd = (e) => { if (e.repeat) this.rep = performance.now(); };
+      document.addEventListener('keydown', kd, true); this.offs.push(() => document.removeEventListener('keydown', kd, true));
+    }
+    setSkip(v) {
+      const r = this.run;
+      if (this.solo || this.gone) { this.skipGo = !!v; return; }
+      if (!v) { this.skipGo = false; this.votes.clear(); this.myV = false; this.afk = null; this.skipTxt(0, 0); return; }
+      const t = performance.now();
+      if (!r.inCinema || t - this.rep < 80 || t - this.vAt < 250) return;
+      this.vAt = t; this.myV = !this.myV;
+      if (this.host) { if (this.myV) this.votes.add(1); else this.votes.delete(1); } else NN.sendAction({ type: 'cev', k: 'sv', v: this.myV ? 1 : 0 });
+    }
+    skipTxt(n, m) {
+      const el = this.run.qs && this.run.qs('.m-skip'); if (!el) return;
+      if (!this.skBase) this.skBase = el.textContent;
+      const t = n > 0 ? this.skBase + '  ' + n + '/' + m : this.skBase; if (el.textContent !== t) el.textContent = t;
+    }
     cineSync() {
       const r = this.run;
-      if (this.solo || this.mode !== 'mission') return;
-      if (!r.inCinema) { this.cskipSent = false; this.hostSkip = false; return; }
-      if (this.host) { if (r.cineSkip && !this.cskipSent) { this.cskipSent = true; NN.sendAction({ type: 'cev', k: 'cskip' }); } }
-      else if (r.cineSkip && !this.hostSkip) r.cineSkip = false;
+      if (this.solo || this.mode !== 'mission' || !this.votes) return;
+      const now = performance.now(), p = r.p;
+      if (!r.inCinema) {
+        if (this.skipGo || this.votes.size || this.myV) { this.skipGo = false; this.votes.clear(); this.myV = false; this.skipTxt(0, 0); }
+        const mv = (o, x, z, a) => Math.abs(o.lx - x) > 0.05 || Math.abs(o.lz - z) > 0.05 || Math.abs(o.la - a) > 0.02;
+        if (this.lp === undefined || mv(this.lp, p.x, p.z, p.yaw || 0)) { this.myAct = now; this.lp = { lx: p.x, lz: p.z, la: p.yaw || 0 }; }
+        this.remotes.forEach((m) => { const R = m.rem; if (!m.lp || mv(m.lp, R.x, R.z, R.yaw)) { m.act = now; m.lp = { lx: R.x, lz: R.z, la: R.yaw }; } });
+        return;
+      }
+      if (!this.afk) { this.afk = new Set(); if (now - this.myAct > 30000) this.afk.add(this.slot); this.remotes.forEach((m) => { if (now - (m.act || now) > 30000) this.afk.add(m.slot); }); }
+      if (!this.host) return;
+      const need = [1].concat(NN.players.map((q) => q.slot)).filter((x, i, a) => a.indexOf(x) === i && !this.afk.has(x) && !(x === 1 ? r.dead : (this.remotes.get(x) || { rem: {} }).rem.dead));
+      const have = need.filter((x) => this.votes.has(x)).length, tx = have + '/' + need.length;
+      if (tx !== this.vShown) { this.vShown = tx; this.skipTxt(have, need.length); NN.sendAction({ type: 'cev', k: 'svn', a: have, b: need.length }); }
+      if (need.length && have === need.length && !this.skipGo) { this.skipGo = true; NN.sendAction({ type: 'cev', k: 'cskip' }); }
     }
     async barrier() { try { await this.barrier0(); } finally { this.reseed('p:' + this.stage); } }
     async barrier0() {
