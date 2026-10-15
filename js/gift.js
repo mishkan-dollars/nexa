@@ -5,8 +5,8 @@
   if (!X) return;
   const clean = (s, n) => Array.from(String(s == null ? '' : s).replace(/[\u0000-\u001f\u007f-\u009f​-‏‪-‮⁠-⁤﻿<>|]/g, ' ').replace(/\s+/g, ' ').trim()).slice(0, n).join('');
   const hexc = (c) => (/^#[0-9a-f]{6}$/i.test(c) ? c : '#ff3b30');
-  let Q = [], cur = null, revealed = false, snooze = false, root = null, fx = null, gl = null, chip = null, busyOpen = false;
-  try { const j = JSON.parse(ST.get(SK) || '[]'); if (Array.isArray(j)) Q = j.filter((g) => g && typeof g.id === 'string' && Number.isInteger(g.a) && g.a >= 1 && g.a <= 1000000).slice(0, MAXQ).map((g) => ({ id: g.id.slice(0, 40), k: g.k === 'a' ? 'a' : 'p', n: clean(g.n, 16), c: hexc(g.c), p: /^[0-9a-f]{6,16}$/.test(g.p || '') ? g.p : '', m: clean(g.m, 80), a: g.a })); } catch (e) { Q = []; }
+  let st = 0, Q = [], cur = null, revealed = false, snooze = false, root = null, fx = null, gl = null, chip = null, busyOpen = false;
+  try { const j = JSON.parse(ST.get(SK) || '[]'); if (Array.isArray(j)) Q = j.filter((g) => g && typeof g.id === 'string' && Number.isInteger(g.a) && g.a >= 1 && g.a <= 2147483647).slice(0, MAXQ).map((g) => ({ id: g.id.slice(0, 40), k: g.k === 'a' ? 'a' : 'p', n: clean(g.n, 16), c: hexc(g.c), p: /^[0-9a-f]{6,16}$/.test(g.p || '') ? g.p : '', m: clean(g.m, 80), a: g.a })); } catch (e) { Q = []; }
   const save = () => { try { ST.set(SK, JSON.stringify(Q)); } catch (e) { /* ok */ } };
   const el = (t, c, x) => { const e = document.createElement(t); if (c) e.className = c; if (x != null) e.textContent = x; return e; };
   const inMission = () => { try { return !!(window.Missions && Missions.current); } catch (e) { return false; } };
@@ -14,7 +14,7 @@
   const ease = (x) => 1 - Math.pow(1 - x, 3), back = (x) => { const c = 1.9; return 1 + (c + 1) * Math.pow(x - 1, 3) + c * Math.pow(x - 1, 2); };
 
   function add(g) {
-    if (!g || typeof g.id !== 'string' || !Number.isInteger(g.a) || g.a < 1 || g.a > 1000000 || Q.some((x) => x.id === g.id)) return false;
+    if (!g || typeof g.id !== 'string' || !Number.isInteger(g.a) || g.a < 1 || g.a > 2147483647 || Q.some((x) => x.id === g.id)) return false;
     Q.push({ id: g.id.slice(0, 40), k: g.k === 'a' ? 'a' : 'p', n: clean(g.n, 16), c: hexc(g.c), p: /^[0-9a-f]{6,16}$/.test(g.p || '') ? g.p : '', m: clean(g.m, 80), a: g.a });
     Q = Q.slice(-MAXQ); save(); snooze = false; tick(); if (cur) paint(); return true;
   }
@@ -111,13 +111,24 @@
   function show() {
     if (!Q.length) return; cur = Q[0]; revealed = false; mount(); paint(); root.hidden = false;
     document.body.classList.add('gf-on');
-    const cv = root.querySelector('.gf-cv'); if (fx) { fx.dispose(); fx = null; }
-    const C = window.Missions && Missions._core, start = () => { if (!root || root.hidden) return; fx = scene(cv); root.classList.toggle('flat', !fx); };
-    if (window.THREE) start(); else if (C && C.loadThree) C.loadThree().then(start, start); else start();
+    if (fx) { fx.dispose(); fx = null; }
+    const C = window.Missions && Missions._core, tok = ++st;
+    const start = (tries) => {
+      if (tok !== st || !root || root.hidden) return;
+      if (fx) { fx.dispose(); fx = null; }
+      const old = root.querySelector('.gf-cv'), cv = el('canvas', 'gf-cv'); old.replaceWith(cv);
+      fx = scene(cv);
+      if (fx) {
+        cv.addEventListener('webglcontextlost', (ev) => { ev.preventDefault(); setTimeout(() => { if (tok === st && fx) { start(0); if (revealed && fx) fx.open(); } }, 200); });
+        if (revealed) fx.open();
+      } else if (tries < 2) setTimeout(() => start(tries + 1), 250);
+      root.classList.toggle('flat', !fx && tries >= 2);
+    };
+    if (window.THREE) start(0); else if (C && C.loadThree) C.loadThree().then(() => start(0), () => start(2)); else start(2);
     sfx('notification');
     const bt = root.querySelector('.gf-go'); setTimeout(() => { try { bt.focus(); } catch (e) { /* ok */ } }, 50);
   }
-  function hide() { if (root) root.hidden = true; document.body.classList.remove('gf-on'); if (fx) { fx.dispose(); fx = null; } cur = null; }
+  function hide() { st += 1; if (root) root.hidden = true; document.body.classList.remove('gf-on'); if (fx) { fx.dispose(); fx = null; } cur = null; }
   function reveal() {
     if (revealed || !cur) return; revealed = true; sfx('succesfully');
     const fl = root.querySelector('.gf-flash'); fl.classList.remove('go'); void fl.offsetWidth; fl.classList.add('go');

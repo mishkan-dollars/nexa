@@ -1,7 +1,7 @@
 (function () {
   'use strict';
   const K = window.NexaSchnorr, $ = (id) => document.getElementById(id);
-  const HEX64 = /^[0-9a-f]{64}$/, KB = 30791, KB2 = 30078, KG = 7790, KG2 = 27790, KA = 7791, KA2 = 27791, KPRES = 27780, KPROF = 30780, MAXKP = 100000;
+  const HEX64 = /^[0-9a-f]{64}$/, KB = 30791, KB2 = 30078, KG = 7790, KG2 = 27790, KA = 7791, KA2 = 27791, KPRES = 27780, KPROF = 30780, MAXKP = 2147483647;
   const sec = () => Math.floor(Date.now() / 1000);
   const ls = { get: (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch (e) { /* ok */ } } };
   const jp = (s, d) => { try { const j = JSON.parse(s); return j == null ? d : j; } catch (e) { return d; } };
@@ -129,7 +129,7 @@
     if (!key) return alert('Сначала создайте ключ');
     n = Math.floor(Number(n));
     if (!HEX64.test(pk)) return alert('Неверный ID (нужно 64 hex)');
-    if (!(n >= 1 && n <= MAXKP)) return alert('Сумма 1…' + MAXKP);
+    if (!(n >= 1 && n <= MAXKP)) return alert("Сумма 1…2 147 483 647");
     const x = sec() + 600, i = K.hex(crypto.getRandomValues(new Uint8Array(16))), c = JSON.stringify({ t: 'kp', n, x, i });
     const evs = [KG, KG2].map((kd) => K.makeEvent(key, kd, [['p', pk]], c));
     const g = grants[i] = { to: pk, n, x, i, ack: false, evs, ids: evs.map((e) => e.id), tries: 1 };

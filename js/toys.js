@@ -66,8 +66,9 @@
     }
     return H.map((x) => ('00000000' + (x >>> 0).toString(16)).slice(-8)).join('');
   }
+  const CRMAX = 2147483647;
   const ST = window.NexaStore || { get: (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch (e) { /* ignore */ } } };
-  const GD = window.NexaGuard, SG = window.NexaSingle, ADM = /^[0-9a-f]{64}$/.test(String(window.NEXA_ADMIN_PUB || '')) ? window.NEXA_ADMIN_PUB : '', ADM_MAX = 100000;
+  const GD = window.NexaGuard, SG = window.NexaSingle, ADM = /^[0-9a-f]{64}$/.test(String(window.NEXA_ADMIN_PUB || '')) ? window.NEXA_ADMIN_PUB : '', ADM_MAX = 2147483647;
   const onlineNow = () => { try { return !!(window.NexaNet && NexaNet.connected) || !!(window.NexaRoom && NexaRoom.servers.on && NexaRoom.consented()); } catch (e) { return false; } };
   const locked = () => { sync(); try { return !SG || !SG.owner() || (GD ? !!GD.block() : onlineNow()); } catch (e) { return true; } };
   const DK = 'nexaDev', BK = KEY + '.b';
@@ -88,7 +89,7 @@
     if ((r.q | 0) < DEV.q) return null;
     let d; try { d = JSON.parse(r.d); } catch (e) { return null; }
     const cr = (parseInt(r.c, 36) ^ MASK) >>> 0;
-    if (!d || typeof d !== 'object' || !isFinite(cr) || cr > 1e9) return null;
+    if (!d || typeof d !== 'object' || !isFinite(cr) || cr > CRMAX) return null;
     d.credits = cr; return { d, r };
   }
   function build(d, fresh) {
@@ -113,7 +114,7 @@
       adm: Array.isArray(d.adm) ? d.adm.filter((x) => typeof x === 'string' && /^[0-9a-f]{32,64}$/.test(x)).slice(-300) : []
     };
     let cv = 0; const ck = (Math.random() * 4294967296) >>> 0;
-    const set = (v) => { v = Math.floor(Number(v)); if (!isFinite(v)) return; cv = (Math.max(0, Math.min(1e9, v)) ^ ck) >>> 0; };
+    const set = (v) => { v = Math.floor(Number(v)); if (!isFinite(v)) return; cv = (Math.max(0, Math.min(CRMAX, v)) ^ ck) >>> 0; };
     set(Number.isFinite(d.credits) ? d.credits : START_CREDITS);
     Object.defineProperty(o, 'credits', { get: () => (cv ^ ck) >>> 0, set, enumerable: false });
     return o;
@@ -612,7 +613,7 @@
       if (vaultTaken) return null;
       vaultTaken = true;
       return {
-        credit(n) { n = Math.floor(n); if (locked() || !isFinite(n) || n < 1 || n > 1000000 || S.credits + n > 1e9) return false; S.credits += n; save(); return true; },
+        credit(n) { n = Math.floor(n); if (locked() || !isFinite(n) || n < 1 || n > 1000000 || S.credits + n > CRMAX) return false; S.credits += n; save(); return true; },
         debit(n) { n = Math.floor(n); if (locked() || !isFinite(n) || n < 1 || n > 1000000 || S.credits < n) return false; S.credits -= n; save(); return true; }
       };
     },
@@ -636,7 +637,7 @@
       sync();
       const why = !SG || !SG.owner() ? 'SINGLE' : (GD && !GD.state().integ ? 'INTEG' : '');
       if (why) return { ok: false, err: 'LOCKED', why };
-      if (S.credits + n > 1e9) return { ok: false, err: 'CAP' };
+      if (S.credits + n > CRMAX) return { ok: false, err: 'CAP' };
       const adm0 = S.adm, cr0 = S.credits;
       S.adm = S.adm.concat(gid).slice(-300); S.credits = cr0 + n; save();
       const bad = verifyRec();
