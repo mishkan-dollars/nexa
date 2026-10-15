@@ -179,7 +179,7 @@
       Z.pend = { a: m.a, t: m.t, v: m.v, tn: m.tn }; hud();
       if (m.t === Z.myG && Z.sec) {
         const r = m.v < Z.sec.n ? 'H' : m.v > Z.sec.n ? 'L' : 'C'; Z.ans[m.tn] = r;
-        toHost(r === 'C' ? { k: 'an', tn: m.tn, r, n: Z.sec.n, s: Z.sec.s } : { k: 'an', tn: m.tn, r });
+        toHost(r === 'C' ? { k: 'an', tn: m.tn, r, x: Z.sec.n, s: Z.sec.s } : { k: 'an', tn: m.tn, r });
       }
     },
     vr(m) {
@@ -210,7 +210,7 @@
       syncPlayers(); if (Z.tableOn) killSeat(lid(m.g), true); hud();
     },
     rq(m) {
-      if (m.w === Z.myG && Z.sec) toHost({ k: 'rv', n: Z.sec.n, s: Z.sec.s });
+      if (m.w === Z.myG && Z.sec) toHost({ k: 'rv', x: Z.sec.n, s: Z.sec.s });
     },
     en(m) {
       const st = Z.G.state; Z.ph = 'wait'; Z.tot = m.tot || {}; Z.rpts = m.rp || {}; Z.flags = m.fl || []; Z.gapAt = now() + (m.gap | 0);
@@ -430,12 +430,13 @@
       }
       case 'an': {
         const c = H.cur; if (!g || !c || c.wait !== 'ans' || c.tn !== m.tn || c.t !== g || (m.r !== 'H' && m.r !== 'L' && m.r !== 'C')) return;
-        hAnswer(m.r, m.r === 'C' ? { n: m.n, s: m.s } : null); return;
+        hAnswer(m.r, m.r === 'C' ? { n: m.x, s: m.s } : null); return;
       }
       case 'rv': {
-        if (!g || H.ph !== 'over' || g !== H.w || !H.revDl || typeof m.n !== 'number' || typeof m.s !== 'string') return;
-        cm(H.rid, g, m.n, m.s).then((c) => {
-          if (c === H.commits[g] && ok(H.hist[g] || [], m.n)) H.wrv = { n: m.n, s: m.s }; else { H.flag = H.flag || {}; H.flag[g] = 'bad-reveal'; H.wrv = { n: m.n, s: m.s }; }
+        if (!g || H.ph !== 'over' || g !== H.w || !H.revDl || typeof m.x !== 'number' || typeof m.s !== 'string') return;
+        cm(H.rid, g, m.x, m.s).then((c) => {
+          H.wrv = { n: m.x, s: m.s };
+          if (c !== H.commits[g] || !ok(H.hist[g] || [], m.x)) H.flag[g] = 'bad-reveal';
         });
         return;
       }
