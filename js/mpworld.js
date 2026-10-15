@@ -165,11 +165,11 @@
       return it;
     };
     const brk0 = RunP.breakable;
-    if (brk0) RunP.breakable = function () { const r = this, b = brk0.apply(this, arguments); if (live(r) && b) b.mpk = 'bk:' + scope(r) + ':' + (r.breakables.length - 1) + ':' + rd(b.x) + ',' + rd(b.z); return b; };
+    if (brk0) RunP.breakable = function () { const r = this, b = brk0.apply(this, arguments); if (live(r) && b) b.mpk = 'bk:' + scope(r) + ':' + (r.breakables.length - 1) + ':' + rd(b.x) + ',' + rd(b.z); if (b.mpk && W.get(b.mpk) === 1) remote(r, () => r.shatter(b)); return b; };
     const sh0 = RunP.shatter;
     if (sh0) RunP.shatter = function (b) { const r = this; if (b && b.mpk && !b.broken && !r.__mpRem && live(r)) W.set(b.mpk, 1); return sh0.apply(this, arguments); };
     const door0 = RunP.door;
-    if (door0) RunP.door = function (x, z) { const r = this, m = door0.apply(this, arguments); if (live(r)) { m.mpk = 'dr:' + scope(r) + ':' + rd(x) + ',' + rd(z); (r.mpDoors || (r.mpDoors = new Map())).set(m.mpk, m); } return m; };
+    if (door0) RunP.door = function (x, z) { const r = this, m = door0.apply(this, arguments); if (live(r)) { m.mpk = 'dr:' + scope(r) + ':' + rd(x) + ',' + rd(z); (r.mpDoors || (r.mpDoors = new Map())).set(m.mpk, m); if (W.get(m.mpk) === 1) { if (m.userData.col) m.userData.col.off = true; m.position.y += (m.userData.h || 2.5) + 0.2; } } return m; };
     const od0 = RunP.openDoor;
     if (od0) RunP.openDoor = function (d) { const r = this; if (d && d.mpk && !r.__mpRem && live(r) && !(d.userData.col && d.userData.col.off)) W.set(d.mpk, 1); return od0.apply(this, arguments); };
     const pk0 = RunP.pickup;

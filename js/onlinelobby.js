@@ -1350,11 +1350,17 @@
       const q = NN.players.find((x) => x.slot === s);
       if (root && q) toast(q.name + ' — ' + (p.on ? 'READY' : 'NOT READY'));
     });
+    NN.on('net:roster', () => {   // поздний вход: песочница и миссия 48 (с текущего акта); остальные миссии — со следующего старта
+      const co = window.NexaCoop && NexaCoop.session;
+      if (!NN.isHost || !co || co.solo || co.gone || !co.ready || co.spec.mode === 'br' || !co.startSlots) return;
+      if (!(co.spec.mode === 'sandbox' || (co.spec.mode === 'mission' && +co.spec.mission === 48))) return;
+      NN.players.forEach((q) => { if (!co.startSlots.has(q.slot)) { co.startSlots.add(q.slot); NN.sendAction({ type: 'start', mode: co.spec.mode, mission: co.spec.mission, seed: co.spec.seed, ff: co.ff ? 1 : 0, ffm: co.ffm, late: 1, act: co.act || '', stage: co.stage | 0 }, { to: q.slot }); } });
+    });
     NN.on('start', (p) => {
       if (NN.isHost || L.cd) return;
       if (BR.on) { BR.on = false; BR.state = ''; }
       const mode = p.mode === 'br' ? 'br' : p.mode === 'mission' && validMission(p.mission) ? 'mission' : 'sandbox';
-      beginMatch({ mode, mission: mode === 'mission' ? p.mission | 0 : 1, seed: (p.seed >>> 0) || 1, role: 'guest', solo: false, ff: p.ff === 0 ? 0 : 1, ffm: +p.ffm || 1, bots: mode === 'br' ? clamp(p.bots | 0, 0, 99) : 0 }, 3);
+      beginMatch({ mode, mission: mode === 'mission' ? p.mission | 0 : 1, seed: (p.seed >>> 0) || 1, role: 'guest', solo: false, jump: p.late ? String(p.act || '').slice(0, 12) : '', stage: p.late ? p.stage | 0 : 0, ff: p.ff === 0 ? 0 : 1, ffm: +p.ffm || 1, bots: mode === 'br' ? clamp(p.bots | 0, 0, 99) : 0 }, 3);
     });
     tradeHooks();
     NN.on('profile', onProfile); NN.on('profile?', onProfileReq);

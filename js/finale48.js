@@ -67,7 +67,7 @@
     async play(r) {
       const st = K.st(r), W = st.W;
       r.noFight = false;
-      const jump = Q.get('m48');
+      const jump = Q.get('m48') || (r.__co && r.__co.spec && r.__co.spec.jump) || '';
       if (jump === 'idle') { r.f48.idle = true; return; }
       const start = jump ? Math.max(0, F.ORDER.indexOf(jump)) : 0;
       st.ctx = { r, W, start };

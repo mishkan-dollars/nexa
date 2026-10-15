@@ -126,7 +126,7 @@
       this.kset = {}; this.mk = new Set(); this.ek = {}; this.cinN = 0; this.act = ''; this.snapFull = 0; this.eReq = 0; this.dropCap = null;
       this.remotes = new Map(); this.readySet = new Set();
       this.xs = { ex: 0, ip: 0 }; this.ready = false; this.offs = []; this.sendT = 0; this.snapT = 0; this.hudT = 0; this.lastSend = 0;
-      this.stage = 0; this.stages = {};
+      this.stage = spec.stage | 0; this.stages = {}; this.startSlots = new Set(NN.players.map((x) => x.slot));
       this.byId = new Map(); this.nid = 0; this.dmgBy = 1; this.chatOpen = false; this.lastEm = null; this.cap = null;
       this.hitRate = { t: 0, n: 0 }; this.rng0 = null; this.wave = null; this.pq = []; this.gone = false; this.lastSnapRx = 0; this.lastPos = { x: 1e9, z: 1e9, a: 1e9, c: 0, w: '', h: -1, d: 0, q: 0 };
       this.seedOn();
