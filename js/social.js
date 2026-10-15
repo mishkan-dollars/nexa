@@ -103,13 +103,17 @@
     return 'online';
   }
   const pinfo = () => PF.publicInfo();
-  function sendPresence() {
-    if (!netOk() || !me()) return;
+  function presEvent() {
+    if (!me()) return null;
     const f = Object.keys(S.friends).filter((k) => S.friends[k].st === 'friend');
     const p = pinfo();
     const a = AD(), tags = f.slice(0, 40).map((k) => ['p', k]), o = { s: myState(), n: p.name, l: p.level };
     if (a && a.active) { tags.push(['p', a.pub]); o.g = a.flags(); const hs = RM.hosting, js = RM.joining; o.rm = String((hs && hs.id) || (js && js.id) || '').slice(0, 40); o.m = hs ? hs.mode : ''; }
-    publish(mk(KIND.pres, tags, JSON.stringify(o)));
+    return mk(KIND.pres, tags, JSON.stringify(o));
+  }
+  function sendPresence() {
+    if (!netOk() || !me()) return;
+    publish(presEvent());
   }
   function subFriends() {
     const f = Object.keys(S.friends).filter((k) => S.friends[k].st === 'friend');
@@ -514,7 +518,7 @@
   }
 
   window.NexaSocial = {
-    mount, boot, stop, publish, subscribe, unsubscribe, addFriend, acceptFriend, removeFriend, invite, sendDM, sendChat, setChannel, mute, block, report,
+    mount, boot, stop, publish, presEvent, subscribe, unsubscribe, addFriend, acceptFriend, removeFriend, invite, sendDM, sendChat, setChannel, mute, block, report,
     createClan, joinClan, leaveClan, loadProfile, takeInvite() { const r = pendingInvite; pendingInvite = ''; return r; },
     get id() { return me(); }, short, state: S, board: BOARD, clans: CLANS, presence: PRES, statusOf, net: netInfo, on: (t, f) => ev.addEventListener(t, f), _seal: seal, _open: open, _dm: DM
   };

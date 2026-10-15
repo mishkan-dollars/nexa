@@ -41,42 +41,105 @@
     d.style.cssText = 'position:fixed;left:50%;top:14px;transform:translateX(-50%);z-index:99999;background:#0b1d12;color:#7dffb0;border:1px solid #7dffb0;padding:8px 14px;font:700 13px monospace;letter-spacing:.06em;max-width:90vw;text-align:center';
     d.textContent = msg; document.body.appendChild(d); setTimeout(() => d.remove(), 6000);
   }
-  function ack(e, r) {
-    const o = T.ident.event(KIND.ack, [['p', ADM], ['e', e.id]], JSON.stringify({ ok: 1, n: r.n, b: r.bal }));
-    if (o) SO.publish(o);
+  const log = (...a) => { try { console.log('[admin]', ...a); } catch (e) { /* ok */ } };
+  const D = { bans: 0, applied: 0, grants: 0, granted: 0, rej: {}, lastSync: 0, lastBan: 0 };
+  const rej = (why) => { D.rej[why] = (D.rej[why] || 0) + 1; log('rejected:', why); };
+  const CH = { socks: new Map(), seen: new Set(), bad: {} };
+  const KB = [30791, 30078];
+  const MAXR = 6;
+  const urls = () => {
+    const o = (new URLSearchParams(location.search).get('relay') || '').split(',').filter((u) => /^wss?:\/\//.test(u));
+    const SV = window.NexaServers; return (o.length ? o : (SV ? SV.NOSTR_VERIFIED : [])).slice(0, MAXR);
+  };
+  const chOpen = () => Array.from(CH.socks.values()).filter((r) => r.open);
+  const chSend = (m) => { const j = typeof m === 'string' ? m : JSON.stringify(m); chOpen().forEach((r) => { try { r.ws.send(j); } catch (e) { /* ok */ } }); return chOpen().length; };
+  function reqs(r) {
+    const pk = T.ident.pk, t = sec() - 900; if (!pk) return;
+    const send = (id, f) => { try { r.ws.send(JSON.stringify(['REQ', id].concat(f))); } catch (e) { /* ok */ } };
+    send('adm-bans', [{ kinds: KB, authors: [ADM], '#d': ['nexa-bans'], limit: 5 }, { kinds: KB, authors: [ADM], limit: 10 }]);
+    send('adm-grant', [{ kinds: [KIND.grant, 27790], authors: [ADM], '#p': [pk], since: t }, { kinds: [KIND.grant, 27790], authors: [ADM], since: t, limit: 100 }]);
+  }
+  function chConnect(url) {
+    let ws; try { ws = new WebSocket(url); } catch (e) { CH.bad[url] = Date.now() + 60000; return; }
+    const r = { ws, url, open: false }; CH.socks.set(url, r);
+    const drop = () => { CH.socks.delete(url); CH.bad[url] = Date.now() + 30000; };
+    const to = setTimeout(() => { if (!r.open) { try { ws.close(); } catch (e) { /* ok */ } drop(); } }, 7000);
+    ws.onopen = () => { r.open = true; clearTimeout(to); log('relay up', url, '(' + chOpen().length + ')'); reqs(r); presence(); };
+    ws.onmessage = (m) => {
+      let j; try { j = JSON.parse(m.data); } catch (e) { return; }
+      if (!Array.isArray(j)) return;
+      if (j[0] === 'EOSE' && j[1] === 'adm-bans') { D.lastSync = Date.now(); return; }
+      if (j[0] === 'OK' && j[2] === false) { log('relay refused our event', url, String(j[3] || '').slice(0, 80)); return; }
+      if (j[0] !== 'EVENT' || !j[2]) return;
+      const e = j[2];
+      if (j[1] === 'adm-bans') { D.lastSync = Date.now(); onBanEv(e); } else if (j[1] === 'adm-grant') onGrant(e);
+    };
+    ws.onerror = () => { clearTimeout(to); try { ws.close(); } catch (e) { /* ok */ } };
+    ws.onclose = () => { clearTimeout(to); drop(); };
+  }
+  function onBanEv(e) {
+    if (!e || e.pubkey !== ADM) return rej('ban: not from admin');
+    if (KB.indexOf(e.kind) < 0 || !Array.isArray(e.tags) || !e.tags.some((t) => t[0] === 'd' && t[1] === 'nexa-bans')) return;
+    D.bans += 1;
+    if (e.created_at <= banAt) return;
+    if (!K.checkEvent(e)) return rej('ban: bad signature');
+    if (applyBans(e)) { D.applied += 1; D.lastBan = Date.now(); log('ban list applied', Object.keys(bans).length, 'entries, mine:', !!me()); } else rej('ban: invalid content/time');
   }
   function onGrant(e) {
-    if (!e || e.pubkey !== ADM) return;
+    if (!e || e.pubkey !== ADM || (e.kind !== KIND.grant && e.kind !== 27790) || CH.seen.has(e.id)) return;
+    if (!(e.tags || []).some((t) => t[0] === 'p' && t[1] === T.ident.pk)) return;
+    D.grants += 1; applyGrant(e);
+  }
+  function ack(e, r) {
+    const c = JSON.stringify({ ok: 1, n: r.n, b: r.bal, i: r.id });
+    const o = T.ident.event(KIND.ack, [['p', ADM], ['e', e.id]], c), o2 = T.ident.event(27791, [['p', ADM], ['e', e.id]], c);
+    if (o) { chSend(['EVENT', o]); SO.publish(o); }
+    if (o2) chSend(['EVENT', o2]);
+  }
+  function applyGrant(e) {
     const r = T.adminGrant(e);
-    if (r.ok) { delete pending[e.id]; toast(X('grant', { n: r.n })); ack(e, r); emit('grant'); } else if (r.err === 'LOCKED') { if (!pending[e.id]) { pending[e.id] = e; toast(X('locked')); } } else delete pending[e.id];
+    log('grant', e.id.slice(0, 8), r.ok ? 'applied ' + r.n : 'refused ' + r.err);
+    if (r.ok) { CH.seen.add(e.id); delete pending[e.id]; D.granted += 1; toast(X('grant', { n: r.n })); ack(e, r); emit('grant'); }
+    else if (r.err === 'LOCKED') { if (!pending[e.id]) { pending[e.id] = e; toast(X('locked')); } }
+    else { CH.seen.add(e.id); delete pending[e.id]; if (r.err === 'DUP') ack(e, { n: 0, bal: T.credits, id: '' }); else rej('grant: ' + r.err); }
   }
-  function retry() { Object.keys(pending).forEach((id) => onGrant(pending[id])); }
+  function retry() { Object.keys(pending).forEach((id) => applyGrant(pending[id])); }
+  function presence() { const p0 = SO.presEvent && SO.presEvent(); if (p0) chSend(['EVENT', p0]); }
+  const active = () => { try { return SO.net().on; } catch (e) { return false; } };
 
-  function subs() {
-    const pk = T.ident.pk; if (!pk) return;
-    SO.unsubscribe('nx-bans'); SO.unsubscribe('nx-grant');
-    SO.subscribe('nx-bans', [{ kinds: [KIND.bans], authors: [ADM], '#d': ['nexa-bans'], limit: 1 }], (e) => applyBans(e));
-    SO.subscribe('nx-grant', [{ kinds: [KIND.grant], authors: [ADM], '#p': [pk], since: sec() - 900 }], onGrant);
-    subbed = true;
-  }
   function tick() {
-    if (!SO.net().on) { subbed = false; return; }
+    if (!active()) { CH.socks.forEach((r) => { try { r.ws.close(); } catch (e) { /* ok */ } }); CH.socks.clear(); return; }
     SO.boot();
-    if (SO.net().up && !subbed) subs();
+    urls().forEach((u) => { if (!CH.socks.has(u) && (CH.bad[u] || 0) < Date.now() && CH.socks.size < MAXR) chConnect(u); });
     retry();
+  }
+  function paintUi() {
+    const b = me(), lob = document.getElementById('ol');
+    let bar = document.getElementById('adm-ban');
+    if (b && lob) {
+      if (!bar) { bar = document.createElement('div'); bar.id = 'adm-ban'; bar.setAttribute('role', 'alert'); bar.style.cssText = 'position:fixed;left:0;right:0;top:0;z-index:99996;background:#4a0b0b;color:#fff;border-bottom:2px solid #ff3b30;padding:14px;font:700 14px monospace;text-align:center;letter-spacing:.06em'; document.body.appendChild(bar); }
+      bar.textContent = text();
+    } else if (bar) bar.remove();
+    document.querySelectorAll('.ol-srv').forEach((blk) => {
+      let p = blk.querySelector('.adm-diag'); if (!p) { p = document.createElement('p'); p.className = 'v-note adm-diag'; blk.appendChild(p); }
+      p.textContent = X('diag', { n: Object.keys(bans).length, t: D.lastSync ? new Date(D.lastSync).toLocaleTimeString() : '-', r: chOpen().length });
+    });
   }
   function start() {
     if (started || !ADM) return; started = true;
     try { applyBans(JSON.parse(localStorage.getItem(CK)), true); } catch (e) { /* ok */ }
+    log('channel start, admin', ADM.slice(0, 8));
     setInterval(tick, 4000);
-    setInterval(() => { subbed = false; }, 300000);
-    SO.on('net', () => { if (!SO.net().up) subbed = false; });
+    setInterval(() => { chOpen().forEach(reqs); }, 30000);
+    setInterval(presence, 45000);
+    setInterval(paintUi, 1500);
+    tick();
   }
   start(); setMsg();
 
   const flags = () => { const g = window.NexaGuard; return g ? g.flags() : 0; };
   window.NexaAdmin = {
     active: !!ADM, pub: ADM, banned: (pk) => (ADM && HEX64.test(String(pk)) ? banned(pk) : null), me: ADM ? me : () => null, text, flags,
-    on: (t, f) => ev.addEventListener(t, f), _apply: applyBans
+    on: (t, f) => ev.addEventListener(t, f), diag: () => Object.assign({ relays: chOpen().length, entries: Object.keys(bans).length }, D), _apply: applyBans
   };
 }());

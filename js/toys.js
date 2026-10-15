@@ -110,7 +110,7 @@
       id: typeof d.id === 'string' && /^[0-9a-f]{64}$/.test(d.id) ? d.id : '',
       rk: Number.isFinite(d.rk) ? d.rk : 0,
       rl: Array.isArray(d.rl) ? d.rl.filter((x) => x && isFinite(x.t) && isFinite(x.n)).slice(-40) : [],
-      adm: Array.isArray(d.adm) ? d.adm.filter((x) => typeof x === 'string' && /^[0-9a-f]{64}$/.test(x)).slice(-300) : []
+      adm: Array.isArray(d.adm) ? d.adm.filter((x) => typeof x === 'string' && /^[0-9a-f]{32,64}$/.test(x)).slice(-300) : []
     };
     let cv = 0; const ck = (Math.random() * 4294967296) >>> 0;
     const set = (v) => { v = Math.floor(Number(v)); if (!isFinite(v)) return; cv = (Math.max(0, Math.min(1e9, v)) ^ ck) >>> 0; };
@@ -607,18 +607,19 @@
     },
     adminGrant(ev) {
       const K = window.NexaSchnorr, t = Math.floor(Date.now() / 1000);
-      if (!ADM || !K || !ev || ev.pubkey !== ADM || ev.kind !== 7790 || !Array.isArray(ev.tags) || !K.checkEvent(ev)) return { ok: false, err: 'SIG' };
+      if (!ADM || !K || !ev || ev.pubkey !== ADM || (ev.kind !== 7790 && ev.kind !== 27790) || !Array.isArray(ev.tags) || !K.checkEvent(ev)) return { ok: false, err: 'SIG' };
       let c; try { c = JSON.parse(ev.content); } catch (e) { return { ok: false, err: 'BAD' }; }
-      const to = (ev.tags.find((x) => x[0] === 'p') || [])[1], n = c && c.n, x = c && c.x;
+      const to = (ev.tags.find((x) => x[0] === 'p') || [])[1], n = c && c.n, x = c && c.x, gid = c && c.i;
+      if (typeof gid !== 'string' || !/^[0-9a-f]{32}$/.test(gid)) return { ok: false, err: 'BAD' };
       if (to !== window.Toys.ident.pk) return { ok: false, err: 'TARGET' };
       if (!Number.isInteger(n) || n < 1 || n > ADM_MAX) return { ok: false, err: 'AMOUNT' };
       if (!Number.isInteger(x) || t > x) return { ok: false, err: 'EXPIRED' };
       if (x - ev.created_at > 900 || ev.created_at > t + 120) return { ok: false, err: 'BAD' };
-      if (S.adm.indexOf(ev.id) >= 0) return { ok: false, err: 'DUP' };
+      if (S.adm.indexOf(gid) >= 0) return { ok: false, err: 'DUP' };
       if (locked()) return { ok: false, err: 'LOCKED' };
       if (S.credits + n > 1e9) return { ok: false, err: 'CAP' };
-      S.adm.push(ev.id); S.adm = S.adm.slice(-300); S.credits += n; save();
-      return { ok: true, n, id: ev.id, bal: S.credits };
+      S.adm.push(gid); S.adm = S.adm.slice(-300); S.credits += n; save();
+      return { ok: true, n, id: gid, bal: S.credits };
     },
     rankReward(place) {
       const now = Date.now(); if (locked() || now - S.rk < 86400000 || !(place >= 1 && place <= 10)) return 0;
