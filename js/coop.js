@@ -690,14 +690,20 @@
         let best = null, bd = 1e9, cur = null, cd = 1e9;
         for (const t of tg) { if (t.dead) continue; const d = Math.hypot(g.x - t.x, g.z - t.z); if (d < bd) { bd = d; best = t; } if (t.k === e.tgt) { cd = d; cur = t; } }
         const pick = !best ? tg[0] : (cur && bd > cd * 0.8 ? cur : best);       // гистерезис: не дёргаться между целями
-        e.tgt = pick.k;
+        e.tgt = pick.k; e.far = !!best && bd > 45;
         if (pick.k === 0) local.push(e); else { let a = groups.get(pick.k); if (!a) groups.set(pick.k, a = []); a.push(e); }
       }
-      cb.enemies = local; orig.call(r, dt, frozen);
+      this.lodAcc = (this.lodAcc || 0) + dt; const doFar = this.lodAcc >= 0.066, fdt = this.lodAcc; if (doFar) this.lodAcc = 0;
+      const split = (list) => { const near = [], far = []; for (const e of list) (e.far && !e.dead ? far : near).push(e); return [near, far]; };   // LOD: враги дальше 45 м от всех игроков — ~15 Гц
+      let [nl, fl] = split(local);
+      cb.enemies = nl; orig.call(r, dt, frozen);
+      if (doFar && fl.length) { cb.enemies = fl; orig.call(r, fdt, frozen); }
       const keep = new Set(local);
       groups.forEach((list, k) => {
         const m = this.remotes.get(k); if (!m) { list.forEach((e) => keep.add(e)); return; }
-        cb.enemies = list; this.withRemote(m, () => orig.call(r, dt, r.cineDepth > 0));
+        const [gn, gf] = split(list), fz = r.cineDepth > 0;
+        cb.enemies = gn; this.withRemote(m, () => orig.call(r, dt, fz));
+        if (doFar && gf.length) { cb.enemies = gf; this.withRemote(m, () => orig.call(r, fdt, fz)); }
         list.forEach((e) => keep.add(e));
       });
       cb.enemies = all.filter((e) => keep.has(e));
@@ -816,8 +822,20 @@
     }
     ffSend() { if (this.host && !this.solo && this.ffAvail) NN.sendAction({ type: 'cev', k: 'ffs', on: this.ff ? 1 : 0, m: this.ffm }); }
     setFF(on, m) { if (!this.host || !this.ffAvail) return; this.ff = !!on; if (m) this.ffm = m; this.ffUi(); this.ffSend(); }
+    // лаг-компенсация хитскана: история позиций игроков ~300 мс на хосте; цель откатывается на min(150, rtt/2+60) мс
+    histPush() {
+      const t = performance.now(), H = this.hist || (this.hist = new Map()), put = (s, x, z) => { let a = H.get(s); if (!a) H.set(s, a = []); a.push({ t, x, z }); while (a.length > 2 && t - a[0].t > 300) a.shift(); };
+      put(1, this.run.p.x, this.run.p.z); this.remotes.forEach((m) => { if (m.rem.got) put(m.slot, m.rem.x, m.rem.z); });
+    }
+    posAt(s, back) {
+      const a = this.hist && this.hist.get(s); if (!a || !a.length) return null;
+      const t = performance.now() - back; let p = a[0];
+      for (let i = a.length - 1; i >= 0; i -= 1) { if (a[i].t <= t) { const n = a[i + 1]; if (n && n.t > a[i].t) { const k = (t - a[i].t) / (n.t - a[i].t); return { x: a[i].x + (n.x - a[i].x) * k, z: a[i].z + (n.z - a[i].z) * k }; } return a[i]; } p = a[i]; }
+      return p;
+    }
     ffTick() {
       const r = this.run, cb = r.cb; if (!cb || !this.ffAvail || this.solo) return;
+      if (this.host && this.ff) this.histPush();
       this.remotes.forEach((m) => {
         const s = m.ffT || (m.ffT = { alive: false, shape: 'cyl', x: 0, y: 0, z: 0, r: 0.36, h: 1.75, hr: 0.17, hy: 1.62, hp: 100, ally: true, damage: (amt, head, pt) => this.ffHit(m, amt, head, pt) });
         const on = this.ff && !r.dead && m.rem.got && !m.rem.dead && !this.gone;
@@ -847,14 +865,16 @@
       const pos = (s) => (s === 1 ? { x: r.p.x, z: r.p.z, dead: r.dead, got: true } : (this.remotes.get(s) || {}).rem);
       const A = pos(att), T = pos(tgt); if (!A || !T || !A.got || !T.got || T.dead) return false;
       const boom = wid === 'boom'; if (A.dead && !boom) return false;
+      let Tp = T;
+      if (!boom) { const ls = NN.linkStats && NN.linkStats().links.find((l) => l.slot === att), back = Math.min(150, ((ls && ls.avg) || NN.rtt || 0) / 2 + 60), h = this.posAt(tgt, back); if (h) Tp = { x: h.x, z: h.z }; }
       const W = C.WEAPONS && C.WEAPONS[wid];
       if (!boom && !W) return false;
-      const dist = Math.hypot(A.x - T.x, A.z - T.z);
+      const dist = Math.hypot(A.x - Tp.x, A.z - Tp.z);
       if (dist > (boom ? 40 : W.range + 6)) return false;
       d = Math.min(d, boom ? 200 : W.dmg * (head ? 2.4 : 1) * 1.1 + 1);
       const now = performance.now(), b = this.ffRate.get(att) || { t: now, n: 0 };
       if (now - b.t > 1000) { b.t = now; b.n = 0; } this.ffRate.set(att, b); if (++b.n > (boom ? 30 : 12 * Math.max(1, W.pellets || 1))) return false;
-      if (!boom && !r.hasLOS(A.x, 1.5, A.z, T.x, 1.2, T.z)) return false;
+      if (!boom && !r.hasLOS(A.x, 1.5, A.z, Tp.x, 1.2, Tp.z)) return false;
       d *= this.ffm; this.ffLast[tgt] = { by: att, t: now };
       if (tgt === 1) r.hurt(d, A.x, A.z); else NN.sendAction({ type: 'hurt', a: Math.round(d * 10) / 10, x: q(A.x, 10), z: q(A.z, 10) }, { to: tgt });
       return true;
