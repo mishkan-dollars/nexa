@@ -261,7 +261,7 @@
     if (!root) return;
     const el = $('#cn-time'); if (!el) return;
     const st = NN.state;
-    if (st === 'open' || st === 'lost') { const s = NN.stats(); el.textContent = fmtTime(s.up) + (s.rtt ? '  ·  ' + s.rtt + ' ms' : ''); }
+    if (st === 'open' || st === 'lost') { const s = NN.stats(); const dg = NN.linkStats ? NN.linkStats().links[0] : null; el.textContent = fmtTime(s.up) + (s.rtt ? '  ·  ' + (NN.pingText ? NN.pingText() : s.rtt + ' ms') : '') + (dg && dg.path ? '  ·  ' + (dg.path === 'relay' ? 'RELAY' : 'DIRECT') : ''); }
     else if (L.t0 && (st === 'creating' || st === 'waiting-answer' || st === 'answering' || st === 'connecting')) el.textContent = fmtTime(Math.floor((Date.now() - L.t0) / 1000));
     else el.textContent = '';
   }

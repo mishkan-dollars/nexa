@@ -122,7 +122,7 @@
       if (!this.solo) run.noPause = true;   // в онлайне паузы нет (мир идёт у друзей): Esc/кнопка/потеря фокуса не ставят игру на паузу
       this.story = this.mode === 'mission'; this.shared = true; this.pseq = 0; this.kset = {}; this.cinN = 0; this.act = ''; this.snapFull = 0; this.eReq = 0; this.dropCap = null;
       this.remotes = new Map(); this.readySet = new Set();
-      this.ready = false; this.offs = []; this.sendT = 0; this.snapT = 0; this.hudT = 0; this.lastSend = 0;
+      this.xs = { ex: 0, ip: 0 }; this.ready = false; this.offs = []; this.sendT = 0; this.snapT = 0; this.hudT = 0; this.lastSend = 0;
       this.stage = 0; this.stages = {};
       this.byId = new Map(); this.nid = 0; this.dmgBy = 1; this.chatOpen = false; this.lastEm = null; this.cap = null;
       this.hitRate = { t: 0, n: 0 }; this.rng0 = null; this.wave = null; this.pq = []; this.gone = false; this.lastSnapRx = 0; this.lastPos = { x: 1e9, z: 1e9, a: 1e9, c: 0, w: '', h: -1, d: 0, q: 0 };
@@ -346,7 +346,9 @@
       if (!R.got || this.gone) { g.visible = false; if (tg) tg.hidden = true; return; }
       const em = m.emo;
       if (!A.shown) { g.position.x = R.x; g.position.z = R.z; n.lx = R.x; n.lz = R.z; A.shown = true; }
-      const sm = this.sample(R, performance.now() - clamp((R.gap || 40) * 1.2 + 25, 50, 80)) || R;
+      const dtg = R.tgt || 65;
+      R.dly = !R.dly || dtg > R.dly ? dtg : Math.max(dtg, R.dly - 5 * Math.min(dt, 0.1));
+      const sm = this.sample(R, performance.now() - R.dly) || R;
       g.position.x = sm.x; g.position.z = sm.z;
       if (Math.hypot(R.x - g.position.x, R.z - g.position.z) > 6) { g.position.x = R.x; g.position.z = R.z; n.lx = R.x; n.lz = R.z; }   // телепорт (рестарт у чекпоинта)
       n.yaw = sm.yaw + Math.PI;
@@ -474,7 +476,7 @@
     nearGap() {
       const p = this.run.p; let d = 1e9;
       this.remotes.forEach((m) => { if (m.rem.got) { const e = Math.hypot(m.rem.x - p.x, m.rem.z - p.z); if (e < d) d = e; } });
-      return d < 25 ? 0.0155 : d < 60 ? 0.033 : 0.066;
+      return d < 25 ? 0.0155 : d < 60 || this.remotes.size <= 2 ? 0.033 : 0.066;
     }
     sample(R, rt) {
       const b = R.buf, n = b.length; if (!n) return null;
@@ -482,10 +484,12 @@
       const L = b[n - 1];
       if (rt >= L.t) {
         if (n < 2) return L;
+        this.xs.ex += 1;
         const P = b[n - 2], dt = L.t - P.t || 1, e = Math.min(rt - L.t, 100), k = e / dt;
         if (Math.hypot(L.x - P.x, L.z - P.z) > 6) return L;
         return { x: L.x + (L.x - P.x) * k, z: L.z + (L.z - P.z) * k, yaw: L.yaw };
       }
+      this.xs.ip += 1;
       let i = n - 2; while (i > 0 && b[i].t > rt) i -= 1;
       const A = b[i], B = b[i + 1], k = (rt - A.t) / ((B.t - A.t) || 1);
       let dy = B.yaw - A.yaw; dy -= Math.round(dy / 6.283185307) * 6.283185307;
@@ -498,11 +502,16 @@
       R.rl = !!p.r; R.it = p.it | 0; R.ia = p.ia | 0; R.ip = p.ip | 0;
       R.p.x = R.x; R.p.z = R.z; R.p.yaw = R.yaw; R.p.moving = 0.5; R.got = true;
       const t = R.lastT ? performance.now() : 0, now = performance.now();
-      if (t) { const g = now - t; R.gap = R.gap ? R.gap * 0.9 + Math.min(g, 400) * 0.1 : g; }
+      if (t) { const g = now - t; R.gap = R.gap ? R.gap * 0.9 + Math.min(g, 400) * 0.1 : g; (R.iv || (R.iv = [])).push(Math.min(g, 400)); if (R.iv.length > 60) R.iv.shift(); }
       R.lastT = now;
-      const b = R.buf || (R.buf = []), l = b[b.length - 1];
+      const at = p.at > 0 && p.at <= now + 5 && now - p.at < 1500 ? p.at : 0;
+      if (at) { const lat = now - at; R.mlat = R.mlat === undefined ? lat : R.mlat * 0.95 + lat * 0.05; (R.lt || (R.lt = [])).push(lat); if (R.lt.length > 60) R.lt.shift(); }
+      const arr = at ? R.lt : R.iv;
+      if (arr && arr.length > 5) { const s = arr.slice().sort((x, y) => x - y); R.tgt = clamp(s[Math.min(s.length - 1, Math.floor(s.length * 0.95))] + Math.min(R.gap || 33, 66), 40, 250); }
+      const b = R.buf || (R.buf = []), l = b[b.length - 1], bt = at || (R.mlat !== undefined ? now - R.mlat : now);
       if (l && Math.hypot(R.x - l.x, R.z - l.z) > 6) b.length = 0;
-      b.push({ t: now, x: R.x, z: R.z, yaw: R.yaw }); if (b.length > 12) b.shift();
+      if (l && bt <= l.t) return;
+      b.push({ t: bt, x: R.x, z: R.z, yaw: R.yaw }); if (b.length > 12) b.shift();
       if (!m.av && this.ready) this.buildAvatar(m);
     }
 
@@ -567,11 +576,12 @@
     waveText(S, left) { this.run.objective('WAVE ' + S.wave + ' — ' + left + ' ENEMIES'); }
     sendSnap(dt) {
       if (!this.host || this.solo || !this.shared || !this.peerReady) return;
-      this.snapT += dt; if (this.snapT < (document.hidden ? 0.5 : 0.1)) return; this.snapT = 0;
-      this.snapFull += 1; const full = this.snapFull >= 5; if (full) this.snapFull = 0;
-      const list = [];
+      this.snapT += dt; if (this.snapT < (document.hidden ? 0.5 : 0.05)) return; this.snapT = 0;
+      this.snapPh = (this.snapPh || 0) ^ 1; if (!this.snapPh) this.snapFull += 1; const full = this.snapFull >= 5; if (full && !this.snapPh) this.snapFull = 0;
+      const list = [], rem = Array.from(this.remotes.values()).filter((m) => m.rem.got);
       this.byId.forEach((e) => {
         if (e.dead || !e.n || e.nid < 0) return;
+        if (this.snapPh && !full && !document.hidden) { const gp = e.n.g.position; if (!rem.some((m) => Math.hypot(m.rem.x - gp.x, m.rem.z - gp.z) < 30)) return; }
         const g = e.n.g.position, x = Math.round(g.x * 50), z = Math.round(g.z * 50), a = Math.round(e.n.yaw * 50), f = (e.n.armT > 0.5 ? 1 : 0) | (e.n.creeping ? 2 : 0) | ((e.muz || 0) > 0 ? 4 : 0), h = Math.max(0, Math.min(255, Math.round(e.hp / e.max * 255))), l = e.ls;
         if (!full && l && l[0] === x && l[1] === z && l[2] === a && l[3] === f && l[4] === h) return;
         e.ls = [x, z, a, f, h];
@@ -674,6 +684,9 @@
         if (!Array.isArray(s)) continue;
         const e = this.byId.get(s[0] | 0); if (!e) { miss = true; continue; } if (e.dead) continue;
         e.net.x = num(s[1]) / 50; e.net.z = num(s[2]) / 50; e.net.a = num(s[3]) / 50; e.net.f = s[4] | 0;
+        const nb = e.nb || (e.nb = []), lb = nb[nb.length - 1];
+        if (lb && Math.hypot(e.net.x - lb.x, e.net.z - lb.z) > 6) nb.length = 0;
+        nb.push({ t: now, x: e.net.x, z: e.net.z, yaw: e.net.a }); if (nb.length > 8) nb.shift();
         if (s.length > 5) e.hp = clamp(num(s[5]), 0, 255) / 255 * e.max;
       }
       if (miss && now - this.eReq > 2500) { this.eReq = now; NN.sendAction({ type: 'cev', k: 'eresync' }); }
@@ -684,8 +697,9 @@
       this.byId.forEach((e) => {
         if (e.dead || !e.net) return;
         const g = e.n.g.position, N = e.net;
-        g.x += (N.x - g.x) * k; g.z += (N.z - g.z) * k;
-        e.n.yaw = N.a; e.n.armT = N.f & 1 ? 1 : 0; e.n.creeping = !!(N.f & 2); e.muz = N.f & 4 ? 0.05 : 0;
+        const sm = e.nb && e.nb.length ? this.sample({ buf: e.nb }, performance.now() - 60) : null;
+        if (sm) { g.x = sm.x; g.z = sm.z; e.n.yaw = sm.yaw; } else { g.x += (N.x - g.x) * k; g.z += (N.z - g.z) * k; e.n.yaw = N.a; }
+         e.n.armT = N.f & 1 ? 1 : 0; e.n.creeping = !!(N.f & 2); e.muz = N.f & 4 ? 0.05 : 0;
       });
     }
     onKill(p) {
@@ -768,7 +782,7 @@
           if (w && !w.hidden) {
             w.querySelector('.hp i').style.width = (R.dead ? 0 : R.hp) + '%';
             w.querySelector('.talk').classList.toggle('on', !!v.peerSpeaking);
-            w.querySelector('.st').textContent = R.dead ? '✖' : (NN.rtt ? NN.rtt + ' ms' : '');
+            w.querySelector('.st').textContent = R.dead ? '✖' : (NN.pingText ? NN.pingText() : NN.rtt ? NN.rtt + ' ms' : '');
           }
         });
         this.updBtns();
@@ -894,6 +908,11 @@
 
   window.NexaCoop = {
     prepare(spec) { pendingSpec = spec; },
+    puppetStats() {
+      if (!cur || !cur.xs) return '';
+      const t = cur.xs.ex + cur.xs.ip, r = t ? Math.round(100 * cur.xs.ex / t) : 0, d = Array.from(cur.remotes.values()).map((m) => Math.round(m.rem.dly || 0)).join('/');
+      cur.xs.ex = cur.xs.ip = 0; return ' puppet-extrap=' + r + '% buf=' + d + 'ms';
+    },
     end() { pendingSpec = null; if (cur) { cur.dispose(); cur = null; } },
     get active() { return !!(cur && !cur.solo && NN.connected); },
     get session() { return cur; },

@@ -17,9 +17,11 @@
 
   const VERSION = 1;
   const TELEGRAM = 'https://t.me/nexaindustries';
-  const ICE_SERVERS = [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }];
+  const ICE_SERVERS = [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }, { urls: 'stun:stun.cloudflare.com:3478' }];
   const MAX_PLAYERS = 6, MAX_BR = 10, MAX_VOICE = 4;                                   // см. ONLINE.md: 6 проверено по расчёту трафика Хоста; константу можно поднять до 8 на свой риск
-  const FAST = { pos: 1, ping: 1, pong: 1, snap: 1, aim: 1 };            // типы пакетов по ненадёжному каналу 'act' (остальные — по 'rel')
+  const FAST = { pos: 1, ping: 1, pong: 1, snap: 1, aim: 1, shot: 1, hit: 1 };
+  const DUPE = { shot: 1, hit: 1 };
+  let dupFlag = false;            // типы пакетов по ненадёжному каналу 'act' (остальные — по 'rel')
   const RELAY = { pos: 1, shot: 1, cev: 1, boom: 1, aim: 1, bl: 1, gr: 1 };            // гость -> Хост -> все остальные
   const DIRECT = { 'profile?': 1, profile: 1 };                          // адресные (поле to = слот получателя)
   const POS_MIN = 21;
@@ -41,7 +43,7 @@
     return { type: 'pos', fb: v.getUint8(1), t16: v.getUint16(2, true), x: v.getInt32(4, true) / 50, z: v.getInt32(8, true) / 50, a: v.getInt16(12, true) / 5000, c: f & 1, d: (f >> 1) & 1, r: (f >> 2) & 1, h: v.getUint8(15), q: v.getUint8(16) / 255, it: v.getUint8(17), ia: v.getUint8(18), ip: v.getUint8(19), w };
   }
   const MAX_ACT = 8 * 1024, MAX_REL = 96 * 1024, CHAT_MAX = 200;
-  const cfg = { forceMs: 2500, connectMs: 20000, guestWaitMs: 180000, silentMs: 7000, pingMs: 1000, iceServers: ICE_SERVERS, maxPlayers: MAX_PLAYERS };
+  const cfg = { forceMs: 2500, connectMs: 20000, guestWaitMs: 180000, silentMs: 7000, pingMs: 250, restartOnRtt: false, iceServers: ICE_SERVERS, maxPlayers: MAX_PLAYERS };
   try { if (localStorage.getItem('nexaIce') === 'none') cfg.iceServers = []; } catch (e) { /* без хранилища */ }   // тесты/сети без STUN: только локальные кандидаты
 
   // ------------------------------------------------------------------ сообщения (английские исходники; переводы — js/i18n-net.js)
@@ -271,7 +273,7 @@
     let act, rel;
     if (local) { L.local = true; act = fakeChan('act'); rel = fakeChan('rel'); }
     else {
-      const pc = L.pc = new RTCPeerConnection({ iceServers: cfg.iceServers, bundlePolicy: 'max-bundle', iceCandidatePoolSize: pool | 0 });      // pool > 0: кандидаты собираются заранее (быстрее offer/answer)
+      const pc = L.pc = new RTCPeerConnection({ iceServers: cfg.iceServers, bundlePolicy: 'max-bundle', iceCandidatePoolSize: (pool == null ? 2 : pool) | 0 });      // pool > 0: кандидаты собираются заранее (быстрее offer/answer)
       pc.addEventListener('connectionstatechange', () => onPcState(L));
       pc.addEventListener('iceconnectionstatechange', () => onPcState(L));
       pc.addEventListener('negotiationneeded', () => negotiate(L));
@@ -345,6 +347,7 @@
     L.state = 'open';
     if (R.role === 'host') { L.peerAt = Date.now(); }
     L.pingT = setInterval(() => pingTick(L), cfg.pingMs);
+    L.statT = setInterval(() => pathTick(L), 5000);
     L.watchT = setInterval(() => watchTick(L), 1000);
     sendLink(L, { type: 'hello', info: localInfo() });
     if (R.role === 'host') sendLink(L, { type: 'welcome', slot: L.slot, max: cfg.maxPlayers });
@@ -387,7 +390,7 @@
   // уничтожить соединение (ресурсы), без событий
   function destroyLink(L) {
     L.intentional = true;
-    clearInterval(L.pingT); clearInterval(L.watchT); clearTimeout(L.connT); clearTimeout(L.restartT);
+    clearInterval(L.statT); clearInterval(L.pingT); clearInterval(L.watchT); clearTimeout(L.connT); clearTimeout(L.restartT);
     L.pingT = L.watchT = L.connT = L.restartT = 0;
     voiceLinkStop(L);
     if (L.bc) { try { L.bc.postMessage({ k: 'bye' }); L.bc.close(); } catch (e) { /* ok */ } L.bc = null; clearInterval(L.hiT); }
@@ -677,19 +680,22 @@
     const ch = fast ? L.act : L.rel;
     if (!ch || ch.readyState !== 'open') return false;
     const bin = typeof raw === 'object' && raw !== null;
-    if (fast && ch.bufferedAmount > (bin ? 4096 : 64 * 1024)) return false;
+    if (fast && ch.bufferedAmount > (bin ? 4096 : 64 * 1024)) { STAT.dropBuf += 1; return false; }
     let s = raw;
     if (!s) { const pkt = Object.assign({}, data); pkt.n = ++seq; pkt.ts = Date.now(); try { s = JSON.stringify(pkt); } catch (e) { return false; } }
     try { ch.send(s); } catch (e) { return false; }
+    if (fast && dupFlag) setTimeout(() => { if (ch.readyState === 'open') { try { ch.send(s); } catch (e) { /* ok */ } } }, 12);
     L.tx += 1; L.txB += bin ? s.byteLength : s.length;
     return true;
   }
   let seq = 0;
+  const STAT = { dropBuf: 0 };
   // единая точка отправки: {type, n, ts, ...поля}. Хост — всем гостям (или opts.to = слот), гость — Хосту (DIRECT-пакеты уходят адресату через Хоста)
   function sendAction(data, opts) {
     if (!data || typeof data.type !== 'string') return false;
     const fast = opts && opts.fast !== undefined ? !!opts.fast : !!FAST[data.type];
     let ok = false;
+    dupFlag = !!DUPE[data.type] && fast;
     const isPos = data.type === 'pos' && typeof data.x === 'number';
     if (R.role === 'host') {
       const to = opts && opts.to;
@@ -705,7 +711,13 @@
       if (isPos && l && l.ready && l.opened && !l.local) ok = sendLink(l, null, true, encPos(data, 0));
       else if (l && l.ready && l.opened) { const d = opts && opts.to ? Object.assign({}, data, { to: opts.to | 0 }) : data; ok = sendLink(l, d, fast); }
     }
+    dupFlag = false;
     return ok;
+  }
+  function sendAt(L, t16) {
+    if (typeof L.off !== 'number') return 0;
+    const n = now(), rn = n + L.off, d = ((((t16 - (Math.round(rn) & 65535)) + 98304) % 65536) - 32768), at = rn + d - L.off;
+    return at > n - 1500 && at <= n + 20 ? Math.min(at, n) : 0;
   }
   function onBinary(L, raw) {
     const t = now();
@@ -718,12 +730,13 @@
     (L.lastT || (L.lastT = {}))[k] = p.t16;
     L.lastRx = t; L.rx += 1; L.rxB += raw.byteLength;
     if (L.state === 'lost') { L.state = 'open'; refreshState(); }
+    p.at = sendAt(L, p.t16);
     if (L.gr === 'host') {
       let cp = null, js = null;
       R.links.forEach((l) => {
         if (l === L || !l.opened || !l.ready) return;
         if (l.virtual || l.local) { if (!js) { const q = Object.assign({}, p); q.from = L.slot; q.n = ++seq; q.ts = Date.now(); delete q.fb; delete q.t16; js = JSON.stringify(q); } sendLink(l, null, true, js); return; }
-        if (!cp) { cp = raw.slice(0); new Uint8Array(cp)[1] = L.slot; }
+        if (!cp) { cp = raw.slice(0); new Uint8Array(cp)[1] = L.slot; if (p.at) new DataView(cp).setUint16(2, Math.round(p.at) & 65535, true); }
         sendLink(l, null, true, cp);
       });
     }
@@ -741,12 +754,13 @@
     if (!p || typeof p.type !== 'string' || p.type.length > 24 || typeof p.n !== 'number') return;
     // от гостя поле from не доверяем: ставим слот соединения; от Хоста from — слот реального отправителя (ретрансляция) или 1
     if (L.gr === 'host') p.from = L.slot; else p.from = (p.from | 0) >= 1 && (p.from | 0) <= cfg.maxPlayers ? p.from | 0 : 1;
-    if (fast) { const k = p.type + ':' + p.from; if (p.n <= (L.lastN[k] || 0)) return; L.lastN[k] = p.n; }
+    if (fast && DUPE[p.type]) { const k = p.from + ':' + p.n, ds = L.dset || (L.dset = new Set()); if (ds.has(k)) return; ds.add(k); if (ds.size > 128) ds.delete(ds.values().next().value); }
+    else if (fast) { const k = p.type + ':' + p.from; if (p.n <= (L.lastN[k] || 0)) return; L.lastN[k] = p.n; }
     L.lastRx = t; L.rx += 1; L.rxB += raw.length;
     if (L.state === 'lost') { L.state = 'open'; refreshState(); }
     switch (p.type) {
-      case 'ping': sendLink(L, { type: 'pong', t: p.t }); return;
-      case 'pong': if (typeof p.t === 'number') { const r = Math.max(0, now() - p.t); L.rtt = L.rtt ? L.rtt * 0.7 + r * 0.3 : r; L.rttMin = L.rttMin ? Math.min(L.rttMin, r) : r; emit('net:rtt', Math.round(rttMain())); } return;
+      case 'ping': sendLink(L, { type: 'pong', t: p.t, u: Math.round(now() * 10) / 10 }); return;
+      case 'pong': if (typeof p.t === 'number') { const r = Math.max(0, now() - p.t); L.rtt = L.rtt ? L.rtt * 0.7 + r * 0.3 : r; L.rttMin = L.rttMin ? Math.min(L.rttMin, r) : r; const tn = now(); (L.rs || (L.rs = [])).push([tn, r, typeof p.u === 'number' ? p.u - (p.t + r / 2) : null]); while (L.rs.length && tn - L.rs[0][0] > 10000) L.rs.shift(); { let bm = 1e9; L.rs.forEach((x) => { if (x[2] !== null && x[1] < bm) { bm = x[1]; L.off = x[2]; } }); } emit('net:rtt', Math.round(rttMain())); } return;
       case 'sdp': onSdp(L, p); return;
       case 'bye': L.peerBye = true; linkGone(L, 'PEER_LEFT'); return;
       case 'rl': onTunnel(L, p); return;
@@ -806,10 +820,44 @@
     else { const h = R.players.find((q) => q.slot === 1); Object.assign(h, { name: L.peer.name, color: L.peer.color, level: L.peer.level, pid: L.pid }); }
     emit('net:peer', Object.assign({ slot: L.slot, pid: L.pid }, L.peer));
   }
+  function rttStats(L) {
+    const a = (L.rs || []).map((x) => x[1]).sort((x, y) => x - y);
+    if (!a.length) return { n: 0, min: 0, avg: 0, p95: 0, max: 0 };
+    return { n: a.length, min: Math.round(a[0]), avg: Math.round(a.reduce((x, y) => x + y, 0) / a.length), p95: Math.round(a[Math.min(a.length - 1, Math.floor(a.length * 0.95))]), max: Math.round(a[a.length - 1]) };
+  }
+  async function pathTick(L) {
+    if (!L.pc || L.local || L.virtual || L.state === 'closed') return;
+    try {
+      const rep = await L.pc.getStats(), by = {}; let pair = null;
+      rep.forEach((r) => { by[r.id] = r; });
+      rep.forEach((r) => { if (r.type === 'transport' && r.selectedCandidatePairId && by[r.selectedCandidatePairId]) pair = by[r.selectedCandidatePairId]; });
+      if (!pair) rep.forEach((r) => { if (r.type === 'candidate-pair' && r.state === 'succeeded' && (r.nominated || r.selected)) pair = r; });
+      if (!pair) return;
+      const lc = by[pair.localCandidateId], rc = by[pair.remoteCandidateId];
+      L.ct = (lc && lc.candidateType) || ''; L.rct = (rc && rc.candidateType) || '';
+      L.path = L.ct === 'relay' || L.rct === 'relay' ? 'relay' : 'direct';
+      L.ice = pair.currentRoundTripTime ? Math.round(pair.currentRoundTripTime * 1000) : 0;
+      const s = rttStats(L);
+      console.log('[net] slot ' + L.slot + ' path=' + L.path + ' (' + L.ct + '/' + L.rct + ') ice-rtt=' + L.ice + 'ms ping min/avg/p95/max=' + s.min + '/' + s.avg + '/' + s.p95 + '/' + s.max + ' dropBuf=' + STAT.dropBuf + (L.off !== undefined ? ' clockOff=' + Math.round(L.off) : '') + (window.NexaCoop && NexaCoop.puppetStats ? NexaCoop.puppetStats() : ''));
+      emit('net:path', L.path);
+    } catch (e) { /* ok */ }
+  }
+  function diag() {
+    return { dropBuf: STAT.dropBuf, rttMain: Math.round(rttMain()), links: R.links.filter((l) => l.opened).map((l) => Object.assign({ slot: l.slot, path: l.path || '', ct: l.ct || '', ice: l.ice || 0 }, rttStats(l))) };
+  }
+  function pingText() {
+    const d = diag(); if (!d.links.length) return '';
+    const w = d.links.reduce((m, l) => (l.avg >= m.avg ? l : m), d.links[0]);
+    return w.avg ? w.avg + ' ms (p95 ' + w.p95 + ')' : '';
+  }
   function pingTick(L) { sendLink(L, { type: 'ping', t: now() }); }
   function watchTick(L) {
     if (!L.ready) return;
     if (now() - L.lastRx > cfg.silentMs) markLost(L);
+    if (cfg.restartOnRtt && L.pc && L.rttMin > 0) {
+      L.hi = L.rtt > L.rttMin * 2 && L.rtt > 80 ? (L.hi || 0) + 1 : 0;
+      if (L.hi >= 3 && Date.now() - (L.rsAt || 0) > 30000) { L.rsAt = Date.now(); L.hi = 0; try { L.pc.restartIce(); } catch (e) { /* ok */ } }
+    }
     if (L.openAt && L === (R.links[0] || L)) emit('net:tick', { up: Math.round((Date.now() - L.openAt) / 1000) });
   }
 
@@ -1090,7 +1138,7 @@
     get state() { return state; }, get role() { return R.role; }, get slot() { return slot(); }, get peer() { return others()[0] || null; }, get players() { return others(); },
     get isHost() { return R.role === 'host'; }, get isOpen() { return state === 'open'; }, get connected() { return isOpen(); },
     get count() { return R.role ? 1 + R.links.filter((l) => l.opened).length : 1; },
-    get rtt() { return Math.round(rttMain()); }, get info() { const l = manual || R.links[0]; return l ? l.info : null; },
+    get rtt() { return Math.round(rttMain()); }, linkStats: diag, pingText, get info() { const l = manual || R.links[0]; return l ? l.info : null; },
     get offerCode() { return manual ? manual.offerCode : ''; }, get answerCode() { return R.role === 'guest' && R.links[0] ? R.links[0].answerCode : ''; },
     get pending() { return !!manual; }, get pendingLinks() { return R.links.filter((l) => !l.opened).length; },
     stats: () => { let tx = 0, rx = 0, txB = 0, rxB = 0, up = 0; R.links.forEach((l) => { tx += l.tx; rx += l.rx; txB += l.txB; rxB += l.rxB; if (l.openAt) up = Math.max(up, Math.round((Date.now() - l.openAt) / 1000)); }); return { tx, rx, txB, rxB, rtt: Math.round(rttMain()), up }; },
