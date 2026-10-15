@@ -635,17 +635,26 @@
       if (!this.host || this.solo || !this.shared || !this.peerReady) return;
       this.snapT += dt; if (this.snapT < (document.hidden ? 0.5 : 0.05)) return; this.snapT = 0;
       this.snapPh = (this.snapPh || 0) ^ 1; if (!this.snapPh) this.snapFull += 1; const full = this.snapFull >= 5; if (full && !this.snapPh) this.snapFull = 0;
-      const list = [], rem = Array.from(this.remotes.values()).filter((m) => m.rem.got);
+      const ps = NN.players.map((q) => ({ slot: q.slot, m: this.remotes.get(q.slot) })), lists = new Map(); this.snapN = (this.snapN || 0) + 1;
+      ps.forEach((q) => lists.set(q.slot, []));
       this.byId.forEach((e) => {
         if (e.dead || !e.n || e.nid < 0) return;
-        if (this.snapPh && !full && !document.hidden) { const gp = e.n.g.position; if (!rem.some((m) => { const dx = m.rem.x - gp.x, dz = m.rem.z - gp.z; return dx * dx + dz * dz < 900; })) return; }
         const g = e.n.g.position, x = Math.round(g.x * 50), z = Math.round(g.z * 50), a = Math.round(e.n.yaw * 50), f = (e.n.armT > 0.5 ? 1 : 0) | (e.n.creeping ? 2 : 0) | ((e.muz || 0) > 0 ? 4 : 0), h = Math.max(0, Math.min(255, Math.round(e.hp / e.max * 255))), l = e.ls;
         if (!full && l && l[0] === x && l[1] === z && l[2] === a && l[3] === f && l[4] === h) return;
         e.ls = [x, z, a, f, h];
-        list.push([e.nid, x, z, a, f, h]);
+        for (let i = 0; i < ps.length; i += 1) {
+          const m = ps[i].m;
+          if (!full && m && m.rem.got) { const dx = m.rem.x - g.x, dz = m.rem.z - g.z; if (dx * dx + dz * dz > 1600 && (this.snapN & 3)) continue; }
+          lists.get(ps[i].slot).push(e.nid, x, z, a, f, h);
+        }
       });
-      if (!list.length) return;
-      for (let i = 0; i < list.length; i += 40) NN.sendAction({ type: 'snap', e: list.slice(i, i + 40) }, { fast: true });
+      lists.forEach((L, slot) => {
+        for (let o = 0; o < L.length; o += 240) {
+          const n = Math.min(40, (L.length - o) / 6), buf = new ArrayBuffer(2 + n * 10), v = new DataView(buf); v.setUint8(0, 3); v.setUint8(1, n);
+          for (let t = 0; t < n; t += 1) { const b = 2 + t * 10, k = o + t * 6; v.setUint16(b, L[k] & 65535, true); v.setInt16(b + 2, clamp(L[k + 1], -32767, 32767), true); v.setInt16(b + 4, clamp(L[k + 2], -32767, 32767), true); v.setInt16(b + 6, clamp(L[k + 3], -32767, 32767), true); v.setUint8(b + 8, L[k + 4]); v.setUint8(b + 9, L[k + 5]); }
+          if (!NN.sendRaw(slot, buf)) { const arr = []; for (let t = 0; t < n; t += 1) { const k = o + t * 6; arr.push([L[k], L[k + 1], L[k + 2], L[k + 3], L[k + 4], L[k + 5]]); } NN.sendAction({ type: 'snap', e: arr }, { fast: true, to: slot }); }
+        }
+      });
     }
     onHit(p) {                                                 // гость попал во врага: Хост применяет урон
       if (!this.host || !this.shared || !this.ready) return;

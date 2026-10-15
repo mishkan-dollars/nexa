@@ -833,6 +833,13 @@
     });
   }
   function onBinary(L, raw) {
+    if (new Uint8Array(raw)[0] === 3) {       // снапшот врагов (хост -> гость): u16 id, i16 x z a (x50), u8 флаги, u8 hp
+      if (L.gr !== 'guest') return;
+      const v = new DataView(raw), c = v.getUint8(1), e = []; if (raw.byteLength < 2 + c * 10) return;
+      for (let i = 0; i < c; i += 1) { const b = 2 + i * 10; e.push([v.getUint16(b, true), v.getInt16(b + 2, true), v.getInt16(b + 4, true), v.getInt16(b + 6, true), v.getUint8(b + 8), v.getUint8(b + 9)]); }
+      L.lastRx = now(); L.rx += 1; L.rxB += raw.byteLength; if (L.state === 'lost') { L.state = 'open'; refreshState(); }
+      emit('snap', { type: 'snap', e, from: 1 }); return;
+    }
     if (new Uint8Array(raw)[0] === 2) {       // пачка pos от хоста
       const u = new Uint8Array(raw), c = u[1]; let o = 2;
       for (let i = 0; i < c && o < u.length; i += 1) { const ln = u[o]; if (o + 1 + ln > u.length) break; onBinary(L, raw.slice(o + 1, o + 1 + ln)); o += 1 + ln; }
@@ -1272,7 +1279,7 @@
     stats: () => { let tx = 0, rx = 0, txB = 0, rxB = 0, up = 0; R.links.forEach((l) => { tx += l.tx; rx += l.rx; txB += l.txB; rxB += l.rxB; if (l.openAt) up = Math.max(up, Math.round((Date.now() - l.openAt) / 1000)); }); return { tx, rx, txB, rxB, rtt: Math.round(rttMain()), up }; },
     local: localApi, diag: diagLast, lastAttempt, candStats,
     createOffer, acceptAnswer, createAnswer, parse: parseInput, linkFor, pendingJoin, clearJoinFromUrl,
-    sendAction, on, off, close, reset: () => closeAll(false), localInfo,
+    sendAction, sendRaw(slot, buf) { const l = findSlot(slot); return !!(l && l.opened && !l.virtual && !l.local && sendLink(l, null, true, buf)); }, on, off, close, reset: () => closeAll(false), localInfo,
     kick, kickWhere, banGate, setMuted, isMuted, report, isBlockedName, begin,
     setLan(v) { lsSet('nexaNetLan', v ? '1' : '0'); }, get lan() { return localMode(); },
     text: (code) => MSG[code] || String(code || ''),
