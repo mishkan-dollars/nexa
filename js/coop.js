@@ -679,7 +679,7 @@
       const keep = new Set(local);
       groups.forEach((list, k) => {
         const m = this.remotes.get(k); if (!m) { list.forEach((e) => keep.add(e)); return; }
-        cb.enemies = list; this.withRemote(m, () => orig.call(r, dt, frozen));
+        cb.enemies = list; this.withRemote(m, () => orig.call(r, dt, r.cineDepth > 0));
         list.forEach((e) => keep.add(e));
       });
       cb.enemies = all.filter((e) => keep.has(e));
