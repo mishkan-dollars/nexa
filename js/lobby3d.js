@@ -538,6 +538,7 @@
   function tick(now) {
     raf = 0;
     if (!want) return;
+    if (document.hidden || now - lastT < 46) { raf = requestAnimationFrame(tick); return; }
     const dt = Math.min(0.1, (now - lastT) / 1000 || 0.016); lastT = now;
     step(dt, now);
     raf = requestAnimationFrame(tick);

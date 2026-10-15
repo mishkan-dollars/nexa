@@ -460,7 +460,23 @@
     if (L.ready) linkOpened(L);
     return true;
   }
+  let natType = 'unknown', natAt = 0;
+  function probeNat() {
+    if (natAt && Date.now() - natAt < 300000 || typeof RTCPeerConnection !== 'function') return Promise.resolve(natType);
+    natAt = Date.now();
+    return new Promise((res) => {
+      let pc; const pub = new Set(); let loc = 0, fin = false;
+      const done = () => { if (fin) return; fin = true; try { pc.close(); } catch (e) { /* ok */ } natType = !loc ? 'blocked' : pub.size > 1 ? 'symmetric' : 'cone'; log('nat ' + natType + ' (' + pub.size + ' mappings)'); emit('net:nat', natType); res(natType); };
+      try {
+        pc = new RTCPeerConnection({ iceServers: ICE_SERVERS.slice(0, 3) }); pc.createDataChannel('n');
+        pc.onicecandidate = (e) => { if (!e.candidate) { done(); return; } const m = / (\d+) typ srflx .*rport (\d+)/.exec(e.candidate.candidate); if (m) { loc = 1; pub.add(m[1] + '>' + m[2]); } };
+        pc.createOffer().then((o) => pc.setLocalDescription(o)).catch(done);
+        setTimeout(done, 4000);
+      } catch (e) { done(); }
+    });
+  }
   function begin(role) {
+    probeNat();
     if (role === 'host') { if (R.role !== 'host') { closeAll(true); R.role = 'host'; R.mySlot = 1; R.sticky = 'idle'; } }
     else { closeAll(true); R.role = 'guest'; R.mySlot = 0; R.sticky = 'idle'; }
   }
@@ -1215,7 +1231,7 @@
   window.addEventListener('pagehide', () => { R.links.forEach((l) => { if (l.ready) sendLink(l, { type: 'bye' }); }); });
 
   window.NexaNet = {
-    VERSION, TELEGRAM, ICE_SERVERS, ICE_SERVERS_EXT, MSG, config: cfg, FAST, MAX_PLAYERS, MAX_BR, MAX_VOICE, setMax(n) { if (R.role !== 'guest') cfg.maxPlayers = Math.max(2, Math.min(MAX_BR, n | 0 || MAX_PLAYERS)); }, RELAY, DIRECT, PID: MYPID,
+    probeNat, get natType() { return natType; }, VERSION, TELEGRAM, ICE_SERVERS, ICE_SERVERS_EXT, MSG, config: cfg, FAST, MAX_PLAYERS, MAX_BR, MAX_VOICE, setMax(n) { if (R.role !== 'guest') cfg.maxPlayers = Math.max(2, Math.min(MAX_BR, n | 0 || MAX_PLAYERS)); }, RELAY, DIRECT, PID: MYPID,
     supported: () => typeof RTCPeerConnection === 'function',
     canDeflate,
     get state() { return state; }, get role() { return R.role; }, get slot() { return slot(); }, get peer() { return others()[0] || null; }, get players() { return others(); },

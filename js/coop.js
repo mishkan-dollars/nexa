@@ -629,7 +629,7 @@
       const list = [], rem = Array.from(this.remotes.values()).filter((m) => m.rem.got);
       this.byId.forEach((e) => {
         if (e.dead || !e.n || e.nid < 0) return;
-        if (this.snapPh && !full && !document.hidden) { const gp = e.n.g.position; if (!rem.some((m) => Math.hypot(m.rem.x - gp.x, m.rem.z - gp.z) < 30)) return; }
+        if (this.snapPh && !full && !document.hidden) { const gp = e.n.g.position; if (!rem.some((m) => { const dx = m.rem.x - gp.x, dz = m.rem.z - gp.z; return dx * dx + dz * dz < 900; })) return; }
         const g = e.n.g.position, x = Math.round(g.x * 50), z = Math.round(g.z * 50), a = Math.round(e.n.yaw * 50), f = (e.n.armT > 0.5 ? 1 : 0) | (e.n.creeping ? 2 : 0) | ((e.muz || 0) > 0 ? 4 : 0), h = Math.max(0, Math.min(255, Math.round(e.hp / e.max * 255))), l = e.ls;
         if (!full && l && l[0] === x && l[1] === z && l[2] === a && l[3] === f && l[4] === h) return;
         e.ls = [x, z, a, f, h];
@@ -734,7 +734,7 @@
         const e = this.byId.get(s[0] | 0); if (!e) { miss = true; continue; } if (e.dead) continue;
         e.net.x = num(s[1]) / 50; e.net.z = num(s[2]) / 50; e.net.a = num(s[3]) / 50; e.net.f = s[4] | 0;
         const nb = e.nb || (e.nb = []), lb = nb[nb.length - 1];
-        if (lb && Math.hypot(e.net.x - lb.x, e.net.z - lb.z) > 6) nb.length = 0;
+        if (lb && (e.net.x - lb.x) * (e.net.x - lb.x) + (e.net.z - lb.z) * (e.net.z - lb.z) > 36) nb.length = 0;
         nb.push({ t: now, x: e.net.x, z: e.net.z, yaw: e.net.a }); if (nb.length > 8) nb.shift();
         if (s.length > 5) e.hp = clamp(num(s[5]), 0, 255) / 255 * e.max;
       }
@@ -742,11 +742,11 @@
     }
     puppets(dt) {
       if (this.host || !this.shared) return;
-      const k = 1 - Math.exp(-dt * 12);
+      const k = 1 - Math.exp(-dt * 12), pnow = performance.now() - 60;
       this.byId.forEach((e) => {
         if (e.dead || !e.net) return;
         const g = e.n.g.position, N = e.net;
-        const sm = e.nb && e.nb.length ? this.sample({ buf: e.nb }, performance.now() - 60) : null;
+        let sm = null; if (e.nb && e.nb.length) { const sr = this.sr || (this.sr = { buf: null }); sr.buf = e.nb; sm = this.sample(sr, pnow); }
         if (sm) { g.x = sm.x; g.z = sm.z; e.n.yaw = sm.yaw; } else { g.x += (N.x - g.x) * k; g.z += (N.z - g.z) * k; e.n.yaw = N.a; }
          e.n.armT = N.f & 1 ? 1 : 0; e.n.creeping = !!(N.f & 2); e.muz = N.f & 4 ? 0.05 : 0;
       });
