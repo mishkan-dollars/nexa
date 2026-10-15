@@ -5,7 +5,7 @@
   'use strict';
   const NN = window.NexaNet, C = window.Missions && window.Missions._core;
   if (!NN || !C || !C.Run || !window.NexaCoop) return;
-  const MIS = C.MISSIONS, RP = C.Run.prototype, T = window.THREE;
+  const MIS = C.MISSIONS, RP = C.Run.prototype;
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
   const num = (v, d) => (typeof v === 'number' && isFinite(v) ? v : d || 0);
   const q = (v, k) => Math.round(v * k) / k;
@@ -256,7 +256,7 @@
     onKill(p) {
       const a = p.a | 0, t = p.t | 0, Tg = this.pl.get(t); if (!Tg) return;
       if (!this.host) this.applySb(p.s);
-      Tg.alive = false; Tg.resp = 1;
+      Tg.alive = false;
       this.addFeed(a, t, String(p.w || ''), !!p.h);
       if (t === this.me) this.die(a);
       if (a === this.me && t !== this.me) { const r = this.r; try { r.hitmark && r.hitmark(!!p.h); } catch (e) { /* ok */ } this.say('KILL', nameOf(t), 1.3, true); }
@@ -306,7 +306,7 @@
       r.snd && r.snd.play('death');
       r.fireHeld = false; r.padFire = false; r.aimWant = false; r.rl = null;
       r.syncLock && r.syncLock(); r.rumble && r.rumble(1, 1, 400); r.refreshHud && r.refreshHud();
-      const cam = r.camera, v = new T.Vector3(); cam.getWorldDirection(v);
+      const T = window.THREE, cam = r.camera, v = new T.Vector3(); cam.getWorldDirection(v);
       r.camFree = { pos: cam.position.clone(), look: cam.position.clone().add(v), fov: cam.fov, roll: 0 };
       this.self = { dead: true, till: now() + RESP * 1000, by, t0: now() };
     }
@@ -356,7 +356,7 @@
     // ---------------------------------------------------------------- предметы
     buildItems(list) {
       this.clearItems();
-      const geo = [new T.BoxGeometry(0.5, 0.32, 0.34), new T.BoxGeometry(0.46, 0.46, 0.46)], mat = [new T.MeshBasicMaterial({ color: 0xffd60a }), new T.MeshBasicMaterial({ color: 0x34c759 })];
+      const T = window.THREE, geo = [new T.BoxGeometry(0.5, 0.32, 0.34), new T.BoxGeometry(0.46, 0.46, 0.46)], mat = [new T.MeshBasicMaterial({ color: 0xffd60a }), new T.MeshBasicMaterial({ color: 0x34c759 })];
       const ring = new T.RingGeometry(0.5, 0.62, 28), rm = [new T.MeshBasicMaterial({ color: 0xffd60a, transparent: true, opacity: 0.55, side: T.DoubleSide }), new T.MeshBasicMaterial({ color: 0x34c759, transparent: true, opacity: 0.55, side: T.DoubleSide })];
       this.igeo = { geo, mat, ring, rm };
       list.slice(0, 16).forEach((a) => {
@@ -477,7 +477,7 @@
       let t1 = 'DRAW';
       const M = this.pl.get(this.me);
       if (this.team) t1 = win < 0 ? 'DRAW' : (M && M.team === win ? 'VICTORY' : 'DEFEAT'); else t1 = win < 0 ? 'DRAW' : win === this.me ? 'VICTORY' : 'DEFEAT';
-      const sub = this.team ? (win < 0 ? '' : '<span>' + TEAMN[win] + ' TEAM WINS</span>') : (win > 0 ? '<span translate="no">' + esc(nameOf(win)) + '</span> <span>WINS</span>' : '');
+      const sub = this.team ? (win < 0 ? '' : '<span>' + TEAMN[win] + ' TEAM WINS</span>') : (win > 0 && this.pl.get(win) ? '<span translate="no">' + esc(this.pl.get(win).name) + '</span> <span>WINS</span>' : '');
       const mvpP = this.pl.get(mvp);
       el.innerHTML = '<div class="pv-rbox"><small>' + (this.cfg.kind === 'duel' ? 'DUEL' : this.team ? 'TEAM DEATHMATCH' : 'DEATHMATCH') + '</small><h2 class="' + t1.toLowerCase() + '"><span>' + t1 + '</span></h2><p class="pv-sub">' + sub + '</p>' +
         (mvpP ? '<p class="pv-mvp"><span>MVP</span> <b translate="no">' + esc(mvpP.name) + '</b> <em translate="no">' + mvpP.k + ' / ' + mvpP.d + '</em></p>' : '') +
@@ -545,5 +545,5 @@
     return run;
   };
 
-  window.NexaPvp = { norm, goalOf, GOALS, KINDS, WPNS, MAPS, TEAMC, get active() { return !!cur; }, get state() { return cur ? { phase: cur.phase, rd: cur.rd, tm: cur.tm, tl: cur.tl, pl: Array.from(cur.pl.values()).map((P) => ({ slot: P.slot, team: P.team, k: P.k, d: P.d, alive: P.alive, hp: Math.round(P.hp) })), items: cur.items.map((i) => ({ kind: i.kind, on: i.on })), dead: cur.self.dead, over: cur.over } : null; } };
+  window.NexaPvp = { norm, goalOf, GOALS, KINDS, WPNS, MAPS, TEAMC, get active() { return !!cur; }, get state() { return cur ? { phase: cur.phase, rd: cur.rd, tm: cur.tm, tl: cur.tl, pl: Array.from(cur.pl.values()).map((P) => ({ slot: P.slot, team: P.team, k: P.k, d: P.d, alive: P.alive, hp: Math.round(P.hp) })), items: cur.items.map((i) => ({ kind: i.kind, on: i.on, x: i.x, z: i.z })), dead: cur.self.dead, over: cur.over } : null; } };
 }());
