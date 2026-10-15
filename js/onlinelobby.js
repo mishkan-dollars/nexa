@@ -74,7 +74,7 @@
   }
 
   function shell() {
-    const tabs = [['play', 'PLAY'], ['public', 'PUBLIC'], ['trade', 'TRADES'], ['social', 'SOCIAL'], ['profile', 'PROFILE'], ['connect', 'CONNECTION']].filter((x) => TRADES_ENABLED || x[0] !== 'trade');
+    const tabs = [['play', 'PLAY'], ['public', 'PUBLIC'], ['trade', 'TRADES'], ['social', 'SOCIAL'], ['profile', 'PROFILE'], ['connect', 'CONNECTION'], ['rules', 'RULES']].filter((x) => TRADES_ENABLED || x[0] !== 'trade');
     return '<div class="ol" id="ol" data-i18n="net" data-tab="play" data-state="idle">' +
       '<div class="ol-bg" aria-hidden="true"><i class="ol-moon"></i><i class="ol-haze"></i></div>' +
       '<div class="ol-stage" id="ol-stage"><div class="ol-floor"></div>' +
@@ -93,6 +93,7 @@
       '</header>' +
       '<main class="ol-main">' + paneHTML() + '</main>' +
       '<div class="ol-cd" id="ol-cd" hidden><div><small>THE MATCH STARTS IN</small><b translate="no">3</b></div></div>' +
+      '<div class="rl-bar" id="rl-bar"><span>AS IS, P2P: ROOM MEMBERS MAY SEE YOUR IP; YOUR BALANCE IS STORED IN YOUR BROWSER.</span> <button type="button" data-act="rules-open">DISCLAIMER · DETAILS</button></div>' +
       '<div class="ol-toast" id="ol-toast" role="status" aria-live="polite"></div>' +
       '<div class="ol-modal" id="ol-pick" hidden role="dialog" aria-modal="true" aria-label="Choose a mode"></div>' +
       '<div class="ol-modal" id="ol-card" hidden role="dialog" aria-modal="true" aria-label="Player profile"></div>' +
@@ -157,6 +158,7 @@
       '<div class="pf-btns"><button type="button" class="ol-btn danger" data-act="pf-reset" id="pf-reset">RESET STATS</button></div>' +
     '</div></section>' +
     // -------- CONNECTION
+    '<section class="ol-pane ol-sheet" data-pane="rules"><div class="sh-in" id="rl-pane"></div></section>' +
     '<section class="ol-pane ol-sheet" data-pane="connect"><div class="sh-in">' +
       '<ol class="cn-steps" id="cn-steps"><li>INVITE</li><li>ANSWER</li><li>LINK</li><li>PLAY</li></ol>' +
       '<div class="cn-bar"><b id="cn-state">NOT CONNECTED</b><span id="cn-time" translate="no"></span><button type="button" class="ol-btn danger" data-act="disconnect" id="cn-dis" hidden>DISCONNECT</button><button type="button" class="ol-btn" data-act="net-report" id="cn-rep">COPY NETWORK REPORT</button></div>' +
@@ -519,8 +521,9 @@
   }
   function setTab(t) {
     if (t === 'chat') { L.tab = 'play'; updTab(); chatToggle(true); return; }
-    if (['play', 'public', 'trade', 'social', 'profile', 'connect'].indexOf(t) < 0 || (t === 'trade' && !TRADES_ENABLED)) t = 'play';
+    if (['play', 'public', 'trade', 'social', 'profile', 'connect', 'rules'].indexOf(t) < 0 || (t === 'trade' && !TRADES_ENABLED)) t = 'play';
     L.tab = t; updTab();
+    if (t === 'rules' && window.NexaRules) NexaRules.mountTab($('#rl-pane'));
   }
 
   // ------------------------------------------------------------------ действия
@@ -1178,6 +1181,7 @@
       case 'local-join': localJoin(); break;
       case 'copy': copyFrom($('#' + v), 'COPIED'); break;
       case 'net-report': copyReport(); break;
+      case 'rules-open': setTab('rules'); break;
       case 'copy-code': { const l = $('#h-link'); if (l && l.value) { const t = document.createElement('textarea'); t.value = NN.offerCode; t.style.cssText = 'position:fixed;left:-999px;top:0'; document.body.appendChild(t); copyFrom(t, 'COPIED'); setTimeout(() => t.remove(), 300); } break; }
       case 'disconnect': if (RM) { RM.stopHost(); RM.stopJoin(); } if (NN.local) NN.local.stop(); NN.close(); L.ready = false; L.readyMap = {}; L.readyList = []; L.roomLink = ''; $('#h-out').hidden = true; $('#g-out').hidden = true; L.t0 = 0; danceStopAll(); refreshAll(); break;
       case 'name': {
@@ -1197,7 +1201,7 @@
       case 'card': { const s = Number(a.dataset.slot); if (s > 0) openCard(s); break; }
       case 'card-close': closeCard(); break;
       case 'mute': { const s = Number(a.dataset.slot); NN.setMuted(s, !NN.isMuted(s)); updRoster(); if (L.cards.open === s) renderCard(s); break; }
-      case 'report': { const s = Number(a.dataset.slot); NN.report(s); toast('PLAYER HIDDEN AND BLOCKED'); updRoster(); renderCard(s); break; }
+      case 'report': { const s = Number(a.dataset.slot); NN.report(s); { const pk = window.NexaAvatar ? NexaAvatar.pkOf(pidOf(s)) : ''; if (pk && window.NexaSocial && NexaSocial.reportPlayer) NexaSocial.reportPlayer(pk); } toast('PLAYER HIDDEN AND BLOCKED'); updRoster(); renderCard(s); break; }
       case 'av-hide': { const s = Number(a.dataset.slot), k = pidOf(s); if (k && window.NexaAvatar) { const on = !NexaAvatar.isHidden(k), pk = NexaAvatar.pkOf(k); NexaAvatar.hide(k, on); if (on && pk && window.NexaSocial && NexaSocial.reportAvatar) NexaSocial.reportAvatar(pk); } break; }
       case 'kick': { const s = Number(a.dataset.slot); NN.kick(s); closeCard(); break; }
       // ---- серверы и комнаты
@@ -1558,6 +1562,7 @@
     if (L.joinUi) renderJoin();
     if (RM && RM.hosting) { updRoom(); if (RM.hosting.pub) renderPublic(); }
   }
+  const gate = (go) => { if (!window.NexaRules || NexaRules.accepted()) { go(); return; } NexaRules.ask((ok) => { if (ok) go(); }); };
   let inited = false;
   const api = {
     init(o) {
@@ -1584,11 +1589,11 @@
       stStart();
     },
     action(a) {
-      if (a === 'online') { if (ctx.setView) ctx.setView('ONLINE'); if (ctx.render) ctx.render(); return true; }
+      if (a === 'online') { gate(() => { if (ctx.setView) ctx.setView('ONLINE'); if (ctx.render) ctx.render(); }); return true; }
       return false;
     },
     // после загрузки: ссылка с ?join= / ?room= сразу открывает онлайн-лобби
-    boot() { if ((NN.pendingJoin() || (RM && RM.pendingRoom())) && !L.joinFromUrl && ctx.setView) { ctx.setView('ONLINE'); ctx.render && ctx.render(); } },
+    boot() { if ((NN.pendingJoin() || (RM && RM.pendingRoom())) && !L.joinFromUrl && ctx.setView) gate(() => { ctx.setView('ONLINE'); ctx.render && ctx.render(); }); },
     join(rid) { if (root) startJoin(rid, 'join', false); else { this._pend = rid; this.action('online'); } },
     get active() { return !!root; },
     get state() { return L; },

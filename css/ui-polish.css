@@ -145,3 +145,13 @@
 .av-box { background: #0d0e10; border: 1px solid #f2f2f2; padding: 14px 18px; text-align: center; max-width: 92vw; }
 .av-box h3 { margin: 0 0 8px; letter-spacing: .14em; } .av-cv { width: 128px; height: 128px; border-radius: 18%; border: 1px solid #f2f2f2; touch-action: none; cursor: grab; display: block; margin: 0 auto 8px; background: #000; }
 .av-box input[type=range] { width: 160px; }
+.rl-modal { position: fixed; inset: 0; z-index: 100001; display: grid; place-items: center; background: rgba(0,0,0,.86); padding: 10px; }
+.rl-box { background: #0d0e10; border: 1px solid #f2f2f2; padding: 12px 16px; width: min(760px, 96vw); display: flex; flex-direction: column; gap: 8px; max-height: 96vh; }
+.rl-step { letter-spacing: .14em; color: #ffd60a; } .rl-scroll { overflow: auto; max-height: 62vh; padding-right: 8px; border-top: 1px solid #333; border-bottom: 1px solid #333; }
+.rl-text p { margin: 4px 0; font-size: 14px; line-height: 1.45; text-transform: none; letter-spacing: .01em; } .rl-h1 { margin: 6px 0; letter-spacing: .1em; text-transform: none; } .rl-h { margin: 12px 0 4px; color: #ffd60a; font-size: 15px; text-transform: none; }
+.rl-note { min-height: 1.2em; margin: 0; } .rl-box .pf-btns { display: flex; gap: 10px; flex-wrap: wrap; } .rl-box .ol-btn:disabled { opacity: .4; cursor: default; }
+.rl-bar { position: absolute; left: 0; right: 0; bottom: 0; z-index: 4; padding: 2px 10px; font-size: 10px; letter-spacing: .06em; background: rgba(0,0,0,.7); color: #b8b8b8; text-align: center; pointer-events: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rl-bar button { pointer-events: auto; background: none; border: 0; color: #ffd60a; font: inherit; cursor: pointer; text-decoration: underline; padding: 0; }
+.rl-toc { display: flex; flex-direction: column; gap: 2px; margin: 8px 0 14px; } .rl-toc b { margin-top: 8px; color: #ffd60a; } .rl-a { background: none; border: 0; color: #f2f2f2; font: inherit; font-size: 13px; text-align: left; cursor: pointer; padding: 1px 0; text-transform: none; } .rl-a:hover { text-decoration: underline; }
+.rl-title { letter-spacing: .12em; }
+.ol[data-tab="rules"] .ol-pane[data-pane="rules"] { display: block; }

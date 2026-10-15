@@ -253,7 +253,7 @@
   function setChannel(c) { S.ch = c; save(); CHAT.rows = []; subChat(); emit('chat'); }
   const mute = (pk, v) => { if (v) S.mute[pk] = 1; else delete S.mute[pk]; save(); CHAT.rows = CHAT.rows.filter((r) => !S.mute[r.pk]); emit('chat'); emit('friends'); };
   const block = (pk, v) => { if (v) { S.block[pk] = 1; delete S.friends[pk]; } else delete S.block[pk]; save(); CHAT.rows = CHAT.rows.filter((r) => !S.block[r.pk]); emit('chat'); emit('friends'); };
-  function reportAvatar(pk) { if (HEX64.test(pk || '') && netOk()) publish(mk(KIND.report, [['p', pk]], JSON.stringify({ r: 'avatar' }))); }
+  function reportAvatar(pk, why) { if (HEX64.test(pk || '') && netOk()) publish(mk(KIND.report, [['p', pk]], JSON.stringify({ r: clean(why || 'avatar', 40) }))); }
   function report(pk, why) { mute(pk, true); publish(mk(KIND.report, [['p', pk]], JSON.stringify({ r: clean(why || 'spam', 40) }))); }
 
   // ------------------------------------------------------------------ профили и рейтинг
@@ -356,6 +356,7 @@
   // ------------------------------------------------------------------ запуск: только пока включён переключатель серверов и есть согласие
   let started = false, tm = 0, tp = 0;
   function boot() {
+    if (window.NexaRules && !NexaRules.accepted()) return;
     if (started) return; started = true;
     me();
     netTick(); tm = setInterval(netTick, 8000);
@@ -538,7 +539,7 @@
 
   window.NexaSocial = {
     mount, boot, stop, publish, presEvent, subscribe, unsubscribe, addFriend, acceptFriend, removeFriend, invite, sendDM, sendChat, setChannel, mute, block, report,
-    createClan, joinClan, leaveClan, loadProfile, pubProfile, reportAvatar, takeInvite() { const r = pendingInvite; pendingInvite = ''; return r; },
+    createClan, joinClan, leaveClan, loadProfile, pubProfile, reportAvatar, reportPlayer: (pk) => reportAvatar(pk, 'player'), takeInvite() { const r = pendingInvite; pendingInvite = ''; return r; },
     get id() { return me(); }, short, state: S, board: BOARD, clans: CLANS, presence: PRES, statusOf, net: netInfo, on: (t, f) => ev.addEventListener(t, f), _seal: seal, _open: open, _dm: DM
   };
 }());
