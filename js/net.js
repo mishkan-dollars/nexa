@@ -353,7 +353,8 @@
     if (L.dg) { L.dg.ok = true; L.dg.okAt = Date.now() - L.dg.t0; LA = L.dg; }
     if (R.role === 'host') { L.peerAt = Date.now(); }
     L.pingT = setInterval(() => pingTick(L), cfg.pingMs);
-    L.statT = setInterval(() => pathTick(L), 5000);
+    L.statT = setInterval(() => { if (!document.hidden) pathTick(L); }, 20000);
+    setTimeout(() => pathTick(L), 3000);
     L.watchT = setInterval(() => watchTick(L), 1000);
     sendLink(L, { type: 'hello', info: localInfo() });
     if (R.role === 'host') sendLink(L, { type: 'welcome', slot: L.slot, max: cfg.maxPlayers });
@@ -833,8 +834,8 @@
     L.lastRx = t; L.rx += 1; L.rxB += raw.length;
     if (L.state === 'lost') { L.state = 'open'; refreshState(); }
     switch (p.type) {
-      case 'ping': sendLink(L, { type: 'pong', t: p.t, u: Math.round(now() * 10) / 10 }); return;
-      case 'pong': if (typeof p.t === 'number') { const r = Math.max(0, now() - p.t); L.rtt = L.rtt ? L.rtt * 0.7 + r * 0.3 : r; L.rttMin = L.rttMin ? Math.min(L.rttMin, r) : r; const tn = now(); (L.rs || (L.rs = [])).push([tn, r, typeof p.u === 'number' ? p.u - (p.t + r / 2) : null]); while (L.rs.length && tn - L.rs[0][0] > 10000) L.rs.shift(); { let bm = 1e9; L.rs.forEach((x) => { if (x[2] !== null && x[1] < bm) { bm = x[1]; L.off = x[2]; } }); } emit('net:rtt', Math.round(rttMain())); } return;
+      case 'ping': if (p.h) L.peerHid = now(); sendLink(L, { type: 'pong', t: p.t, u: Math.round(now() * 10) / 10 }); return;
+      case 'pong': if (typeof p.t === 'number') { const r = Math.max(0, now() - p.t); L.rtt = L.rtt ? L.rtt * 0.7 + r * 0.3 : r; L.rttMin = L.rttMin ? Math.min(L.rttMin, r) : r; const tn = now(); (L.rs || (L.rs = [])).push([tn, r, typeof p.u === 'number' ? p.u - (p.t + r / 2) : null]); while (L.rs.length && tn - L.rs[0][0] > 10000) L.rs.shift(); { let bm = 1e9; L.rs.forEach((x) => { if (x[2] !== null && x[1] < bm) { bm = x[1]; L.off = x[2]; } }); } const rm = Math.round(rttMain()); if (Math.abs(rm - rttEm) > 5) { rttEm = rm; emit('net:rtt', rm); } } return;
       case 'sdp': onSdp(L, p); return;
       case 'bye': L.peerBye = true; linkGone(L, 'PEER_LEFT'); return;
       case 'rl': onTunnel(L, p); return;
@@ -925,10 +926,17 @@
     if (!w) w = d.links.reduce((m, l) => (l.avg >= m.avg ? l : m), d.links[0]);
     return w.avg ? w.avg + ' ms (p95 ' + w.p95 + ')' : '';
   }
-  function pingTick(L) { sendLink(L, { type: 'ping', t: now() }); }
+  let rttEm = -99;
+  function pingTick(L, force) {
+    const t = now(), hid = document.hidden, gap = hid ? 2000 : Date.now() - L.openAt < 5000 ? 250 : 1000;
+    if (!force && t - (L.pingAt || 0) < gap - 30) return;
+    L.pingAt = t; sendLink(L, hid ? { type: 'ping', t, h: 1 } : { type: 'ping', t });
+  }
+  document.addEventListener('visibilitychange', () => { if (document.hidden) return; R.links.forEach((l) => { if (l.ready) { l.lastRx = now(); pingTick(l, true); } }); });
   function watchTick(L) {
     if (!L.ready) return;
-    if (now() - L.lastRx > cfg.silentMs) markLost(L);
+    const lim = document.hidden || now() - (L.peerHid || -1e9) < 6000 ? Math.max(cfg.silentMs, 20000) : cfg.silentMs;
+    if (now() - L.lastRx > lim) markLost(L);
     if (cfg.restartOnRtt && L.pc && L.rttMin > 0) {
       L.hi = L.rtt > L.rttMin * 2 && L.rtt > 80 ? (L.hi || 0) + 1 : 0;
       if (L.hi >= 3 && Date.now() - (L.rsAt || 0) > 30000) { L.rsAt = Date.now(); L.hi = 0; try { L.pc.restartIce(); } catch (e) { /* ok */ } }

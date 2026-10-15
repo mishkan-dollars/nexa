@@ -295,12 +295,14 @@
         default: break;
       }
     }
+    netUp() { return NN.connected || NN.state === 'lost'; }
     async barrierKey(key, ms) { try { await this.barrierKey0(key, ms); } finally { this.reseed('k:' + key); } }
     async barrierKey0(key, ms) {
       if (this.solo || this.disposed) return;
       NN.sendAction({ type: 'cev', k: 'barn', kn: key });
-      const t0 = Date.now(); let shown = 0;
-      while (!this.disposed && !this.gone && !this.solo && NN.connected && Date.now() - t0 < (ms || 60000)) {
+      let t0 = Date.now(), shown = 0, lt = t0;
+      while (!this.disposed && !this.gone && !this.solo && this.netUp() && Date.now() - t0 < (ms || 60000)) {
+        const tn = Date.now(); if (!NN.connected) t0 += tn - lt; lt = tn;
         const slots = NN.players.map((x) => x.slot).filter((x) => x !== this.slot), waiting = slots.filter((x) => !(this.kset[x] && this.kset[x].has(key)));
         if (!waiting.length) return;
         if (Date.now() - shown > 1500) { shown = Date.now(); this.run.toast('WAITING FOR PLAYERS ' + (slots.length - waiting.length + 1) + '/' + (slots.length + 1), 1.6); NN.sendAction({ type: 'cev', k: 'barn', kn: key }); }
@@ -317,11 +319,12 @@
     async barrier() { try { await this.barrier0(); } finally { this.reseed('p:' + this.stage); } }
     async barrier0() {
       this.stage += 1; NN.sendAction({ type: 'cev', k: 'bar', s: this.stage });
-      const t0 = Date.now(); let shown = 0;
-      while (!this.disposed && !this.gone && !this.solo && NN.connected && Date.now() - t0 < 90000) {
+      let t0 = Date.now(), shown = 0, lt = t0;
+      while (!this.disposed && !this.gone && !this.solo && this.netUp() && Date.now() - t0 < 90000) {
+        const tn = Date.now(); if (!NN.connected) t0 += tn - lt; lt = tn;
         const slots = NN.players.map((q) => q.slot), waiting = slots.filter((x) => (this.stages[x] | 0) < this.stage);
         if (!waiting.length) return;
-        if (Date.now() - shown > 1500) { shown = Date.now(); this.run.toast('WAITING FOR PLAYERS ' + (slots.length - waiting.length + 1) + '/' + (slots.length + 1), 1.6); }
+        if (Date.now() - shown > 1500) { shown = Date.now(); NN.sendAction({ type: 'cev', k: 'bar', s: this.stage }); this.run.toast('WAITING FOR PLAYERS ' + (slots.length - waiting.length + 1) + '/' + (slots.length + 1), 1.6); }
         await new Promise((res) => setTimeout(res, 250));
       }
     }

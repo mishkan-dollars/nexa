@@ -71,8 +71,7 @@
     claim(k) {
       if (!W.active) return Promise.resolve(true);
       if (NN.isHost) return Promise.resolve(hostOp(me(), { o: 'cl', k }));
-      const id = ++S.seq;
-      return new Promise((res) => { S.pend.set(id, res); setTimeout(() => { if (S.pend.delete(id)) res(true); }, 2500); NN.sendAction({ type: TYPE, o: 'cl', k, id }); });
+      return new Promise((res) => { let n = 0; const go = () => { const id = ++S.seq; S.pend.set(id, res); NN.sendAction({ type: TYPE, o: 'cl', k, id }); setTimeout(() => { if (S.pend.delete(id)) { if (++n < 3) go(); else res(false); } }, 2500); }; go(); });
     },
     renew(k) { if (W.active) W.send({ o: 'rn', k }); },
     release(k, done) { if (W.active) W.send({ o: 'rl', k, d: done ? 1 : 0 }); },
@@ -128,7 +127,7 @@
         if (o && o !== me()) { r.toast('IN USE — ' + nameOf(o), 1.4); return; }
         it.mpBusy = true;
         try {
-          if (!(await W.claim(key))) { r.toast('IN USE BY ANOTHER PLAYER', 1.4); return; }
+          if (!(await W.claim(key))) { r.toast(W.owner(key) ? 'IN USE BY ANOTHER PLAYER' : 'NO ANSWER FROM HOST — TRY AGAIN', 1.4); return; }
           let p; try { p = use0.apply(it, arguments); } catch (e) { p = null; }
           let settled = false; Promise.resolve(p).then(() => { settled = true; }, () => { settled = true; });
           const gone = () => r.interactables.indexOf(it) < 0 || it.used === true;
