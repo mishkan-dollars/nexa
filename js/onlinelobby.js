@@ -538,7 +538,7 @@
     const A = NN.lastAttempt ? NN.lastAttempt() : null, R0 = RM && RM.lastAttempt ? RM.lastAttempt() : null;
     if (!A) return ['last attempt: none yet'];
     const ct = (c) => (c ? 'host ' + c.host + ', mDNS ' + (c.mdns ? 'yes (' + c.mdns + ')' : 'no') + ', srflx ' + c.srflx + ', prflx ' + c.prflx + ', relay ' + c.relay + ', IPv6 ' + (c.v6 ? 'yes' : 'no') : 'n/a');
-    const a = ['last attempt (ICE):', '  role: ' + A.role + ', ice round: ' + A.round + (R0 && R0.rounds ? ', rendezvous rounds: ' + R0.rounds : '') + (R0 && R0.via ? ', via: ' + R0.via : ''),
+    const a = ['last attempt (ICE):', '  role: ' + A.role + ', ice round: ' + A.round + (R0 && R0.rounds ? ', rendezvous rounds: ' + R0.rounds : '') + (R0 && R0.via ? ', via: ' + NN.util.scrub(R0.via) : ''),
       '  result: ' + (A.ok ? 'connected in ' + A.okAt + ' ms' : A.fail ? 'failed (' + A.fail + ')' : 'in progress / no verdict') + (A.why ? ', reason: ' + A.why : ''),
       '  local candidates: ' + ct(A.loc), '  remote candidates: ' + ct(A.rem), '  first public candidate: ' + (A.firstPub >= 0 ? A.firstPub + ' ms' : 'none')];
     a.push('  STUN' + (A.noUrl ? ' (browser reports the server for some candidates only)' : '') + ':');

@@ -14,7 +14,7 @@ async function mk(browser) {
   const ctx = await browser.newContext({ viewport: { width: 480, height: 270 } }), page = await ctx.newPage();
   page.setDefaultTimeout(60000);
   await page.addInitScript((strip) => {
-    try { localStorage.setItem('disclaimerOk', '1'); localStorage.setItem('nexaLang', 'en'); localStorage.setItem('quality', 'LOW'); localStorage.setItem('nexaIce', 'none'); } catch (e) { /* ok */ }
+    try { localStorage.setItem('disclaimerOk', '1'); localStorage.setItem('nexaLang', 'en'); localStorage.setItem('quality', 'LOW'); localStorage.setItem('nexaIce', 'none'); localStorage.setItem('nexaRulesOk', JSON.stringify({ v: 1, t: 1 })); } catch (e) { /* ok */ }
     AudioContext.prototype.resume = function () { return Promise.resolve(); };
     HTMLMediaElement.prototype.play = function () { this.muted = true; this.volume = 0; return Promise.resolve(); };
     if (strip) { const o = RTCPeerConnection.prototype.setRemoteDescription; RTCPeerConnection.prototype.setRemoteDescription = function (d) { if (d && d.sdp) d = { type: d.type, sdp: d.sdp.replace(/^a=candidate:.*\r?\n/gm, '') }; return o.call(this, d); }; }
@@ -26,7 +26,7 @@ async function mk(browser) {
 (async () => {
   await sleep(600);
   const browser = await pw.chromium.launch({ args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--mute-audio', '--disable-features=WebRtcHideLocalIpsWithMdns'] });
-  const A = await mk(browser), B = await mk(browser), id = 'ice' + Math.random().toString(36).slice(2, 7);
+  const A = await mk(browser), B = await mk(browser); [A, B].forEach((X, i) => X.page.on('console', (m) => { if (process.env.DBG && /\[rdv\]|\[net\]/.test(m.text())) console.log(i ? 'G' : 'H', m.text().slice(0, 160)); })); const id = 'ice' + Math.random().toString(36).slice(2, 7);
   await A.page.evaluate((i) => NexaRoom.hostRoom({ id: i }), id); await sleep(500);
   await B.page.evaluate((i) => NexaRoom.joinRoom(i), id);
   if (FAIL) await B.page.waitForFunction(() => { const a = NexaNet.lastAttempt(); return a && a.fail; }, null, { timeout: 90000, polling: 500 });
