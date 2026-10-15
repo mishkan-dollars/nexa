@@ -8,10 +8,11 @@ const N = Number(process.argv[2]) || 30, PAR = Number(process.argv[3]) || 2, LAB
 const T = path.join(__dirname, 'mock-relay.js'), TR = path.join(__dirname, 'mock-tracker.js');
 const RELAYS = [['--real'], ['--real'], ['--real', '--lose=0.4'], ['--real'], ['--real', '--kind=20777'], ['--real', '--lag=800'], ['--real', '--silent'], ['--real', '--pow'], ['--real', '--lose=0.6'], ['--real']];
 const relayUrls = RELAYS.map((_, i) => 'ws://127.0.0.1:' + (8801 + i)), trackUrls = [8821, 8822].map((p) => 'ws://127.0.0.1:' + p);
+const HARSH = process.env.HARSH === '1', GUEST_FIRST = process.env.GUEST_FIRST === '1', RDV_FILE = process.env.RDV_FILE || '';
 const procs = [];
 RELAYS.forEach((a, i) => procs.push(spawn('node', [T, String(8801 + i)].concat(a), { stdio: 'ignore' })));
 trackUrls.forEach((u) => procs.push(spawn('node', [TR, u.split(':')[2]], { stdio: 'ignore' })));
-const ARGS = ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--mute-audio', '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows'];
+const ARGS = ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--mute-audio', '--disable-features=WebRtcHideLocalIpsWithMdns', '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows'];
 const URLB = 'http://127.0.0.1:8765/index.html?mute=1&clips=0&nosplash&nopreload=1&nolobby3d&tracker=' + trackUrls.join(',') + '&relay=' + relayUrls.join(',');
 const rnd = (n) => Math.floor(Math.random() * n), sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 function pick(arr, k) { const a = arr.slice(), o = []; while (o.length < k && a.length) o.push(a.splice(rnd(a.length), 1)[0]); return o; }
@@ -19,6 +20,7 @@ async function mk(browser, name, blocked, skewMs) {
   const ctx = await browser.newContext({ viewport: { width: 480, height: 270 } });
   const page = await ctx.newPage();
   page.setDefaultTimeout(60000);
+  if (RDV_FILE) await page.route(/\/js\/rendezvous\.js/, (r) => r.fulfill({ path: RDV_FILE, contentType: 'application/javascript' }));
   await page.routeWebSocket(/^ws:\/\/127\.0\.0\.1:88\d\d/, (ws) => {
     const port = /:(\d+)/.exec(ws.url())[1], b = blocked.get(port);
     if (b === 'refuse') ws.close(); else if (b === 'hang') return; else ws.connectToServer();
@@ -35,18 +37,23 @@ async function mk(browser, name, blocked, skewMs) {
 }
 async function attempt(browser, n) {
   const all = relayUrls.concat(trackUrls).map((u) => u.split(':')[2]);
-  const mkBlock = () => { const m = new Map(); pick(all, 2 + rnd(3)).forEach((p) => m.set(p, Math.random() < 0.5 ? 'refuse' : 'hang')); return m; };
+  const mkBlock = () => { const m = new Map(); pick(all, HARSH ? 4 + rnd(4) : 2 + rnd(3)).forEach((p) => m.set(p, Math.random() < 0.5 ? 'refuse' : 'hang')); return m; };
   const skew = Math.random() < 0.3 ? (Math.random() < 0.5 ? -1 : 1) * (60000 + rnd(180000)) : 0;
   const delay = Math.floor(Math.random() * 8000), id = 'bn' + n + 'x' + Math.random().toString(36).slice(2, 7);
   const bh = mkBlock(), bg = mkBlock();
   const A = await mk(browser, 'host', bh, 0), B = await mk(browser, 'guest', bg, skew);
   const res = { n, delay, skew: Math.round(skew / 1000), blockedHost: [...bh.keys()].join(','), blockedGuest: [...bg.keys()].join(','), ok: false, ms: 0, events: '' };
   try {
-    await A.page.evaluate((i) => { NexaNet.config.testNoAccept = false; return NexaRoom.hostRoom({ id: i }); }, id);
-    await sleep(delay);
-    await B.page.evaluate(() => { window.__ev = []; window.__t0 = performance.now(); NexaRoom.on('join', (j) => window.__ev.push(j.stage + (j.attempt ? ':' + j.attempt : '') + (j.why ? '/' + j.why : ''))); });
-    await B.page.evaluate((i) => NexaRoom.joinRoom(i), id);
-    const t0 = Date.now();
+    const host = () => A.page.evaluate((i) => NexaRoom.hostRoom({ id: i }), id);
+    await B.page.evaluate(() => { window.__ev = []; NexaRoom.on('join', (j) => window.__ev.push(j.stage + (j.attempt ? ':' + j.attempt : '') + (j.why ? '/' + j.why : ''))); });
+    let t0 = Date.now();
+    if (GUEST_FIRST) {
+      await B.page.evaluate((i) => NexaRoom.joinRoom(i), id);
+      await sleep(delay); await host();
+    } else {
+      await host(); await sleep(delay);
+      t0 = Date.now(); await B.page.evaluate((i) => NexaRoom.joinRoom(i), id);
+    }
     try { await B.page.waitForFunction(() => NexaNet.state === 'open', null, { timeout: WAIT, polling: 250 }); res.ok = true; } catch (e) { res.ok = false; }
     res.ms = Date.now() - t0;
     res.events = (await B.page.evaluate(() => window.__ev.join(' '))).slice(0, 200);

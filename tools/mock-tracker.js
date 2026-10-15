@@ -36,7 +36,7 @@ function onMsg(ws, text) {
     if (to) { stats.answers += 1; wsSend(to, { action: 'announce', info_hash: m.info_hash, offer_id: m.offer_id, peer_id: m.peer_id, answer: m.answer }); }
   } else wsSend(ws, { action: 'announce', info_hash: m.info_hash, interval: 120, complete: 0, incomplete: sw.size });
 }
-const server = http.createServer((req, res) => { res.writeHead(200, { 'content-type': 'text/plain' }); res.end(JSON.stringify(stats)); });
+const server = http.createServer((req, res) => { res.writeHead(200, { 'content-type': 'text/plain' }); res.end(JSON.stringify(Object.assign({ swarms: Array.from(swarms.values()).map((s) => s.size) }, stats))); });
 server.on('upgrade', (req, sock) => {
   const key = req.headers['sec-websocket-key'];
   if (!key) { sock.destroy(); return; }

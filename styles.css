@@ -1493,6 +1493,7 @@ body.in-online .terminal { animation: none !important; transform: none !importan
 .srv-h { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; flex-wrap: wrap; } .srv-count { font-size: 19px; letter-spacing: .1em; color: #5be08d; }
 .ol-srv.is-off .srv-count { color: #9aa2ad; }
 .srv-row { display: flex; gap: 10px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+.srv-last { margin: 4px 0 8px; font-size: 14px; color: #aab2bd; display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: baseline; } .srv-last em { font-style: normal; color: #7d8592; letter-spacing: .1em; font-size: 12px; } .srv-last.is-ok span { color: #4ade80; } .srv-last.is-bad span { color: #ff6b5e; } .srv-last i { font-style: normal; color: #ffb454; } .srv-last b { text-transform: none; }
 .srv-list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 4px 12px; }
 .srv { display: grid; grid-template-columns: 12px minmax(0, 1fr) auto auto; gap: 8px; align-items: center; font-size: 15px; padding: 2px 0; border-bottom: 1px dashed #1c1f25; }
 .srv i { width: 11px; height: 11px; border-radius: 50%; background: #50555f; display: block; }

@@ -830,6 +830,16 @@
         ul.appendChild(li);
       });
       if (list.length > shown.length) { const li = document.createElement('li'); li.className = 'srv-more'; li.textContent = '… AND ' + (list.length - shown.length) + ' MORE SERVERS'; ul.appendChild(li); }
+      let la = blk.querySelector('.srv-last'); if (la) la.remove();
+      const L = RM.lastAttempt ? RM.lastAttempt() : null;
+      if (L && L.ok !== null && L.id) {
+        la = document.createElement('p'); la.className = 'srv-last ' + (L.ok ? 'is-ok' : 'is-bad');
+        const mk = (tag, txt, nt) => { const e = document.createElement(tag); if (nt) e.setAttribute('translate', 'no'); e.textContent = txt; la.appendChild(e); la.appendChild(document.createTextNode(' ')); };
+        mk('em', 'LAST ATTEMPT');
+        if (L.ok) { mk('span', 'CONNECTED IN ' + (L.ms / 1000).toFixed(1) + ' S, ROUND ' + L.rounds); if (L.via) mk('b', L.via, true); }
+        else { mk('span', 'NO CONNECTION AFTER ' + L.rounds + ' ROUNDS'); mk('small', 'SERVERS ' + L.up + ' OF ' + L.total); mk('i', L.why === 'servers' ? 'NO SIGNALING SERVER REACHABLE' : L.why === 'ice' ? 'DIRECT CONNECTION FAILED (NAT / FIREWALL)' : 'NO ANSWER FROM THE HOST - IS THE ROOM OPEN?'); }
+        ul.parentNode.insertBefore(la, ul);
+      }
       const btn = blk.querySelector('[data-act="srv-probe"]'); if (btn) btn.disabled = !on;
     });
   }

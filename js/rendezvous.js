@@ -80,6 +80,7 @@
     return url.protocol === 'ws:' && loopback(u);     // ws:// — только петля (тесты); публичные — только wss://
   }
   const validTracker = validServer;
+  const lbl = (u) => (loopback(u) ? u.replace(/^wss?:\/\//, '') : hostLabel(u));
   const hostLabel = (u) => { try { const h = new URL(u); return loopback(u) ? 'localhost (test)' : h.hostname + (h.port && h.port !== '443' ? ':' + h.port : ''); } catch (e) { return 'server'; } };
   function paramList(name) {
     try { const q = new URLSearchParams(location.search).getAll(name).join(','); return q ? q.split(',') : null; } catch (e) { return null; }
@@ -199,7 +200,7 @@
     return out;
   }
   let srvT = 0;
-  const emitServers = () => { if (srvT) return; srvT = setTimeout(() => { srvT = 0; emitServers(); }, 250); };
+  const emitServers = () => { if (srvT) return; srvT = setTimeout(() => { srvT = 0; emit('servers'); }, 500); };
   const trackerList = () => serverEntries().filter((e) => e.type === 'tracker').map((e) => e.url);
   const serversOn = () => lsGet('nexaServersOn') !== '0';
   // здоровье по адресу: состояние, число подряд сбоев, «мёртв до»
@@ -265,7 +266,7 @@
       try { ws = new WebSocket(this.url); } catch (e) { mt.fail(this, 'ws'); return; }
       this.ws = ws; this.t0 = now();
       this.timer = setTimeout(() => { if (this.state === 'connecting') mt.fail(this, 'timeout'); }, 6000);
-      ws.onopen = () => { clearTimeout(this.timer); this.state = 'open'; markOk(this.url, 'tracker', now() - this.t0); mt.h.status(); mt.h.open(this);
+      ws.onopen = () => { clearTimeout(this.timer); this.state = 'open'; this.mt.fc.delete(this.url); markOk(this.url, 'tracker', now() - this.t0); mt.h.status(); mt.h.open(this);
         this.silent = setTimeout(() => { if (this.state === 'open' && !this.got) mt.fail(this, 'silent'); }, 15000); };
       ws.onerror = () => { if (this.state === 'connecting') mt.fail(this, 'error'); };
       ws.onclose = () => { if (this.state !== 'closed' && this.state !== 'failed') mt.fail(this, 'closed'); };
@@ -273,14 +274,14 @@
         if (typeof e.data !== 'string' || e.data.length > 64 * 1024) return;
         let m; try { m = JSON.parse(e.data); } catch (er) { return; }
         if (!m || typeof m !== 'object') return;
-        this.got = true;
-        if (m['failure reason']) { mt.fail(this, 'refused', true); return; }
+        this.got = true; this.lastRx = now();
+        if (m['failure reason']) { mt.fail(this, 'refused', /unsupported|not allowed|forbidden|banned|blocked|blacklist|unknown|invalid/i.test(String(m['failure reason'])) || (this.refused = (this.refused || 0) + 1) > 2); return; }
         if (m.action !== 'announce' || typeof m.info_hash !== 'string') return;
-        mt.h.message(m, this);
+        this.rx = (this.rx || 0) + 1; mt.h.message(m, this);
       };
     }
-    announce(obj) { return this.raw(obj); }
-    answer(obj) { return this.raw(obj); }
+    announce(obj) { this.pubs = (this.pubs || 0) + 1; return this.raw(obj); }
+    answer(obj) { this.pubs = (this.pubs || 0) + 1; return this.raw(obj); }
     raw(obj) { if (this.ws && this.state === 'open') { try { this.ws.send(JSON.stringify(obj)); return true; } catch (e) { return false; } } return false; }
     close() { clearTimeout(this.timer); clearTimeout(this.silent); this.state = 'closed'; try { this.ws && this.ws.close(); } catch (e) { /* ok */ } }
   }
@@ -292,9 +293,9 @@
   const kinds = () => (Array.isArray(SV.KINDS) && SV.KINDS.length ? SV.KINDS : [SV.KIND || 27777]);
   const REJ = { pow: /pow|proof.of.work|difficulty/i, paid: /pay|paid|subscri|whitelist|allowlist|admission|invite|restricted: ?(pubkey|not)/i, auth: /auth/i, kind: /kind|blocked|not accepted|unsupported|disallow|not allowed|ephemeral|invalid: .*event/i, rate: /rate|too (fast|many)|slow down|limit|throttl/i };
   class NostrAdapter {
-    constructor(mt, e) { this.mt = mt; this.url = e.url; this.type = 'nostr'; this.state = 'connecting'; this.ws = null; this.got = false; this.q = []; this.sub = 'nx' + NN.util.rndHex(4); this.ki = 0; this.sent = new Map(); this.rej = 0; this.noTag = false; this.pauseUntil = 0; this.pubs = 0; this.oks = 0; }
+    constructor(mt, e) { this.mt = mt; this.url = e.url; this.type = 'nostr'; this.state = 'connecting'; this.ws = null; this.got = false; this.q = []; this.sub = 'nx' + NN.util.rndHex(4); this.ki = 0; this.sent = new Map(); this.rej = 0; this.noTag = false; this.pauseUntil = 0; this.pubs = 0; this.oks = 0; this.rx = 0; this.eose = false; this.lastRx = now(); this.rl = 0; }
     req() {
-      const f = { kinds: kinds(), since: Math.floor(Date.now() / 1000) - 20, limit: 20 };
+      const f = { kinds: kinds(), since: Math.floor(Date.now() / 1000) - 600, limit: 30 };
       if (!this.noTag) f['#t'] = [this.mt.hashHex];
       this.raw(['REQ', this.sub, f]);
     }
@@ -305,8 +306,9 @@
       this.ws = ws; this.t0 = now();
       this.timer = setTimeout(() => { if (this.state === 'connecting') mt.fail(this, 'timeout'); }, 7000);
       ws.onopen = () => {                                                  // соединение открылось — сервер достижим: сразу рабочий
-        clearTimeout(this.timer); this.state = 'open'; markOk(this.url, 'nostr', now() - this.t0); mt.h.status(); mt.h.open(this);
-        this.req();
+        clearTimeout(this.timer); this.state = 'open'; mt.fc.delete(this.url); markOk(this.url, 'nostr', now() - this.t0); mt.h.status(); mt.h.open(this);
+        this.req(); this.lastRx = now();
+        this.beat = setInterval(() => this.heartbeat(), 8000);
         this.silent = setTimeout(() => { if (this.state === 'open' && this.pubs > 3 && !this.oks && !this.got) mt.fail(this, 'silent'); }, 15000);   // молчит и на публикации, и на REQ
       };
       ws.onerror = () => { if (this.state === 'connecting') mt.fail(this, 'error'); };
@@ -315,15 +317,16 @@
         if (typeof e.data !== 'string' || e.data.length > 96 * 1024) return;
         let m; try { m = JSON.parse(e.data); } catch (er) { return; }
         if (!Array.isArray(m) || typeof m[0] !== 'string') return;
-        this.got = true;
+        this.got = true; this.lastRx = now();
         const t = m[0];
         if (t === 'EVENT' && m[1] === this.sub) this.onEvent(m[2]);
+        else if (t === 'EOSE') { if (m[1] === this.sub) this.eose = true; else if (m[1] === this.hb) { this.hb = ''; this.raw(['CLOSE', m[1]]); } }
         else if (t === 'OK') this.onOk(m);
         else if (t === 'NOTICE') {
           const msg = String(m[1] || '');
           if (REJ.pow.test(msg)) mt.fail(this, 'pow', true);
           else if (REJ.paid.test(msg)) mt.fail(this, 'paid', true);
-          else if (REJ.rate.test(msg)) this.pauseUntil = now() + 6000;                       // лимит частоты — не смертельно
+          else if (REJ.rate.test(msg)) this.backoff();                       // лимит частоты — не смертельно: пауза растёт 3→24 с, соединение не бросаем
         } else if (t === 'AUTH') mt.fail(this, 'auth', true);
         else if (t === 'CLOSED' && m[1] === this.sub) {
           const msg = String(m[2] || '');
@@ -338,22 +341,31 @@
     }
     onOk(m) {
       const id = m[1], ok = m[2] !== false, why = String(m[3] || ''), c = this.sent.get(id);
-      if (ok) { this.oks += 1; this.rej = 0; this.sent.delete(id); return; }
+      if (ok) { this.oks += 1; this.rej = 0; this.rl = 0; this.sent.delete(id); return; }
       this.sent.delete(id);
       const mt = this.mt;
       if (REJ.pow.test(why)) return mt.fail(this, 'pow', true);
       if (REJ.paid.test(why)) return mt.fail(this, 'paid', true);
       if (REJ.auth.test(why)) return mt.fail(this, 'auth', true);
-      if (REJ.rate.test(why)) { this.pauseUntil = now() + 6000; if (c && c.retry < 1) { c.retry += 1; this.q.unshift(c.content); this.pump(); } return; }
+      if (REJ.rate.test(why)) { this.backoff(); if (c && c.retry < 1) { c.retry += 1; this.q.unshift(c.content); this.pump(); } return; }
       this.rej += 1;
       if (this.ki + 1 < kinds().length) { this.ki += 1; if (c) this.q.unshift(c.content); this.pump(); return; }     // другой эфемерный kind
       if (this.rej >= 3) mt.fail(this, 'readonly', true);                       // принимает соединение, но отвергает наши события
+    }
+    backoff() { this.rl = Math.min(3, this.rl + 1); this.pauseUntil = now() + 3000 * Math.pow(2, this.rl - 1) + Math.random() * 800; }
+    // полуоткрытый сокет без onclose: если релей молчит дольше 16 с — REQ-проба, нет ответа за 7 с — соединение считается мёртвым
+    heartbeat() {
+      if (this.state !== 'open' || now() - this.lastRx < 16000 || this.hb) return;
+      const sub = this.hb = 'nxh' + NN.util.rndHex(3), t0 = now();
+      if (!this.raw(['REQ', sub, { kinds: kinds(), since: Math.floor(Date.now() / 1000), limit: 1 }])) { this.mt.fail(this, 'stale'); return; }
+      setTimeout(() => { if (this.state === 'open' && this.lastRx < t0) this.mt.fail(this, 'stale'); else this.hb = ''; }, 7000);
     }
     onEvent(ev) {
       if (!ev || typeof ev !== 'object' || typeof ev.content !== 'string' || ev.content.length > 40000) return;
       if (!Array.isArray(ev.tags) || !ev.tags.some((t) => Array.isArray(t) && t[0] === 't' && t[1] === this.mt.hashHex)) return;
       let c; try { c = JSON.parse(ev.content); } catch (e) { return; }
       if (!c || typeof c !== 'object' || typeof c.pid !== 'string' || !/^[0-9a-f]{40}$/.test(c.pid) || c.pid === this.mt.ctx.peerHex) return;
+      this.rx += 1;
       if (typeof c.oid !== 'string' || c.oid.length > 64 || typeof c.sdp !== 'string' || c.sdp.length > 24000) return;
       const pb = String.fromCharCode.apply(null, NexaSchnorr.unhex(c.pid));
       if (c.a === 'o') this.mt.h.message({ action: 'announce', info_hash: this.mt.ctx.hash, peer_id: pb, offer_id: c.oid, offer: { type: 'offer', sdp: c.sdp } }, this);
@@ -388,7 +400,7 @@
       this.publish(JSON.stringify({ a: 'a', pid: this.mt.ctx.peerHex, to: toHex(obj.to_peer_id), oid: obj.offer_id, sdp: obj.answer.sdp }));
       return this.state === 'open';
     }
-    close() { clearTimeout(this.timer); clearTimeout(this.silent); clearTimeout(this.pumping); this.state = 'closed'; if (this.ws) { try { this.raw(['CLOSE', this.sub]); this.ws.close(); } catch (e) { /* ok */ } } }
+    close() { clearTimeout(this.timer); clearTimeout(this.silent); clearTimeout(this.pumping); clearInterval(this.beat); this.state = 'closed'; if (this.ws) { try { this.raw(['CLOSE', this.sub]); this.ws.close(); } catch (e) { /* ok */ } } }
   }
 
   // ------------------------------------------------------------------ MultiTransport: все серверы параллельно (до LIVE_MAX живых, остальные в резерве)
@@ -397,18 +409,20 @@
   class MultiTransport {
     constructor(entries, hooks, ctx) {
       this.entries = entries; this.h = hooks; this.ctx = ctx; this.adapters = []; this.closed = false; this.fillT = 0; this.ctx.peerHex = toHex(ctx.peerId); this.hashHex = toHex(ctx.hash);
-      this.offerFrom = new Map();
+      this.offerFrom = new Map(); this.cool = new Map(); this.hardDead = new Set(); this.fc = new Map();
     }
     open() { transports.add(this); this.fill(); this.fillT = setInterval(() => this.fill(), 4000); }
     fill() {
       if (this.closed) return;
       const act = this.adapters.filter((a) => a.state === 'connecting' || a.state === 'open').length;
       let free = (this.ctx.liveMax || LIVE_MAX()) - act;
-      for (const e of ranked(this.entries)) {
+      const core = this.entries.filter((e) => e.core);
+      for (const e of core.concat(ranked(this.entries.filter((x) => !x.core)))) {
         if (free <= 0) break;
         if (this.adapters.some((a) => a.url === e.url && (a.state === 'connecting' || a.state === 'open'))) continue;
-        if (isDead(e.url)) continue;
+        if (e.core ? (this.hardDead.has(e.url) || (this.cool.get(e.url) || 0) > now()) : isDead(e.url)) continue;
         const a = e.type === 'nostr' ? new NostrAdapter(this, e) : new TrackerAdapter(this, e);
+        a.core = !!e.core;
         this.adapters = this.adapters.filter((x) => x.url !== e.url);
         this.adapters.push(a); hl(e.url, e.type).state = 'connecting'; free -= 1;
         a.connect();
@@ -419,9 +433,14 @@
     fail(a, why, hard) {
       if (a.state === 'failed' || a.state === 'closed') return;
       const wasOpen = a.state === 'open';
-      a.state = 'failed'; a.close(); a.state = 'failed';
+      a.state = 'failed'; a.close(); a.state = 'failed'; if (a.core === undefined) a.core = false;
       markDead(a.url, a.type, why, hard);
       if (wasOpen && !hard) { const h = hl(a.url); h.deadUntil = now() + 15000; }       // оборвалось после работы — короткий отдых, потом снова
+      a.why = why;
+      if (a.core) {                                                                     // ядро комнаты не бросаем: переподключение с нарастающей паузой и джиттером (1→2→4→8→15 с)
+        if (hard) this.hardDead.add(a.url);
+        else { const n = (this.fc.get(a.url) || 0) + 1; this.fc.set(a.url, n); this.cool.set(a.url, now() + Math.min(15000, 900 * Math.pow(2, n - 1)) + Math.random() * 500); }
+      }
       this.h.status();
       setTimeout(() => this.fill(), 600);                                               // взять запасной из списка
     }
@@ -431,8 +450,10 @@
     status() {
       const up = this.adapters.filter((a) => a.state === 'open').length, connecting = this.adapters.filter((a) => a.state === 'connecting').length;
       const usable = this.entries.filter((e) => !isDead(e.url) && !this.adapters.some((a) => a.url === e.url && (a.state === 'open' || a.state === 'connecting'))).length;
-      return { up, connecting, total: this.entries.length, reserve: usable };
+      const core = this.entries.filter((e) => e.core);
+      return { up, connecting, total: this.entries.length, reserve: usable, core: core.length, coreUp: core.filter((e) => this.adapters.some((a) => a.url === e.url && a.state === 'open')).length };
     }
+    setEntries(entries, liveMax) { this.entries = entries; if (liveMax) this.ctx.liveMax = liveMax; this.fill(); }
     close() { this.closed = true; clearInterval(this.fillT); this.adapters.forEach((a) => { a.close(); }); this.adapters = []; transports.delete(this); emitServers(); }
   }
 
@@ -493,8 +514,8 @@
   class Rendezvous {
     constructor(theme, opts) {
       opts = opts || {};
-      this.theme = theme; this.mode = opts.mode || 'both'; this.o = opts; this.peerId = randBin(20); this.hash = ''; this.running = false;
-      this.pend = new Map(); this.seen = new Set(); this.timer = 0; this.pollT = 0; this.tr = null; this.busy = false; this.lastAns = 0;
+      this.theme = theme; this.mode = opts.mode || 'both'; this.o = opts; this.peerId = opts.peerId || randBin(20); this.hash = ''; this.running = false;
+      this.pend = new Map(); this.seen = new Map(); this.timer = 0; this.pollT = 0; this.tr = null; this.busy = false; this.lastAns = 0; this.stat = { offers: 0 };
       this.transportFactory = opts.transport || ((entries, hooks, ctx) => new MultiTransport(entries, hooks, ctx));
       this.entries = opts.entries || serverEntries();
     }
@@ -508,7 +529,7 @@
         message: (m, t) => this.onMessage(m, t)
       }, { hash: this.hash, peerId: this.peerId, liveMax: this.o.liveMax });
       this.tr.open();
-      this.startedAt = now();
+      this.startedAt = this.roundAt = now();
       this.timer = setInterval(() => this.tick(), this.mode === 'offerer' ? 2000 : 3500);
       this.status();
     }
@@ -516,7 +537,7 @@
       if (!this.tr) return;
       const s = this.tr.status();
       this.up = s.up;
-      try { this.o.onStatus && this.o.onStatus(Object.assign({ ms: now() - (this.startedAt || now()) }, s)); } catch (e) { /* ok */ }
+      try { this.o.onStatus && this.o.onStatus(Object.assign({ ms: now() - (this.roundAt || this.startedAt || now()) }, s)); } catch (e) { /* ok */ }
     }
     // новый сервер открылся: отдать ему уже опубликованные offer'ы и дослать недостающие
     onOpen(a) {
@@ -561,23 +582,44 @@
       if (m.offer && typeof m.offer_id === 'string' && m.offer_id.length <= 64) {
         const o = m.offer;
         if (this.mode === 'offerer' || !o || o.type !== 'offer' || typeof o.sdp !== 'string' || o.sdp.length > 24000) return;
-        if (this.seen.has(m.offer_id)) return;
-        this.seen.add(m.offer_id); if (this.seen.size > 400) this.seen.clear();
-        if (this.mode === 'both' && this.o.beacon && o.sdp.indexOf('a=nexa-quick') >= 0) { try { this.o.onBeacon && this.o.onBeacon(pid); } catch (e) { /* ok */ } return; }
+        const dup = this.seen.get(m.offer_id);
+        if (dup) {                                  // гость повторяет offer, пока не получил ответ: ответ мог потеряться (эфемерные события не хранятся) — шлём его снова, с паузой и не более 6 раз
+          if (dup.ans && dup.n < 6 && now() - dup.at > 1500 && this.tr) { dup.n += 1; dup.at = now(); this.tr.answer(dup.ans, m.offer_id); }
+          return;
+        }
+        if (this.mode === 'both' && this.o.beacon && o.sdp.indexOf('a=nexa-quick') >= 0) { this.seen.set(m.offer_id, { n: 9 }); try { this.o.onBeacon && this.o.onBeacon(pid); } catch (e) { /* ok */ } return; }
         if (this.o.accept && !this.o.accept(pid)) return;
-        if (now() - this.lastAns < 400) return;       // не больше ~2 ответов в секунду (антиспам: чужие offer'ы дорого обрабатывать)
+        if (now() - this.lastAns < 400) return;       // не больше ~2 ответов в секунду (антиспам: чужие offer'ы дорого обрабатывать); не «просмотрен» — гость повторит
         this.lastAns = now();
+        const ent = { ans: null, n: 0, at: now() };
+        this.seen.set(m.offer_id, ent); if (this.seen.size > 400) { this.seen.clear(); this.seen.set(m.offer_id, ent); }
+        this.stat.offers += 1; if (!this.stat.firstOffer) this.stat.firstOffer = { host: lbl(t.url), ms: now() - this.roundAt };
         let r = null;
         try { r = await this.o.onOffer(o.sdp, pid, m); } catch (e) { r = null; }
         if (!r || !this.running) { if (r && this.o.dropToken) this.o.dropToken(r.token); return; }
-        this.tr.answer({ action: 'announce', info_hash: this.hash, peer_id: this.peerId, to_peer_id: pid, offer_id: m.offer_id, answer: { type: 'answer', sdp: r.sdp } }, m.offer_id);
+        ent.ans = { action: 'announce', info_hash: this.hash, peer_id: this.peerId, to_peer_id: pid, offer_id: m.offer_id, answer: { type: 'answer', sdp: r.sdp } }; ent.at = now();
+        this.tr.answer(ent.ans, m.offer_id);
       } else if (m.answer && typeof m.offer_id === 'string') {
         const p = this.pend.get(m.offer_id), a = m.answer;
         if (!p || !a || a.type !== 'answer' || typeof a.sdp !== 'string' || a.sdp.length > 24000) return;
         this.pend.delete(m.offer_id);
+        if (!this.stat.firstAns) this.stat.firstAns = { host: lbl(t.url), ms: now() - this.roundAt };
         try { await this.o.onAnswer(p.token, a.sdp, pid); } catch (e) { /* ok */ }
       }
     }
+    report() {
+      const ad = this.tr ? this.tr.adapters : [];
+      return { ms: now() - (this.startedAt || now()), round: now() - (this.roundAt || now()), up: ad.filter((a) => a.state === 'open').length, total: this.entries.length, offers: this.stat.offers, firstOffer: this.stat.firstOffer || null, firstAns: this.stat.firstAns || null,
+        servers: ad.map((a) => ({ host: lbl(a.url), type: a.type, core: !!a.core, state: a.state, why: a.why || '', pubs: a.pubs | 0, oks: a.oks | 0, rx: a.rx | 0, eose: !!a.eose })) };
+    }
+    // новый раунд на том же транспорте: старые offer'ы отменяем, новые (новый ICE) уходят и на уже открытые серверы, и на добавленные; соединения с серверами не рвём
+    newRound(entries, liveMax) {
+      this.pend.forEach((p) => { try { this.o.dropToken && this.o.dropToken(p.token); } catch (e) { /* ok */ } }); this.pend.clear();
+      this.roundAt = now(); this.stat = { offers: 0 };
+      this.entries = entries; if (this.tr) this.tr.setEntries(entries, liveMax);
+      this.announce(true);
+    }
+    setEntries(entries, liveMax) { this.entries = entries; if (this.tr) this.tr.setEntries(entries, liveMax); }
     stop() {
       this.running = false; clearInterval(this.timer); this.timer = 0;
       this.pend.forEach((p) => { try { this.o.dropToken && this.o.dropToken(p.token); } catch (e) { /* ok */ } }); this.pend.clear();
@@ -595,7 +637,7 @@
 
   let hostR = null, joinR = null, quickR = null;   // активные рои
   const H = { id: '', pub: false, title: '', mode: 'sandbox', mission: 1, startedAt: 0 };
-  const J = { id: '', t0: 0, stage: '', timer: 0, attempt: 0, of: 3, roundMs: 9000, got: false };
+  const J = { id: '', t0: 0, stage: '', timer: 0, attempt: 0, of: 3, roundMs: 9000, got: false, tier: 0, pid: '' };
 
   function roomLink(id) {
     let base = '';
@@ -612,17 +654,30 @@
     try { const u = new URL(location.href); u.searchParams.delete('room'); u.hash = u.hash.replace(/^#/, '').split('&').filter((x) => x.indexOf('room=') !== 0).join('&'); history.replaceState(null, '', u.pathname + u.search + (u.hash && u.hash !== '#' ? u.hash : '')); } catch (e) { /* адресная строка недоступна */ }
   }
 
-  // Для комнаты порядок серверов одинаков у всех (проверенные, затем трекеры, затем остальные — по хешу id): хост слушает три окна, гость пробует по окну за попытку,
-  // (порядок не зависит от локальных «мёртвых» — иначе окна у хоста и гостя разъедутся), поэтому при сбое одного набора следующая попытка идёт через другие серверы и всё равно пересекается с хостом.
-  const fnv = (str) => { let h = 2166136261; for (let i = 0; i < str.length; i += 1) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; };
+  // «Ядро» комнаты: из стабильного списка (проверенные; если их мало — весь список) по хешу кода комнаты (rendezvous-hash) выбираются одни и те же серверы у обоих игроков:
+  // ядро (ближайшие по хешу релеи и трекеры) -> ядро2 (следующие) -> остальные. Порядок не зависит от локальных «мёртвых» и пингов — иначе окна у хоста и гостя разъедутся.
+  // Хост слушает все три уровня, гость начинает с ядра и расширяется (ядро не бросает), плюс по два лучших по пингу, если они есть.
+  const fnv = (str) => { let h = 2166136261; for (let i = 0; i < str.length; i += 1) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); } h ^= h >>> 15; h = Math.imul(h, 0x2c1b3c6d); h ^= h >>> 12; return h >>> 0; };
   const winSize = () => Math.max(1, Math.min(12, NN.config.win | 0 || 6));
+  function roomTiers(id) {
+    const W = winSize(), all = serverEntries().filter((e) => !e.low);
+    const stable = all.filter((e) => e.verified), pool = stable.length >= W ? stable : all;
+    const by = (type) => pool.filter((e) => e.type === type).map((e) => ({ e, k: fnv(id + '|' + e.url) })).sort((a, b) => a.k - b.k).map((x) => x.e);
+    const ns = by('nostr'), ts = by('tracker'), kn = Math.max(1, W - 1), kt = Math.max(1, Math.round(W / 3));
+    const t0 = ns.slice(0, kn).concat(ts.slice(0, kt)), t1 = ns.slice(kn, 2 * kn).concat(ts.slice(kt, kt + Math.max(1, kt - 1)));
+    const used = new Set(t0.concat(t1).map((e) => e.url));
+    const t2 = all.filter((e) => !used.has(e.url)).map((e) => ({ e, k: (e.verified ? 0 : e.type === 'tracker' ? 1 : 2) * 4294967296 + fnv(id + '|' + e.url) })).sort((a, b) => a.k - b.k).map((x) => x.e).slice(0, Math.max(0, W * 3 - t0.length - t1.length));
+    return [t0, t1, t2];
+  }
+  function bestLive(skip, n) {
+    return serverEntries().filter((e) => !e.low && !skip.has(e.url) && !isDead(e.url) && fresh(store[e.url]) && store[e.url].ok && store[e.url].ms).sort((a, b) => store[a.url].ms - store[b.url].ms).slice(0, n);
+  }
   function roomEntries(id, round, host) {
-    const W = winSize();
-    const ord = serverEntries().filter((e) => !e.low).map((e) => ({ e, k: (e.verified ? 0 : e.type === 'tracker' ? 1 : 2) * 4294967296 + fnv(id + '|' + e.url) })).sort((a, b) => a.k - b.k).map((x) => x.e);
-    const span = ord.slice(0, W * 3);
-    if (host || span.length <= W) return span;
-    const st = (round * W) % span.length, out = span.slice(st, st + W);
-    return out.length < W ? out.concat(span.slice(0, W - out.length)) : out;
+    const T = roomTiers(id), upto = host ? 2 : Math.max(0, Math.min(2, round | 0));
+    const out = []; T.slice(0, upto + 1).forEach((t, i) => t.forEach((e) => out.push(i === 0 ? Object.assign({}, e, { core: true }) : e)));
+    const have = new Set(out.map((e) => e.url));
+    bestLive(have, 2).forEach((e) => out.push(e));
+    return out;
   }
 
   // ---- Хост: комната (ссылка / по имени / публичная). Хост — только отвечает на offer'ы гостей.
@@ -637,15 +692,18 @@
     NN.begin('host'); NN.setMax(opts.max || NN.MAX_PLAYERS); monitor.start();
     Object.assign(H, { id, pub: !!opts.pub, title: String(opts.title || '').slice(0, 24), mode: opts.mode === 'mission' ? 'mission' : opts.mode === 'br' ? 'br' : 'sandbox', mission: Math.max(1, Math.min(48, opts.mission | 0 || 1)) });
     H.startedAt = now();
+    const byPid = new Map();
     const r = hostR = new Rendezvous('room/' + id, {
-      mode: 'answerer', entries: roomEntries(id, 0, true), liveMax: winSize() * 3,
+      mode: 'answerer', entries: roomEntries(id, 0, true), liveMax: winSize() * 3 + 2,
       onStatus: (s) => emit('status', Object.assign({ kind: 'host' }, s)),
       accept: () => NN.rtc.free() > 0 && pendingLinks() < 3 && !NN.config.testNoAccept,
-      onOffer: async (sdp) => {
+      onOffer: async (sdp, pid) => {
+        const prev = byPid.get(pid); if (prev && !prev.opened) { NN.rtc.drop(prev); byPid.delete(pid); }      // тот же гость начал новый раунд: его прошлая неудавшаяся попытка не занимает место
         if (NN.rtc.free() <= 0) return null;
         const a = await NN.rtc.newAnswer('host', sdp);
         if (!a) return null;
         if (!NN.rtc.attach(a.link)) { NN.rtc.drop(a.link); return null; }
+        byPid.set(pid, a.link); if (byPid.size > 40) byPid.delete(byPid.keys().next().value);
         NN.rtc.connecting(a.link);
         emit('incoming', {});
         return { sdp: a.sdp, token: a.link };
@@ -668,7 +726,10 @@
   }
 
   // ---- Гость: подключение к комнате по ссылке/имени/публичной. Гость предлагает offer'ы; хост отвечает.
+  // Один транспорт на все раунды: серверы ядра остаются подключёнными, раунд = новые offer'ы (новый ICE) + расширение набора серверов (ядро -> ядро2 -> все).
   const JOIN_TRIES = 3;
+  const LAST = { role: '', id: '', ok: null, rounds: 0, ms: 0, via: '', up: 0, total: 0, why: '', log: [] };
+  const rdv = (msg) => { try { console.info('[rdv] ' + msg); } catch (e) { /* ok */ } };
   async function joinRoom(id, opts) {
     opts = opts || {};
     { const bg = NN.banGate(); if (bg) { emit('join', { stage: 'error', err: 'BANNED' }); return bg; } }
@@ -678,17 +739,31 @@
     if (!serversOn()) { emit('join', { stage: 'error', err: 'SERVERS_OFF' }); return { ok: false, err: 'SERVERS_OFF' }; }
     if (typeof RTCPeerConnection !== 'function') { emit('join', { stage: 'error', err: 'UNSUPPORTED' }); return { ok: false, err: 'UNSUPPORTED' }; }
     NN.begin('guest'); monitor.start();
-    Object.assign(J, { id, t0: now(), stage: 'searching', got: false, attempt: 1, of: opts.tries || JOIN_TRIES, roundMs: opts.roundMs || (opts.timeoutMs ? Math.floor(opts.timeoutMs / (opts.tries || JOIN_TRIES)) : (NN.config.roundMs || 9000)) });
+    Object.assign(J, { id, t0: now(), stage: 'searching', got: false, attempt: 1, tier: 0, pid: randBin(20), of: opts.tries || JOIN_TRIES, roundMs: opts.roundMs || (opts.timeoutMs ? Math.floor(opts.timeoutMs / (opts.tries || JOIN_TRIES)) : (NN.config.roundMs || 9000)) });
+    Object.assign(LAST, { role: 'guest', id, ok: null, rounds: 1, ms: 0, via: '', up: 0, total: 0, why: '', log: [] });
     await joinRound();
     return { ok: true, id };
   }
   const fire = (stage, extra) => { J.stage = stage; emit('join', Object.assign({ stage, id: J.id, ms: now() - J.t0, up: joinR && joinR.up, attempt: J.attempt, of: J.of }, extra || {})); };
+  const joinLiveMax = (n) => Math.min(winSize() * 3 + 2, Math.max(winSize(), n + 2));
+  function roundLine(r, why) {
+    const rp = r.report(), bad = rp.servers.filter((x) => x.state === 'failed').map((x) => x.host + '(' + (x.why || '?') + ')').join(' ');
+    const line = 'round ' + J.attempt + '/' + J.of + ' tier ' + J.tier + ' ' + why + ': up ' + rp.up + '/' + rp.servers.length + ', core ' + (r.tr ? r.tr.status().coreUp + '/' + r.tr.status().core : '-') + ', published ' + rp.servers.reduce((a, x) => a + x.pubs, 0) + ' acked ' + rp.servers.reduce((a, x) => a + x.oks, 0) +
+      ', answer ' + (rp.firstAns ? 'from ' + rp.firstAns.host + ' after ' + rp.firstAns.ms + ' ms' : 'none') + (bad ? ', failed: ' + bad : '') + ' | ' + rp.servers.filter((x) => x.state === 'open').map((x) => x.host + ' pub' + x.pubs + '/ok' + x.oks + '/rx' + x.rx + (x.eose || x.type === 'tracker' ? '' : '/noEOSE')).join(' ');
+    rdv(line); LAST.log.push(line); if (LAST.log.length > 6) LAST.log.shift();
+    return rp;
+  }
   async function joinRound() {
-    if (joinR) { joinR.stop(); joinR = null; }
-    const id = J.id;
+    const id = J.id, ents = roomEntries(id, J.tier, false), lm = joinLiveMax(ents.length);
+    if (joinR) { joinR.newRound(ents, lm); armRound(joinR); fire('searching'); return; }
     const r = joinR = new Rendezvous('room/' + id, {
-      mode: 'offerer', entries: roomEntries(id, J.attempt - 1, false),
-      onStatus: (s) => { emit('status', Object.assign({ kind: 'join' }, s)); if (joinR === r && noServers(s) && J.stage === 'searching') nextAttempt('unavailable'); },
+      mode: 'offerer', entries: ents, liveMax: lm, peerId: J.pid,
+      onStatus: (s) => {
+        emit('status', Object.assign({ kind: 'join' }, s));
+        if (joinR !== r || J.stage !== 'searching') return;
+        if (noServers(s)) { nextAttempt('unavailable'); return; }
+        if (s.coreUp < 3 && s.ms > 2500 + J.tier * 3000 && J.tier < 2 && now() - (r.roundAt || 0) > 2500) { J.tier += 1; r.setEntries(roomEntries(id, J.tier, false), joinLiveMax(99)); rdv('core weak (' + s.coreUp + '/' + s.core + ' up), widening to tier ' + J.tier); }     // ядро не достучалось — расширяем набор, не дожидаясь конца раунда
+      },
       offerCount: () => (J.got ? 0 : 2),
       makeOffer: async () => { const o = await NN.rtc.newOffer('guest'); return o ? { sdp: o.sdp, token: o.link } : null; },
       dropToken: (link) => { if (link && !link.attached) NN.rtc.drop(link); },
@@ -698,21 +773,29 @@
         J.got = true;
         r.pend.forEach((p) => { if (p.token !== link) { try { NN.rtc.drop(p.token); } catch (e) { /* ok */ } } }); r.pend.clear();     // ранний выход: остальные offer'ы отменяем
         fire('connecting');
+        const rp = roundLine(r, 'answered'); LAST.via = rp.firstAns ? rp.firstAns.host : '';
         const ok = await NN.rtc.applyAnswer(link, sdp);
         if (!ok) { J.got = false; NN.rtc.drop(link); NN.begin('guest'); fire('searching'); return; }
-        NN.rtc.connecting(link, 25000);
+        NN.rtc.connecting(link, J.attempt < J.of ? 12000 : 25000);       // ICE обычно занимает секунды: не ждём 25 с, а пробуем новый раунд; в последнем раунде даём больше времени
       }
     });
     await r.start();
-    clearTimeout(J.timer);
-    J.timer = setTimeout(() => { if (joinR === r && NN.state !== 'open' && !J.got && J.stage !== 'unavailable') nextAttempt('timeout'); }, J.roundMs);
+    armRound(r);
     fire('searching');
   }
-  // повтор через другой набор серверов (новое окно, новые offer'ы и ICE); число попыток ограничено
+  function armRound(r) {
+    clearTimeout(J.timer);
+    J.timer = setTimeout(() => { if (joinR === r && NN.state !== 'open' && !J.got && J.stage !== 'unavailable') nextAttempt('timeout'); }, J.roundMs);
+  }
+  // повтор: те же серверы ядра, плюс следующий уровень (ядро2, затем все), новые offer'ы и ICE; число попыток ограничено
   function nextAttempt(why) {
     clearTimeout(J.timer);
-    if (J.attempt >= J.of) { fire(why === 'unavailable' ? 'unavailable' : 'timeout', { err: why === 'unavailable' ? 'NO_TRACKER' : 'TRACKER_TIMEOUT' }); return; }
-    J.attempt += 1; J.got = false;
+    const r = joinR; if (r) { const rp = roundLine(r, why); LAST.up = rp.up; LAST.total = rp.total; }
+    if (J.attempt >= J.of) {
+      Object.assign(LAST, { ok: false, rounds: J.attempt, ms: now() - J.t0, why: why === 'unavailable' ? 'servers' : why === 'connect' ? 'ice' : 'nohost' });
+      fire(why === 'unavailable' ? 'unavailable' : 'timeout', { err: why === 'unavailable' ? 'NO_TRACKER' : 'TRACKER_TIMEOUT' }); return;
+    }
+    J.attempt += 1; J.got = false; J.tier = Math.max(J.tier, Math.min(2, J.attempt - 1)); LAST.rounds = J.attempt;
     NN.begin('guest');
     fire('retry', { why });
     joinRound();
@@ -725,7 +808,7 @@
     stopRelay();
     if (!id || !serversOn() || typeof RTCPeerConnection !== 'function') return;
     const r = relayR = new Rendezvous('room/' + id, {
-      mode: 'answerer',
+      mode: 'answerer', entries: roomEntries(id, 1, false), liveMax: winSize() * 2 + 2,
       accept: () => NN.rtc.childFree() > 0,
       onOffer: async (sdp) => {
         await wait(NN.config.relayDelay === undefined ? 8000 : NN.config.relayDelay);
@@ -744,10 +827,11 @@
     const live = []; transports.forEach((t) => t.adapters.forEach((a) => { if (a.state === 'open' && live.indexOf(a.url) < 0) live.push(a.url); }));
     if (live.length) { lastGood = live.slice(0, 12); lsSet('nexaLastGood', JSON.stringify(lastGood)); }       // кэш рабочих серверов для быстрого старта
   });
-  NN.on('net:open', () => { if (joinR) { const id = J.id; stopJoin(); emit('join', { stage: 'open', id: J.id }); relayStart(id); } });
+  NN.on('net:open', () => { if (joinR) { const id = J.id; if (J.t0) { const rp = joinR.report(); Object.assign(LAST, { ok: true, rounds: J.attempt, ms: now() - J.t0, up: rp.up, total: rp.total, why: '' }); rdv('connected in ' + (LAST.ms / 1000).toFixed(1) + ' s, round ' + J.attempt + ', via ' + (LAST.via || '?') + ', servers up ' + rp.up + '/' + rp.total); } stopJoin(); emit('join', { stage: 'open', id: J.id }); relayStart(id); } });
   NN.on('net:error', (e) => {
     if (!joinR || !e || !e.code) return;
     if (J.attempt < J.of && (e.code === 'CONNECT_TIMEOUT' || e.code === 'ICE_FAILED')) { nextAttempt('connect'); return; }      // соединение не состоялось — другая попытка через другие серверы
+    Object.assign(LAST, { ok: false, rounds: J.attempt, ms: now() - J.t0, why: 'ice' }); rdv('failed: ' + e.code + ' after ' + J.attempt + ' rounds');
     stopJoin(); emit('join', { stage: 'error', err: e.code });
   });
   NN.on('net:close', () => { stopRelay(); if (joinR) { stopJoin(); } });
@@ -763,9 +847,9 @@
     const beacon = 'v=0\r\no=- 0 0 IN IP4 127.0.0.1\r\ns=-\r\nt=0 0\r\na=nexa-quick\r\n';
     let paired = false;
     const q = quickR = new Rendezvous('quick/' + mode, {
-      mode: 'both', beacon: true,
+      mode: 'both', beacon: true, entries: roomEntries('quick/' + mode, 1, false), liveMax: winSize() * 2 + 2,
       onStatus: (s) => { emit('status', Object.assign({ kind: 'quick' }, s)); if (noServers(s) && !paired) { stopQuick(); emit('quick', { stage: 'unavailable', err: 'NO_TRACKER' }); } },
-      offerCount: () => 1,
+      offerCount: () => 3,                       // несколько маяков: трекер рассылает каждый offer своему случайному пиру, так шансов попасть к настоящему игроку (а не к «призраку» в рое) больше
       makeOffer: async () => ({ sdp: beacon, token: null }),
       onBeacon: (pid) => {
         if (paired || !quickR) return;
@@ -969,6 +1053,8 @@
       start: gossipStart, stop: gossipStop, rooms: listRooms, refresh() { broadcast({ t: 'rooms?' }); emit('rooms', listRooms()); }, requestProfile,
       get peers() { return G.peers.filter((p) => p.open).length; }, get on() { return G.on; }, _G: G
     },
+    lastAttempt: () => Object.assign({}, LAST, { log: LAST.log.slice() }),
+    diag: () => ({ last: LAST, join: joinR ? joinR.report() : null, host: hostR ? hostR.report() : null, quick: quickR ? quickR.report() : null, tier: J.tier }),
     adOf, setMeta(o) { Object.assign(H, o || {}); if (G.mine) { Object.assign(G.mine, { mode: H.mode, mission: H.mission }); } },
     get hosting() { return H.id ? { id: H.id, pub: H.pub, mode: H.mode, mission: H.mission } : null; },
     get joining() { return joinR ? { id: J.id, stage: J.stage } : null; },
