@@ -7,12 +7,14 @@
 //   --kind=N  принимать только события kind N, остальные отвергать ["OK",id,false,"blocked: kind not allowed"]
 //   --real    как настоящие релеи: эфемерные (20000–29999) не хранятся, тег-фильтры (#p/#d/#t) не поддерживаются (CLOSED)
 //   --notag   на REQ с тег-фильтром (#t) отвечать ["CLOSED",sub,"error: tag filters not supported"]
+//   --lose=P  терять долю P (0..1) доставок подписчикам (ненадёжный релей);  --lag=MS  задерживать доставку
 //   --auth    сразу слать ["AUTH",challenge] и на REQ отвечать CLOSED "auth-required"
 'use strict';
 const http = require('http'), crypto = require('crypto'), path = require('path');
 const S = require(path.join(__dirname, '..', 'js', 'schnorr.js'));
 const KIND = (process.argv.find((a) => /^--kind=\d+$/.test(a)) || '').slice(7) | 0, NOTAG = process.argv.includes('--notag'), REAL = process.argv.includes('--real'), AUTHR = process.argv.includes('--auth');
 const PORT = Number(process.argv.find((a) => /^\d+$/.test(a))) || 8791, POW = process.argv.includes('--pow'), SILENT = process.argv.includes('--silent');
+const LOSE = Number((process.argv.find((a) => /^--lose=[0-9.]+$/.test(a)) || '').slice(7)) || 0, LAG = Number((process.argv.find((a) => /^--lag=\d+$/.test(a)) || '').slice(6)) || 0;
 const DISC = (process.argv.find((a) => /^--disc=\d+$/.test(a)) || '').slice(7) | 0;
 function discEvents(kind) {
   const out = [], now = Math.floor(Date.now() / 1000);
@@ -59,7 +61,7 @@ function onMsg(c, text) {
     if (KIND && ev.kind !== KIND) { stats.kindRej = (stats.kindRej || 0) + 1; send(c, ['OK', ev.id, false, 'blocked: kind not allowed']); return; }
     send(c, ['OK', ev.id, true, '']);
     if (STORE && ev.kind !== 27780 && !(REAL && ev.kind >= 20000 && ev.kind < 30000)) { const d = (ev.tags.find((t) => t[0] === 'd') || [])[1]; const i = d !== undefined ? kept.findIndex((e) => e.kind === ev.kind && e.pubkey === ev.pubkey && (e.tags.find((t) => t[0] === 'd') || [])[1] === d) : -1; if (i >= 0) kept.splice(i, 1); kept.push(ev); }
-    conns.forEach((o) => o.subs.forEach((fs, sub) => { if (fs.some((f) => match(f, ev))) { stats.delivered += 1; send(o, ['EVENT', sub, ev]); } }));
+    conns.forEach((o) => o.subs.forEach((fs, sub) => { if (fs.some((f) => match(f, ev)) && !(LOSE && Math.random() < LOSE)) { stats.delivered += 1; if (LAG) setTimeout(() => send(o, ['EVENT', sub, ev]), LAG); else send(o, ['EVENT', sub, ev]); } }));
   }
 }
 const server = http.createServer((req, res) => { res.writeHead(200, { 'content-type': 'text/plain' }); res.end(JSON.stringify(stats)); });
