@@ -365,7 +365,7 @@
     bc({ k: 'en', rd: H.rd, w: H.w || '', rp, tot: H.tot, fl, rv, gap: CFG.gap });
   }
   function hFinal() {
-    const H = Z.H, top = Math.max.apply(null, Object.keys(H.tot).map((g) => H.tot[g])), win = Object.keys(H.tot).filter((g) => H.tot[g] === top && top > 0);
+    const H = Z.H, gs = Z.seats.map((x) => x.g), top = Math.max.apply(null, gs.map((g) => H.tot[g] || 0)), win = gs.filter((g) => (H.tot[g] || 0) === top && top > 0);
     H.ph = 'fin'; bc({ k: 'fi', tot: H.tot, win, seats: seatInfo() });
   }
   function hTick() {
@@ -406,7 +406,7 @@
     const s = Z.seats.find((x) => !x.bot && x.slot === slot), g = s ? s.g : null;
     switch (m.k) {
       case 'jn': {
-        H.joined[slot] = true; H.known.add(slot);
+        H.joined[slot] = true; H.known.add(slot); delete H.left[slot];
         if (!s) {
           let k = Z.seats.findIndex((x, i) => x.bot && !H.rsv[i]);
           const rk = Object.keys(H.rsv).find((i) => H.rsv[i] === slot);
@@ -441,7 +441,7 @@
         return;
       }
       case 'em': if (g && m.e >= 0 && m.e < EMO.length && now() - (H.emoAt[slot] || 0) > 1200) { H.emoAt[slot] = now(); bc({ k: 'ex', g, e: m.e | 0 }); } return;
-      case 'lv': hLeave(slot, false); return;
+      case 'lv': hLeave(slot, true); return;
       default:
     }
   }
@@ -587,6 +587,7 @@
   function uiTick() {
     if (!Z) return;
     const st = Z.G.state;
+    if (Z.ui && HLT.state && HLT.state.r) Z.ui.root.hidden = !HLT.state.r.entered;
     if (Z.ph === 'pick') {
       const left = Math.max(0, Math.ceil((Z.pickEnd - now()) / 1000));
       if (st.pickRemaining !== left && st.phase === PH.PICKING) { st.pickRemaining = left; HLT.onUpdate(st); }
