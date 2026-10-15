@@ -65,6 +65,7 @@
     GATHER_FORCED: 'ICE gathering took too long — code issued with what was found.',
     NO_PUBLIC: 'No public address found (STUN blocked?). The code will only work inside one network.',
     NAT_SYM: 'Your network uses a strict (symmetric) NAT, so direct connections may fail. Ask a friend with an open network to host, or try another network or a mobile hotspot.',
+    NAT_BOTH: 'Both networks use a strict (symmetric) NAT, so a direct connection is very unlikely. One of you should switch to another network or a mobile hotspot.',
     NAT_BLOCKED: 'UDP looks blocked on this network, so direct connections are unlikely. Try another network or a mobile hotspot.',
     CONNECT_TIMEOUT: 'Could not connect. A strict NAT or firewall may block direct connections (no relay server). Try another network, a VPN or a mobile hotspot.',
     ICE_FAILED: 'Connection failed. A strict NAT or firewall may block direct connections (no relay server). Try another network or a mobile hotspot.',
@@ -444,6 +445,7 @@
   // ------------------------------------------------------------------ комната: роли, слоты, список игроков
   function allocSlot() {
     for (let s = 2; s <= cfg.maxPlayers; s += 1) if (!R.links.some((l) => l.slot === s)) return s;
+    for (let s = cfg.maxPlayers + 1; s <= Math.min(MAX_BR, cfg.maxPlayers + 6); s += 1) if (!R.links.some((l) => l.slot === s)) return s;   // слоты зрителей (после рукопожатия не-зрители отклоняются)
     return 0;
   }
   // присоединить соединение к сессии (Хост: выдать слот; гость: единственное соединение с Хостом)
@@ -462,7 +464,15 @@
     if (L.ready) linkOpened(L);
     return true;
   }
+  let spectatorWant = false; try { spectatorWant = /[?&]spectate\b/.test(location.search); } catch (e) { /* ok */ }
   let natType = 'unknown', natAt = 0;
+  // тип NAT уходит собеседнику строкой SDP (a=x-nat:тип, без адресов); оба symmetric — быстрый провал и свой текст
+  const withNat = (sdp) => (natType === 'symmetric' || natType === 'cone' || natType === 'blocked' ? sdp.replace(/(\r?\n)?$/, '\r\n') + 'a=x-nat:' + natType + '\r\n' : sdp);
+  function peerNat(L, sdp) {
+    const m = /a=x-nat:(symmetric|cone|blocked)/.exec(typeof sdp === 'string' ? sdp : ''); if (!m) return;
+    L.peerNat = m[1];
+    if (m[1] === 'symmetric' && natType === 'symmetric' && !L.bothSym) { L.bothSym = true; L.state !== 'open' && armConnectTimer(L, 6000); }
+  }
   function probeNat() {
     if (natAt && Date.now() - natAt < 300000 || typeof RTCPeerConnection !== 'function') return Promise.resolve(natType);
     natAt = Date.now();
@@ -484,7 +494,7 @@
   }
   const infoOf = (L) => (L && L.peer ? { slot: L.slot, name: L.peer.name, color: L.peer.color, level: L.peer.level, v: L.peer.v, lang: L.peer.lang, pid: L.pid } : null);
   function others() {
-    if (R.role === 'host') return R.links.filter((l) => l.opened && l.peer).sort((a, b) => a.slot - b.slot).map(infoOf);
+    if (R.role === 'host') return R.links.filter((l) => l.opened && l.peer && !l.spec).sort((a, b) => a.slot - b.slot).map(infoOf);
     if (R.role === 'guest') return R.players.filter((p) => p.slot !== R.mySlot).map((p) => Object.assign({}, p));
     return [];
   }
@@ -492,7 +502,7 @@
   function hostSync() {
     if (R.role !== 'host') return;
     const me = localInfo(), list = [{ s: 1, name: me.name, color: me.color, level: me.level, pid: MYPID, lang: me.lang, v: VERSION }];
-    R.links.filter((l) => l.opened && l.peer).sort((a, b) => a.slot - b.slot).forEach((l) => list.push({ s: l.slot, name: l.peer.name, color: l.peer.color, level: l.peer.level, pid: l.pid, lang: l.peer.lang, v: l.peer.v }));
+    R.links.filter((l) => l.opened && l.peer && !l.spec).sort((a, b) => a.slot - b.slot).forEach((l) => list.push({ s: l.slot, name: l.peer.name, color: l.peer.color, level: l.peer.level, pid: l.pid, lang: l.peer.lang, v: l.peer.v }));
     R.players = list.map((p) => ({ slot: p.s, name: p.name, color: p.color, level: p.level, pid: p.pid, lang: p.lang, v: p.v }));
     sendAction({ type: 'roster', players: list });
     emit('net:roster', others());
@@ -626,20 +636,20 @@
       await L.pc.setLocalDescription(await L.pc.createOffer());
       const g = await gather(L.pc, t0);
       dgGathered(L);
-      return { link: L, sdp: cfg.shrinkRz === false ? g.sdp : shrinkSdp(g.sdp).sdp, forced: g.forced };
+      return { link: L, sdp: withNat(cfg.shrinkRz === false ? g.sdp : shrinkSdp(g.sdp).sdp), forced: g.forced };
     } catch (e) { destroyLink(L); return null; }
   }
   async function newAnswer(gameRole, offerSdp, round) {
     DG = null;
     const L = newLink(gameRole, false, 2, round), t0 = Date.now();
     try {
-      dgRemote(L, offerSdp);
+      dgRemote(L, offerSdp); peerNat(L, offerSdp);
       await L.pc.setRemoteDescription({ type: 'offer', sdp: offerSdp });
       await L.pc.setLocalDescription(await L.pc.createAnswer());
       const g = await gather(L.pc, t0);
       dgGathered(L);
       L.state = 'answering';
-      return { link: L, sdp: cfg.shrinkRz === false ? g.sdp : shrinkSdp(g.sdp).sdp, forced: g.forced };
+      return { link: L, sdp: withNat(cfg.shrinkRz === false ? g.sdp : shrinkSdp(g.sdp).sdp), forced: g.forced };
     } catch (e) { destroyLink(L); return null; }
   }
   async function applyAnswer(L, sdp) {
@@ -681,6 +691,7 @@
     if (R.role !== 'host' || !L || !L.pc || L.state !== 'waiting-answer') return { ok: false, err: 'NOT_WAITING' };
     if (p.sid !== L.sid) return { ok: false, err: 'WRONG_SESSION' };
     try {
+      peerNat(L, p.sdp);
       await L.pc.setRemoteDescription({ type: 'answer', sdp: p.sdp });
       diagSet('remote', p.sdp); dgRemote(L, p.sdp);
       manual = null;
@@ -700,6 +711,7 @@
     L.sid = p.sid; L.state = 'answering'; DG = null; diagSet('remote', p.sdp); dgRemote(L, p.sdp);
     attach(L); refreshState();
     try {
+      peerNat(L, p.sdp);
       await L.pc.setRemoteDescription({ type: 'offer', sdp: p.sdp });
       await L.pc.setLocalDescription(await L.pc.createAnswer());
       const g = await gather(L.pc, t0);
@@ -766,7 +778,7 @@
     let i = null;
     try { i = window.NexaProfile && NexaProfile.publicInfo ? NexaProfile.publicInfo() : null; } catch (e) { i = null; }
     i = i || { name: 'PLAYER', color: '#ff3b30', level: 1 };
-    return { name: cleanName(i.name), color: cleanColor(i.color), level: Math.max(1, Math.min(999, i.level | 0 || 1)), v: VERSION, lang: (window.I18N && I18N.lang) || 'en', pid: MYPID, k: (window.Toys && Toys.ident && Toys.ident.pk) || '' };
+    return { name: cleanName(i.name), color: cleanColor(i.color), level: Math.max(1, Math.min(999, i.level | 0 || 1)), v: VERSION, lang: (window.I18N && I18N.lang) || 'en', pid: MYPID, k: (window.Toys && Toys.ident && Toys.ident.pk) || '', spec: spectatorWant ? 1 : 0 };
   }
   // отправка в одно соединение; вернёт true, если ушло. Быстрые типы идут по 'act' (без повторов; при забитом буфере свежее важнее старого), остальные — по 'rel'
   function sendLink(L, data, fastOpt, raw) {
@@ -848,6 +860,7 @@
     const t = now();
     if (t - L.rate.t > 1000) { L.rate.t = t; L.rate.n = 0; }
     if (++L.rate.n > 400) return;
+    if (L.gr === 'host' && L.spec) return;
     const p = decPos(raw); if (!p) return;
     p.from = L.gr === 'host' ? L.slot : (p.fb >= 1 && p.fb <= cfg.maxPlayers ? p.fb : 1);
     const k = 'pos:' + p.from, last = L.lastT && L.lastT[k];
@@ -892,13 +905,14 @@
       case 'bye': L.peerBye = true; linkGone(L, 'PEER_LEFT'); return;
       case 'rl': onTunnel(L, p); return;
       case 'hello': onHello(L, p); return;
-      case 'welcome': if (L.gr === 'guest') { cfg.maxPlayers = Math.max(2, Math.min(MAX_BR, p.max | 0 || MAX_PLAYERS)); R.mySlot = Math.max(2, Math.min(cfg.maxPlayers, p.slot | 0 || 2)); emit('net:welcome', { slot: R.mySlot }); } return;
+      case 'welcome': if (L.gr === 'guest') { cfg.maxPlayers = Math.max(2, Math.min(MAX_BR, p.max | 0 || MAX_PLAYERS)); R.mySlot = Math.max(2, Math.min(MAX_BR, p.slot | 0 || 2)); emit('net:welcome', { slot: R.mySlot }); } return;
       case 'roster': if (L.gr === 'guest') onRoster(p); return;
       case 'vcap': if (L.gr === 'guest') { voiceDisable(); V.err = 'VOICE_FULL'; voiceEvt(); } return;
       case 'chat': onChat(L, p); return;
       case 'vox': R.speak[p.from] = !!p.on && !p.muted; voiceEvt(); if (L.gr === 'host') relayOthers(L, p, raw, false); return;
       default: break;
     }
+    if (L.gr === 'host' && L.spec) { if ((p.type === 'cev' && p.k === 'ready') || (p.type === 'mw' && p.o === 'hi')) emit(p.type, p); return; }   // зритель: только готовность и запрос снапшота
     if (L.gr === 'host') {                                      // Хост принимает от гостя
       if (RELAY[p.type]) { relayOthers(L, p, raw, fast); emit(p.type, p); return; }
       if (DIRECT[p.type] && (p.to | 0) > 1) { const dst = findSlot(p.to | 0); if (dst) { const q = Object.assign({}, p); delete q.to; q.from = L.slot; sendLink(dst, q, undefined); } return; }
@@ -931,6 +945,12 @@
       const ad = window.NexaAdmin; L.pk = /^[0-9a-f]{64}$/.test(i.k) ? i.k : '';
       const deny = () => { sendLink(L, { type: 'bye' }); linkGone(L, 'PEER_LEFT'); };
       if (ad && ad.active && (!L.pk || ad.banned(L.pk))) { deny(); return; }
+      if (first) {
+        if (i.spec === 1) {
+          if (L.slot <= cfg.maxPlayers) { let ss = 0; for (let s = cfg.maxPlayers + 1; s <= Math.min(MAX_BR, cfg.maxPlayers + 6); s += 1) if (!R.links.some((l) => l.slot === s)) { ss = s; break; } if (!ss) { deny(); return; } L.slot = ss; sendLink(L, { type: 'welcome', slot: ss, max: cfg.maxPlayers }); }
+          L.spec = true;
+        } else if (L.slot > cfg.maxPlayers) { deny(); return; }
+      }
       if (L.pk) {
         if (first) {
           const w = (JOINS[L.pk] || []).filter((t) => now() - t < 60000);
@@ -1267,7 +1287,7 @@
   window.addEventListener('pagehide', () => { R.links.forEach((l) => { if (l.ready) sendLink(l, { type: 'bye' }); }); });
 
   window.NexaNet = {
-    probeNat, get natType() { return natType; }, VERSION, TELEGRAM, ICE_SERVERS, ICE_SERVERS_EXT, MSG, config: cfg, FAST, MAX_PLAYERS, MAX_BR, MAX_VOICE, setMax(n) { if (R.role !== 'guest') cfg.maxPlayers = Math.max(2, Math.min(MAX_BR, n | 0 || MAX_PLAYERS)); }, RELAY, DIRECT, PID: MYPID,
+    setSpectator(on) { spectatorWant = !!on; }, get spectator() { return spectatorWant; }, get spectatorSlots() { return R.links.filter((l) => l.spec && l.opened).map((l) => l.slot); }, probeNat, get natType() { return natType; }, get natBoth() { return R.links.some((l) => l.bothSym); }, VERSION, TELEGRAM, ICE_SERVERS, ICE_SERVERS_EXT, MSG, config: cfg, FAST, MAX_PLAYERS, MAX_BR, MAX_VOICE, setMax(n) { if (R.role !== 'guest') cfg.maxPlayers = Math.max(2, Math.min(MAX_BR, n | 0 || MAX_PLAYERS)); }, RELAY, DIRECT, PID: MYPID,
     supported: () => typeof RTCPeerConnection === 'function',
     canDeflate,
     get state() { return state; }, get role() { return R.role; }, get slot() { return slot(); }, get peer() { return others()[0] || null; }, get players() { return others(); },

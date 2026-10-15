@@ -242,6 +242,7 @@
   // приоритет при выборе: свежо ответившие по задержке, затем непроверенные, свежо упавшие — в конец
   // проверенные пользователем (VERIFIED) идут раньше непроверенных, неработавшие (LOW) — в самом конце
   let lastGood = []; try { lastGood = JSON.parse(lsGet('nexaLastGood') || '[]').filter((x) => typeof x === 'string').slice(0, 12); } catch (e) { lastGood = []; }
+  if (Date.now() - (+lsGet('nexaLastGoodT') || 0) > 86400000) lastGood = [];   // TTL кэша рабочих серверов — 24 ч
   const rankOf = (e) => { const r = store[e.url], h = HEALTH.get(e.url); if (lastGood.indexOf(e.url) >= 0) return 0.5; if (h && h.state === 'online') return h.ms || 1; if (fresh(r)) return r.ok ? r.ms || 1 : 1e9; return (e.low ? 8000 : e.verified ? 2000 : 5000) + Math.random() * 1000; };
   const ranked = (entries) => entries.map((e) => ({ e, k: rankOf(e) })).sort((a, b) => a.k - b.k).map((x) => x.e);
   for (const u of Object.keys(store)) { const r = store[u]; if (fresh(r) && r.ok) { const h = hl(u, 'nostr'); h.state = 'online'; h.ms = r.ms; h.lastOk = r.t; h.checked = r.t; } }
@@ -836,7 +837,7 @@
   function stopRelay() { if (relayR) { relayR.stop(); relayR = null; } }
   NN.on('net:open', () => {
     const live = []; transports.forEach((t) => t.adapters.forEach((a) => { if (a.state === 'open' && live.indexOf(a.url) < 0) live.push(a.url); }));
-    if (live.length) { lastGood = live.slice(0, 12); lsSet('nexaLastGood', JSON.stringify(lastGood)); }       // кэш рабочих серверов для быстрого старта
+    if (live.length) { lastGood = live.slice(0, 12); lsSet('nexaLastGood', JSON.stringify(lastGood)); lsSet('nexaLastGoodT', String(Date.now())); }       // кэш рабочих серверов для быстрого старта
   });
   NN.on('net:open', () => { if (joinR) { const id = J.id; if (J.t0) { const rp = joinR.report(); Object.assign(LAST, { ok: true, rounds: J.attempt, ms: now() - J.t0, up: rp.up, total: rp.total, why: '' }); rdv('connected in ' + (LAST.ms / 1000).toFixed(1) + ' s, round ' + J.attempt + ', via ' + (LAST.via || '?') + ', servers up ' + rp.up + '/' + rp.total); } stopJoin(); emit('join', { stage: 'open', id: J.id }); relayStart(id); } });
   NN.on('net:error', (e) => {

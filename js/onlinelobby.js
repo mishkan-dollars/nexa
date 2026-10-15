@@ -213,6 +213,8 @@
     const b = $('#tr-bal'); if (b) b.textContent = String(kp());
   }
   function modeText() {
+    if (L.mode === 'hl') return ['HIGH / LOW', '', ''];
+    if (L.mode === 'pvp') return ['PVP', '', ''];
     if (L.mode === 'br') return ['BATTLE ROYALE', '', ''];
     if (L.mode === 'mission' && validMission(L.mission)) return ['MISSION', String(L.mission).padStart(2, '0'), missionTitle(L.mission)];
     return ['SANDBOX', '', ''];
@@ -222,9 +224,9 @@
     if (!root) return;
     const host = isHostSide(), mt = modeText();
     const sub = $('#bl-sub');
-    if (L.mode === 'br') sub.innerHTML = '<span>BATTLE ROYALE</span> — <span>UP TO 10 PLAYERS</span>'; else sub.innerHTML = mt[1] ? '<span>MISSION</span> <b translate="no">' + mt[1] + '</b> — <span translate="no">' + esc(mt[2]) + '</span>' : '<span>SANDBOX</span> — <span>WAVES OF ENEMIES</span>';
-    if (L.mode !== 'br') sub.innerHTML += ' — <span>' + (L.ff ? 'FF: ON' : 'FF: OFF') + '</span>' + (L.ff && L.ffm < 1 ? ' ' + Math.round(L.ffm * 100) + '%' : '');
-    $('#bl-mode').textContent = L.mode === 'br' ? 'BATTLE ROYALE' : mt[1] ? 'CO-OP MISSION' : 'CO-OP SANDBOX';
+    if (L.mode === 'pvp') sub.innerHTML = pvpSub(); else if (L.mode === 'hl') sub.innerHTML = '<span>HIGH / LOW</span> — <span>2–6 PLAYERS</span>'; else if (L.mode === 'br') sub.innerHTML = '<span>BATTLE ROYALE</span> — <span>UP TO 10 PLAYERS</span>'; else sub.innerHTML = mt[1] ? '<span>MISSION</span> <b translate="no">' + mt[1] + '</b> — <span translate="no">' + esc(mt[2]) + '</span>' : '<span>SANDBOX</span> — <span>WAVES OF ENEMIES</span>';
+    if (L.mode !== 'br' && L.mode !== 'hl' && L.mode !== 'pvp') sub.innerHTML += ' — <span>' + (L.ff ? 'FF: ON' : 'FF: OFF') + '</span>' + (L.ff && L.ffm < 1 ? ' ' + Math.round(L.ffm * 100) + '%' : '');
+    $('#bl-mode').textContent = L.mode === 'pvp' ? 'PVP' : L.mode === 'hl' ? 'HIGH / LOW' : L.mode === 'br' ? 'BATTLE ROYALE' : mt[1] ? 'CO-OP MISSION' : 'CO-OP SANDBOX';
     $('#bl-pick').disabled = !host;
     const btn = $('#bl-play'), tx = $('#bl-play-t'), hint = $('#bl-hint');
     root.dataset.cd = L.cd ? '1' : '0';
@@ -234,6 +236,7 @@
     else if (!NN.connected) { label = 'PLAY'; hn = 'SOLO — OPEN CONNECTION TO PLAY WITH A FRIEND'; }
     else if (NN.isHost) { if (!NN.players.length) { hn = 'SOLO — OPEN CONNECTION TO PLAY WITH A FRIEND'; } else if (!guestsReady()) { dis = true; hn = NN.players.length > 1 ? 'WAITING FOR ALL PLAYERS TO PRESS READY' : 'WAITING FOR YOUR FRIEND TO PRESS READY'; } else hn = NN.players.length > 1 ? 'ALL PLAYERS ARE READY' : 'YOUR FRIEND IS READY'; }
     else { label = L.ready ? 'CANCEL' : 'READY'; hn = L.ready ? 'WAITING FOR THE HOST TO START' : 'PRESS READY WHEN YOU ARE SET'; }
+    if (L.mode === 'pvp' && !L.cd && isHostSide()) { const n = NN.connected ? NN.players.length + 1 : 1; if (n < 2 || (pvpCfg().kind === 'duel' && n !== 2)) { dis = true; hn = n < 2 ? 'PVP NEEDS 2–6 PLAYERS — OPEN CONNECTION' : 'DUEL NEEDS EXACTLY 2 PLAYERS'; } }
     tx.textContent = label; btn.disabled = dis; btn.classList.toggle('is-ready', !NN.isHost && NN.connected && L.ready);
     hint.textContent = hn;
     updStage();
@@ -309,7 +312,7 @@
     t.textContent = '';
     const main = document.createElement('span'); main.textContent = NN.text(code || 'CONNECT_TIMEOUT'); t.appendChild(main);
     const why = document.createElement('span');
-    if (NN.natType === 'symmetric' || NN.natType === 'blocked') { const nt = document.createElement('span'); nt.textContent = ' ' + NN.text(NN.natType === 'symmetric' ? 'NAT_SYM' : 'NAT_BLOCKED'); t.appendChild(nt); }
+    if (NN.natType === 'symmetric' || NN.natType === 'blocked') { const nt = document.createElement('span'); nt.textContent = ' ' + NN.text(NN.natBoth ? 'NAT_BOTH' : NN.natType === 'symmetric' ? 'NAT_SYM' : 'NAT_BLOCKED'); t.appendChild(nt); }
     why.textContent = ' ' + NN.text(d.local.mdns + d.remote.mdns > 0 && none ? 'DIAG_MDNS' : (none ? 'DIAG_NO_STUN' : (d.local.srflx === 0 || d.remote.srflx === 0 ? 'DIAG_ONE_SIDE' : 'DIAG_NAT')));
     t.appendChild(why);
     candPlain(d);
@@ -765,37 +768,55 @@
     NN.on('net:left', (p) => { if (!NN.isHost) return; delete SIG.key[p.slot]; delete SIG.led[p.slot]; Object.keys(TRD.route).forEach((t) => { const r = TRD.route[t]; if (r.dst === p.slot) { delete TRD.route[t]; trResult(r.src, t, false, 0); } }); });
   }
 
-  function lobbyMsg() { return { type: 'lobby', ff: L.ff ? 1 : 0, ffm: L.ffm, mode: L.mode, mission: L.mission, brt: BR.on && BR.host ? Math.max(0, brLeft()) : -1, ready: NN.players.filter((q) => L.readyMap[q.slot]).map((q) => q.slot) }; }
+  const pvpCfg = () => (L.pvp = window.NexaPvp ? NexaPvp.norm(L.pvp) : (L.pvp || {}));
+  function pvpSub() { const c = pvpCfg(), g = /^([kt])(\d+)$/.exec(c.goal) || ['', 'k', '25']; return '<span>PVP</span> — <span>' + (c.kind === 'team' ? 'TEAM BATTLE' : c.kind === 'duel' ? 'DUEL 1V1' : 'DEATHMATCH') + '</span> — <em translate="no">' + g[2] + '</em> <span>' + (g[1] === 'k' ? 'KILLS' : 'MIN') + '</span>'; }
+  function lobbyMsg() { return { type: 'lobby', pvp: L.mode === 'pvp' ? pvpCfg() : undefined, ff: L.ff ? 1 : 0, ffm: L.ffm, mode: L.mode, mission: L.mission, brt: BR.on && BR.host ? Math.max(0, brLeft()) : -1, ready: NN.players.filter((q) => L.readyMap[q.slot]).map((q) => q.slot) }; }
   function sendLobby() { if (NN.isHost && NN.connected) NN.sendAction(lobbyMsg()); }
   function setMode(mode, mission) {
     if (NN.connected && !NN.isHost) return;
     if (BR.on && mode !== 'br') brCancel();
-    L.mode = mode === 'br' ? 'br' : mode === 'mission' && validMission(mission) ? 'mission' : 'sandbox';
+    L.mode = mode === 'br' ? 'br' : mode === 'hl' ? 'hl' : mode === 'pvp' && window.NexaPvp ? 'pvp' : mode === 'mission' && validMission(mission) ? 'mission' : 'sandbox';
     if (L.mode === 'mission') L.mission = mission | 0;
     sendLobby(); updPlay(); sfx('mouse');
-    if (RM && RM.hosting && RM.hosting.pub) RM.setMeta({ mode: L.mode, mission: L.mission });
+    if (RM && RM.hosting && RM.hosting.pub) RM.setMeta({ mode: L.mode === 'pvp' ? 'sandbox' : L.mode, mission: L.mission });
   }
   function openPick() {
     if (NN.connected && !NN.isHost) return;
     const el = $('#ol-pick'); if (!el) return;
+    if (window.ModePick && window.ModeCovers) {
+      L.pick = true; el.hidden = false;
+      ModePick.open(el, {
+        st: () => ({ mode: L.mode, mission: L.mission, pvp: pvpCfg(), ff: L.ff, ffm: L.ffm }),
+        setMode: (m, n) => setMode(m, n), setPvp: (c) => { L.pvp = window.NexaPvp ? NexaPvp.norm(c) : c; sendLobby(); },
+        setFF: (on) => { L.ff = !!on; sendLobby(); updPlay(); }, setFFm: (v) => { L.ffm = +v || 1; sendLobby(); updPlay(); },
+        close: () => closePick(), play: () => { const b = $('#bl-play'); if (b && !b.disabled) doPlay(); }
+      });
+      return;
+    }
     const ids = Object.keys(missionsMap()).map(Number).filter(validMission).sort((a, b) => a - b);
-    let q = ''; try { q = Missions.getQualitySaved(); } catch (e) { q = ''; }
     el.innerHTML = '<div class="pk-box"><div class="pk-h"><h3>CHOOSE A MODE</h3><button type="button" class="ol-ic" data-act="pick-close" aria-label="Close">×</button></div>' +
       '<button type="button" class="pk-sb' + (L.mode === 'sandbox' ? ' on' : '') + '" data-act="mode" data-v="sandbox"><b>CO-OP SANDBOX</b><small>WAVES OF ENEMIES FOR TWO</small></button>' +
       '<button type="button" class="pk-sb' + (L.mode === 'br' ? ' on' : '') + '" data-act="mode" data-v="br"><b>BATTLE ROYALE</b><small>UP TO 10 PLAYERS, BOTS FILL EMPTY SEATS</small></button>' +
+      '<button type="button" class="pk-sb' + (L.mode === 'hl' ? ' on' : '') + '" data-act="mode" data-v="hl"><b>HIGH / LOW</b><small>THE TABLE GAME, 2–6 PLAYERS, BOTS FILL EMPTY SEATS</small></button>' +
       '<p class="pk-t">CO-OP MISSIONS</p><div class="pk-grid">' + ids.map((i) => '<button type="button" class="pk-m' + (L.mode === 'mission' && L.mission === i ? ' on' : '') + '" data-act="mission" data-v="' + i + '"><b translate="no">' + String(i).padStart(2, '0') + '</b><span translate="no">' + esc(missionTitle(i)) + '</span></button>').join('') + '</div>' +
-      '<div class="md-gfx"><label>ONLINE GRAPHICS</label><div class="pf-btns"><button type="button" class="ol-btn' + (q === 'HIGH' ? ' on' : '') + '" data-act="gfx" data-v="HIGH">HIGH</button><button type="button" class="ol-btn' + (q === 'LOW' ? ' on' : '') + '" data-act="gfx" data-v="LOW">LOW</button></div></div>' +
       (NN.isHost ? '<div class="md-gfx"><label>FRIENDLY FIRE</label><div class="pf-btns"><button type="button" class="ol-btn' + (L.ff ? ' on' : '') + '" data-act="ff" data-v="1">ON</button><button type="button" class="ol-btn' + (L.ff ? '' : ' on') + '" data-act="ff" data-v="0">OFF</button></div></div><div class="md-gfx"><label>DAMAGE TO ALLIES</label><div class="pf-btns">' + [0.25, 0.5, 1].map((x) => '<button type="button" class="ol-btn' + (L.ffm === x ? ' on' : '') + '" data-act="ffm" data-v="' + x + '">' + Math.round(x * 100) + '%</button>').join('') + '</div></div>' : '') +
       '<p class="v-note">Story missions: every player waits for the team at each stage.</p></div>';
     el.hidden = false; L.pick = true;
     const f = el.querySelector('.pk-sb'); if (f) try { f.focus({ preventScroll: true }); } catch (e) { /* ok */ }
   }
-  function closePick() { const el = $('#ol-pick'); if (el) el.hidden = true; L.pick = false; }
+  function closePick() { const el = $('#ol-pick'); if (el) { if (window.ModePick) ModePick.close(el); el.hidden = true; } L.pick = false; }
 
   function mkSeed() { try { const a = new Uint32Array(1); crypto.getRandomValues(a); return a[0] || 1; } catch (e) { return (Date.now() % 4294967295) || 1; } }
   function doPlay() {
     if (L.cd) return;
     if (L.mode === 'br') { if (BR.on) brCancel(); else brReady(); return; }
+    if (L.mode === 'pvp' && (!NN.connected || NN.isHost)) {
+      const cfg = pvpCfg(), n = NN.connected ? NN.players.length + 1 : 1;
+      if (n < 2 || (cfg.kind === 'duel' && n !== 2) || !guestsReady()) return;
+      const spec = { mode: 'pvp', mission: 1, seed: mkSeed(), role: 'host', solo: false, ff: 1, ffm: 1, pvp: cfg };
+      NN.sendAction({ type: 'start', mode: 'pvp', mission: 1, seed: spec.seed, ff: 1, ffm: 1, pvp: cfg });
+      beginMatch(spec, 3); return;
+    }
     if (!NN.connected || (NN.isHost && !NN.players.length)) { beginMatch({ mode: L.mode, mission: L.mission, seed: mkSeed(), role: 'solo', solo: true }, 1); return; }
     if (NN.isHost) {
       if (!guestsReady()) return;
@@ -1003,10 +1024,11 @@
       const h = document.createElement('button'); h.type = 'button'; h.className = 'pb-host'; h.dataset.act = 'pub-card'; h.dataset.rid = r.rid;
       const av = document.createElement('span'); av.innerHTML = PF.avatar(r.host, r.col, 22); const hn = document.createElement('em'); hn.setAttribute('translate', 'no'); hn.textContent = r.host + ' · ' + r.lv;
       h.appendChild(av); h.appendChild(hn); row.appendChild(h);
-      const m = document.createElement('span'); m.className = 'pb-mode'; m.textContent = r.mode === 'mission' ? 'MISSION ' + String(r.mission).padStart(2, '0') : 'SANDBOX'; row.appendChild(m);
+      const m = document.createElement('span'); m.className = 'pb-mode'; m.textContent = r.mode === 'mission' ? 'MISSION ' + String(r.mission).padStart(2, '0') : r.mode === 'hl' ? 'HIGH / LOW' : 'SANDBOX'; row.appendChild(m);
       const n = document.createElement('span'); n.className = 'pb-n'; n.setAttribute('translate', 'no'); n.textContent = r.n + '/' + r.max; row.appendChild(n);
       const a = document.createElement('span'); a.className = 'pb-age'; a.textContent = ageText(r.age); row.appendChild(a);
       const j = document.createElement('button'); j.type = 'button'; j.className = 'ol-btn'; j.dataset.act = 'pub-join'; j.dataset.rid = r.rid; j.textContent = r.mine ? 'YOUR ROOM' : 'JOIN'; j.disabled = !!r.mine || r.n >= r.max; row.appendChild(j);
+      if (!r.mine) { const w = document.createElement('button'); w.type = 'button'; w.className = 'ol-btn'; w.dataset.act = 'pub-watch'; w.dataset.rid = r.rid; w.textContent = 'WATCH'; row.appendChild(w); }
       box.appendChild(row);
     });
   }
@@ -1211,7 +1233,6 @@
       case 'chat-toggle': chatToggle(); break;
       case 'ff': L.ff = v === '1'; sendLobby(); updPlay(); openPick(); break;
       case 'ffm': L.ffm = +v || 1; sendLobby(); updPlay(); openPick(); break;
-      case 'gfx': try { Missions.setQuality(v); } catch (er) { /* ok */ } openPick(); break;
       case 'br-ready': brReady(); break;
       case 'br-cancel': brCancel(); break;
       case 'trade': if (!TRADES_ENABLED) break; openTrade(Number(a.dataset.slot)); break;
@@ -1264,7 +1285,8 @@
       case 'room-create': roomCreate(); break;
       case 'room-close': if (RM) RM.stopHost(); L.roomLink = ''; updRoom(); break;
       case 'pub-refresh': if (needConsent('refresh')) break; if (RM) { RM.gossip.start().then(() => { RM.gossip.refresh(); renderPublic(); }); } break;
-      case 'pub-join': { if (needConsent('join:' + a.dataset.rid)) break; closeCard(); if (NN.connected) NN.close(); startJoin(a.dataset.rid, 'join', true); break; }
+      case 'pub-join': { if (needConsent('join:' + a.dataset.rid)) break; closeCard(); NN.setSpectator(false); if (NN.connected) NN.close(); startJoin(a.dataset.rid, 'join', true); break; }
+      case 'pub-watch': { if (needConsent('join:' + a.dataset.rid)) break; closeCard(); if (NN.connected) NN.close(); NN.setSpectator(true); startJoin(a.dataset.rid, 'join', true); break; }
       case 'pub-card': {
         const r = RM.gossip.rooms().find((x) => x.rid === a.dataset.rid) || (RM.hosting && RM.adOf());
         if (r) { const ex = { host: r.host, col: r.col, lv: r.lv, rid: r.rid }; openCard(0, ex); RM.gossip.requestProfile(r.rid).then((pf) => { if (pf && L.cards.extra && L.cards.extra.rid === r.rid) { L.cards.extra.pf = pf; renderCard(0); } }); }
@@ -1318,6 +1340,7 @@
   function netHooks() {
     const updNat = () => { const el = $('#cn-nat'); if (!el) return; const k = NN.natType === 'symmetric' ? 'NAT_SYM' : NN.natType === 'blocked' ? 'NAT_BLOCKED' : ''; el.hidden = !k; if (k) el.textContent = NN.text(k); };
     NN.on('net:nat', updNat); setTimeout(updNat, 4500);
+    NN.on('net:close', () => { if (!NN.isHost) NN.setSpectator(false); });
     NN.on('net:state', (s) => {
       if (s.state === 'creating' || s.state === 'answering') L.t0 = Date.now();
       if (s.state === 'open' || s.state === 'idle') { if (s.state === 'idle') L.t0 = 0; }
@@ -1349,7 +1372,8 @@
     NN.on('net:rtt', updTimer);
     NN.on('lobby', (p) => {
       if (NN.isHost) return;
-      L.mode = p.mode === 'br' ? 'br' : p.mode === 'mission' && validMission(p.mission) ? 'mission' : 'sandbox'; if (L.mode === 'mission') L.mission = p.mission | 0;
+      L.mode = p.mode === 'br' ? 'br' : p.mode === 'hl' ? 'hl' : p.mode === 'pvp' && window.NexaPvp ? 'pvp' : p.mode === 'mission' && validMission(p.mission) ? 'mission' : 'sandbox'; if (L.mode === 'mission') L.mission = p.mission | 0;
+      if (L.mode === 'pvp') L.pvp = NexaPvp.norm(p.pvp);
       L.brt = p.brt | 0; L.ff = p.ff !== 0; L.ffm = [0.25, 0.5, 1].indexOf(+p.ffm) >= 0 ? +p.ffm : 1;
       L.readyList = Array.isArray(p.ready) ? p.ready.map(Number).filter((n) => n >= 2 && n <= MAXP).slice(0, MAXP) : [];
       updPlay();
@@ -1365,13 +1389,13 @@
       const co = window.NexaCoop && NexaCoop.session;
       if (!NN.isHost || !co || co.solo || co.gone || !co.ready || co.spec.mode === 'br' || !co.startSlots) return;
       if (!(co.spec.mode === 'sandbox' || (co.spec.mode === 'mission' && +co.spec.mission === 48))) return;
-      NN.players.forEach((q) => { if (!co.startSlots.has(q.slot)) { co.startSlots.add(q.slot); NN.sendAction({ type: 'start', mode: co.spec.mode, mission: co.spec.mission, seed: co.spec.seed, ff: co.ff ? 1 : 0, ffm: co.ffm, late: 1, act: co.act || '', stage: co.stage | 0 }, { to: q.slot }); } });
+      NN.players.map((q) => q.slot).concat(NN.spectatorSlots).forEach((slot) => { const q = { slot }; if (!co.startSlots.has(q.slot)) { co.startSlots.add(q.slot); NN.sendAction({ type: 'start', mode: co.spec.mode, mission: co.spec.mission, seed: co.spec.seed, ff: co.ff ? 1 : 0, ffm: co.ffm, late: 1, act: co.act || '', stage: co.stage | 0 }, { to: q.slot }); } });
     });
     NN.on('start', (p) => {
       if (NN.isHost || L.cd) return;
       if (BR.on) { BR.on = false; BR.state = ''; }
-      const mode = p.mode === 'br' ? 'br' : p.mode === 'mission' && validMission(p.mission) ? 'mission' : 'sandbox';
-      beginMatch({ mode, mission: mode === 'mission' ? p.mission | 0 : 1, seed: (p.seed >>> 0) || 1, role: 'guest', solo: false, jump: p.late ? String(p.act || '').slice(0, 12) : '', stage: p.late ? p.stage | 0 : 0, ff: p.ff === 0 ? 0 : 1, ffm: +p.ffm || 1, bots: mode === 'br' ? clamp(p.bots | 0, 0, 99) : 0 }, 3);
+      const mode = p.mode === 'br' ? 'br' : p.mode === 'hl' ? 'hl' : p.mode === 'pvp' && window.NexaPvp ? 'pvp' : p.mode === 'mission' && validMission(p.mission) ? 'mission' : 'sandbox';
+      beginMatch({ mode, pvp: mode === 'pvp' ? NexaPvp.norm(p.pvp) : undefined, mission: mode === 'mission' ? p.mission | 0 : 1, seed: (p.seed >>> 0) || 1, role: 'guest', solo: false, spectator: NN.spectator ? 1 : 0, jump: p.late ? String(p.act || '').slice(0, 12) : '', stage: p.late ? p.stage | 0 : 0, ff: p.ff === 0 ? 0 : 1, ffm: +p.ffm || 1, bots: mode === 'br' ? clamp(p.bots | 0, 0, 99) : 0 }, 3);
     });
     tradeHooks();
     NN.on('profile', onProfile); NN.on('profile?', onProfileReq);

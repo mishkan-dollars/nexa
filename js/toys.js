@@ -111,6 +111,7 @@
       id: typeof d.id === 'string' && /^[0-9a-f]{64}$/.test(d.id) ? d.id : '',
       rk: Number.isFinite(d.rk) ? d.rk : 0,
       rl: Array.isArray(d.rl) ? d.rl.filter((x) => x && isFinite(x.t) && isFinite(x.n)).slice(-40) : [],
+      pv: Array.isArray(d.pv) ? d.pv.filter((x) => x && isFinite(x.t) && isFinite(x.n)).slice(-20) : [],
       adm: Array.isArray(d.adm) ? d.adm.filter((x) => typeof x === 'string' && /^[0-9a-f]{32,64}$/.test(x)).slice(-300) : []
     };
     let cv = 0; const ck = (Math.random() * 4294967296) >>> 0;
@@ -134,7 +135,7 @@
   }
   function save() {
     try {
-      const d = JSON.stringify({ owned: S.owned, loadout: S.loadout, wheel: S.wheel, hud: S.hud, paid: S.paid, rl: S.rl, ab: S.ab, id: S.id, rk: S.rk, adm: S.adm });
+      const d = JSON.stringify({ owned: S.owned, loadout: S.loadout, wheel: S.wheel, hud: S.hud, paid: S.paid, rl: S.rl, pv: S.pv, ab: S.ab, id: S.id, rk: S.rk, adm: S.adm });
       const q = DEV.q + 1, p = lastRec ? lastRec.h : '', c = ((S.credits ^ MASK) >>> 0).toString(36);
       const r = { v: 2, q, p, c, d, h: recHash(q, p, c, d) };
       const js = JSON.stringify(r);
@@ -593,6 +594,19 @@
     return n;
   }
 
+  const PVP_MATCH = 150, PVP_HOUR = 400, PVP_GAP = 120000;
+  function pvpReward(n) {
+    n = Math.floor(Number(n));
+    if (!Number.isFinite(n) || n < 1 || locked()) return 0;
+    const now = Date.now();
+    S.pv = (S.pv || []).filter((x) => now - x.t < 3600000);
+    const last = S.pv.length ? S.pv[S.pv.length - 1].t : 0, hourly = S.pv.reduce((a, x) => a + x.n, 0);
+    if (now - last < PVP_GAP) return 0;
+    n = Math.max(0, Math.min(n, PVP_MATCH, PVP_HOUR - hourly));
+    if (n > 0) { S.pv.push({ t: now, n }); S.credits += n; save(); }
+    return n;
+  }
+
   // подарок из миссии (js/twists-*.js): игрушка или эмоция без оплаты; false — уже есть / нет такой
   function grant(id) {
     const d = DEF[id];
@@ -677,7 +691,7 @@
     },
     init(o) { Object.assign(ctx, o || {}); },
     load: loadTpl, tpl: (id) => TPLR[id], make: makeToy, press: pressToy, release: releaseDent, step: stepToy, avatar, avatarUrl: (id) => AV[id] || '',
-    sfx, plushSfx, glitchSfx, action, renderShop, fillAvatars, openPreview, closePreview, reward, bonus, grant, BEAR_SVG,
+    sfx, plushSfx, glitchSfx, action, renderShop, fillAvatars, openPreview, closePreview, reward, pvpReward, bonus, grant, BEAR_SVG,
     reset() { S = load(); },
     _dbg: () => ({ pv, S })
   };

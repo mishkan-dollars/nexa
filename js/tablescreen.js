@@ -9,6 +9,7 @@
   const AUTO = ['EXPIRED', 'AUTO', 'GENERATED', 'AUTOLOCKED', 'COMPLETE'];
 
   let scan = null;
+  const SUB = (id) => { const f = window.HLScreen && window.HLScreen.label, t = f && f(id); return t || 'SUBJECT ' + id; };
   function T(g, s, x, y, o) {
     o = o || {};
     g.font = (o.w || 400) + ' ' + (o.px || 16) + 'px ' + (o.f || FB);
@@ -68,7 +69,7 @@
   function sBoot(g, M) {
     frame(g, M, 'ESTABLISHING SECURE CHANNEL');
     T(g, 'INITIALIZING' + '.'.repeat(1 + Math.floor(M.t * 2.5) % 3), W / 2, H / 2 - 6, { px: 28, w: 700, f: FD, a: 'center', ls: 3 });
-    T(g, 'SUBJECT ' + M.id + ' // SESSION LINK', W / 2, H / 2 + 34, { px: 13, c: MUTED, a: 'center', ls: 3 });
+    T(g, SUB(M.id) + ' // SESSION LINK', W / 2, H / 2 + 34, { px: 13, c: MUTED, a: 'center', ls: 3 });
   }
 
   function sParticipants(g, M, hot) {
@@ -80,7 +81,7 @@
       const x = 60 + (i % cols) * (cw + 0), y = 210 + Math.floor(i / cols) * 74;
       const px = cols === 2 ? 60 + (i % 2) * 476 : 60;
       box(g, px, y, cw, 58, p.isUser ? 'rgba(239,75,69,.04)' : null, p.isUser ? REDDIM : LINE, 1);
-      T(g, 'SUBJECT ' + p.id, px + 20, y + 36, { px: 20, f: FD });
+      T(g, SUB(p.id), px + 20, y + 36, { px: 20, f: FD });
       T(g, p.isUser ? 'YOU' : 'SYSTEM', px + cw - 20, y + 35, { px: 12, c: p.isUser ? RED : MUTED, a: 'right', ls: 2 });
       void x;
     });
@@ -94,7 +95,7 @@
     T(g, 'SUBJECT', W - 60, 86, { px: 11, c: MUTED, a: 'right', ls: 2 }); T(g, M.id, W - 60, 118, { px: 22, w: 700, f: FD, a: 'right' });
     box(g, 60, 142, W - 120, 1, LINE);
     let y = 200;
-    if (idx >= 1) { T(g, 'SUBJECT ' + M.id, 60, y, { px: 18, ls: 2 }); T(g, 'NO NUMBER SELECTED', 60, y + 28, { px: 18, ls: 2 }); y += 74; T(g, 'AUTO-SELECTION ACTIVE...', 60, y, { px: 18, c: AMBER, ls: 2 }); y += 58; }
+    if (idx >= 1) { T(g, SUB(M.id), 60, y, { px: 18, ls: 2 }); T(g, 'NO NUMBER SELECTED', 60, y + 28, { px: 18, ls: 2 }); y += 74; T(g, 'AUTO-SELECTION ACTIVE...', 60, y, { px: 18, c: AMBER, ls: 2 }); y += 58; }
     if (idx >= 2) { T(g, 'SYSTEM GENERATED VALUE: ' + n, 60, y, { px: 32, w: 700, f: FD, c: GREEN, ls: 2 }); y += 62; }
     if (idx >= 3) { T(g, 'NUMBER LOCKED', 60, y, { px: 18, c: GREEN, ls: 2 }); T(g, 'VALUE: ' + n, 60, y + 28, { px: 18, c: GREEN, ls: 2 }); y += 74; }
     if (idx >= 4) T(g, 'PICK COMPLETE', 60, y, { px: 18, c: MUTED, ls: 2 });
@@ -110,7 +111,7 @@
     button(g, hot, M, 'lock', 'LOCK NUMBER', 464, 204, 168, 66, { off: locked, px: 15 });
     if (locked) {
       T(g, 'NUMBER LOCKED', 60, 304, { px: 14, c: GREEN, ls: 1 });
-      T(g, 'SUBJECT ' + M.id, 60, 326, { px: 14, c: MUTED });
+      T(g, SUB(M.id), 60, 326, { px: 14, c: MUTED });
       if (M.me) T(g, 'VALUE: ' + st.lockedValue + (st.pickStage === 'COMPLETE' ? '   PICK COMPLETE' : ''), 60, 348, { px: 14, c: GREEN });
     } else note(g, M, 60, 304, 'Enter a number between 1 and ' + st.rangeMax);
     let y = 392;
@@ -118,7 +119,7 @@
     st.players.forEach((p) => {
       const l = p.status === 'LOCKED';
       box(g, 60, y, 572, 1, LINE);
-      T(g, 'SUBJECT ' + p.id + (p.id === M.id ? '  (YOU)' : ''), 60, y + 24, { px: 14, ls: 1 });
+      T(g, SUB(p.id) + (p.id === M.id ? '  (YOU)' : ''), 60, y + 24, { px: 14, ls: 1 });
       T(g, l ? 'LOCKED' : 'THINKING', 632, y + 24, { px: 13, c: l ? GREEN : MUTED, a: 'right', ls: 2 });
       y += 34;
     });
@@ -135,12 +136,12 @@
     if (!l) { box(g, x, y, w, h, null, LINE, 1); T(g, 'NO GUESSES YET', x + 20, y + h / 2 + 5, { px: 14, c: MUTED, ls: 2 }); return; }
     const col = l.result === 'CORRECT' ? GREEN : (l.result === 'HIGH' ? RED : AMBER), fresh = M.t - (M.verdictT || 0) < 0.5 && Math.floor(M.t * 14) % 2;
     box(g, x, y, w, h, fresh ? 'rgba(255,255,255,.06)' : null, col, 1);
-    T(g, 'SUBJECT ' + l.actorId + ' → ' + l.guess, x + 18, y + 26, { px: 13, c: MUTED, ls: 1 });
+    T(g, SUB(l.actorId) + ' → ' + l.guess, x + 18, y + 26, { px: 13, c: MUTED, ls: 1 });
     T(g, l.result, x + 18, y + 72, { px: 40, w: 700, f: FD, c: col, ls: 3 });
     const rng2 = l.range ? l.range.min + ' — ' + l.range.max : '';
     if (l.result === 'HIGH') { T(g, 'TARGET IS HIGHER', x + w - 18, y + 36, { px: 13, a: 'right', ls: 1 }); T(g, 'RANGE UPDATED ' + rng2, x + w - 18, y + 62, { px: 12, c: MUTED, a: 'right' }); T(g, '↑', x + w - 24, y + 94, { px: 24, c: col, a: 'right', f: FD }); }
     else if (l.result === 'LOW') { T(g, 'TARGET IS LOWER', x + w - 18, y + 36, { px: 13, a: 'right', ls: 1 }); T(g, 'RANGE UPDATED ' + rng2, x + w - 18, y + 62, { px: 12, c: MUTED, a: 'right' }); T(g, '↓', x + w - 24, y + 94, { px: 24, c: col, a: 'right', f: FD }); }
-    else { T(g, 'TARGET MATCH', x + w - 18, y + 36, { px: 13, a: 'right', ls: 1 }); T(g, M.st.matchEnding ? 'EXPERIMENT COMPLETE' : 'SUBJECT ' + l.targetId + ' REMOVED', x + w - 18, y + 62, { px: 12, c: MUTED, a: 'right' }); }
+    else { T(g, 'TARGET MATCH', x + w - 18, y + 36, { px: 13, a: 'right', ls: 1 }); T(g, M.st.matchEnding ? 'EXPERIMENT COMPLETE' : SUB(l.targetId) + ' REMOVED', x + w - 18, y + 62, { px: 12, c: MUTED, a: 'right' }); }
   }
 
   function sGuessing(g, M, hot) {
@@ -149,37 +150,37 @@
     head(g, M, '', 'EXPERIMENT ACTIVE');
     // статус-полоса
     box(g, 60, 164, 272, 62, actorId ? 'rgba(239,75,69,.05)' : null, actorId ? REDDIM : LINE, 1);
-    T(g, 'CURRENT TURN', 76, 186, { px: 10, c: MUTED, ls: 3 }); T(g, actorId ? 'SUBJECT ' + actorId : '— — —', 76, 214, { px: 19, w: 700, f: FD, ls: 1 });
+    T(g, 'CURRENT TURN', 76, 186, { px: 10, c: MUTED, ls: 3 }); T(g, actorId ? SUB(actorId) : '— — —', 76, 214, { px: 19, w: 700, f: FD, ls: 1 });
     box(g, 346, 164, 276, 62, null, LINE, 1);
-    T(g, 'TARGET', 362, 186, { px: 10, c: MUTED, ls: 3 }); T(g, st.targetId ? 'SUBJECT ' + st.targetId : '— — —', 362, 214, { px: 19, w: 700, f: FD, ls: 1 });
+    T(g, 'TARGET', 362, 186, { px: 10, c: MUTED, ls: 3 }); T(g, st.targetId ? SUB(st.targetId) : '— — —', 362, 214, { px: 19, w: 700, f: FD, ls: 1 });
     // ввод / ожидание
     if (actorId === M.id && !ending) {
       inputBox(g, hot, M, 60, 244, 392, 62, M.me ? M.ui.buf : '', b.min + ' - ' + b.max, { active: M.me && M.ui.typing, id: 'input' });
       button(g, hot, M, 'submit', 'SUBMIT GUESS', 464, 244, 168, 62, { px: 15 });
       note(g, M, 60, 332, 'YOUR TURN: ENTER A NUMBER BETWEEN ' + b.min + ' AND ' + b.max);
     } else if (!ending && actorId) {
-      T(g, 'SUBJECT ' + actorId + ' IS MAKING A GUESS' + '.'.repeat(Math.floor(M.t * 2.5) % 4), 60, 284, { px: 15, c: AMBER, ls: 1 });
+      T(g, SUB(actorId) + ' IS MAKING A GUESS' + '.'.repeat(Math.floor(M.t * 2.5) % 4), 60, 284, { px: 15, c: AMBER, ls: 1 });
     }
     verdict(g, M, 60, 352, 572, 106);
     const hist = (st.targetHistory[st.targetId] || []).slice(-4);
     let y = 478;
     hist.forEach((e) => {
       box(g, 60, y, 572, 1, LINE);
-      T(g, 'SUBJECT ' + e.actorId + ' guessed ' + e.guess, 60, y + 20, { px: 13 });
+      T(g, SUB(e.actorId) + ' guessed ' + e.guess, 60, y + 20, { px: 13 });
       T(g, e.result, 632, y + 20, { px: 13, f: FD, a: 'right', ls: 2, c: e.result === 'CORRECT' ? GREEN : (e.result === 'HIGH' ? RED : AMBER) });
       y += 28;
     });
     // справа: цель и список
     box(g, 664, 164, 300, 150, 'rgba(91,21,20,.10)', REDDIM, 1);
     T(g, 'TARGET SUBJECT', 684, 192, { px: 10, c: MUTED, ls: 3 });
-    T(g, st.targetId ? 'SUBJECT ' + st.targetId : '—', 684, 232, { px: 24, w: 700, f: FD, c: RED, ls: 1 });
+    T(g, st.targetId ? SUB(st.targetId) : '—', 684, 232, { px: 24, w: 700, f: FD, c: RED, ls: 1 });
     T(g, String(b.min), 684, 290, { px: 30, w: 700, f: FD }); T(g, String(b.max), 944, 290, { px: 30, w: 700, f: FD, a: 'right' });
     T(g, '—', 814, 288, { px: 20, c: MUTED, a: 'center' });
     T(g, 'ACTIVE SUBJECTS', 664, 346, { px: 10, c: MUTED, ls: 3 });
     y = 358;
     st.players.forEach((p) => {
       box(g, 664, y, 300, 1, LINE);
-      T(g, 'SUBJECT ' + p.id, 664, y + 22, { px: 13, c: p.active ? INK : '#4b5557', ls: 1 });
+      T(g, SUB(p.id), 664, y + 22, { px: 13, c: p.active ? INK : '#4b5557', ls: 1 });
       T(g, p.active ? 'ACTIVE' : 'REMOVED', 964, y + 22, { px: 11, c: p.active ? GREEN : RED, a: 'right', ls: 2 });
       y += 30;
     });
@@ -193,7 +194,7 @@
     T(g, 'TARGET IDENTIFIED', W / 2, 214, { px: 44, w: 700, f: FD, a: 'center', ls: 3 });
     box(g, W / 2 - 200, 252, 400, 110, null, LINE, 1);
     T(g, 'WINNER', W / 2, 284, { px: 11, c: MUTED, a: 'center', ls: 4 });
-    T(g, win ? 'YOU' : 'SUBJECT ' + st.winnerId, W / 2, 338, { px: 36, w: 700, f: FD, a: 'center', ls: 3, c: win ? GREEN : INK });
+    T(g, win ? 'YOU' : SUB(st.winnerId), W / 2, 338, { px: 36, w: 700, f: FD, a: 'center', ls: 3, c: win ? GREEN : INK });
     T(g, 'RESULT: SUCCESS', W / 2, 400, { px: 14, c: GREEN, a: 'center', ls: 3 });
     button(g, hot, M, 'restart', 'RESTART EXPERIMENT', 150, 456, 340, 64, { px: 16 });
     button(g, hot, M, 'menu', 'RETURN TO NEXA/OS', 534, 456, 340, 64, { px: 16 });
@@ -204,7 +205,7 @@
     const r = rng(M.seed + Math.floor(M.t * 6));
     for (let i = 0; i < 26; i += 1) { g.fillStyle = 'rgba(239,75,69,' + (0.02 + r() * 0.05) + ')'; g.fillRect(0, 60 + r() * 520, W, 1 + r() * 2); }
     T(g, 'CONNECTION LOST', W / 2, H / 2 - 20, { px: 40, w: 700, f: FD, c: RED, a: 'center', ls: 4 });
-    T(g, 'SUBJECT ' + M.id + ' TERMINATED', W / 2, H / 2 + 28, { px: 16, c: MUTED, a: 'center', ls: 4 });
+    T(g, SUB(M.id) + ' TERMINATED', W / 2, H / 2 + 28, { px: 16, c: MUTED, a: 'center', ls: 4 });
     T(g, 'REMOVED FROM EXPERIMENT', W / 2, H / 2 + 56, { px: 12, c: '#4b5557', a: 'center', ls: 4 });
   }
 
@@ -217,7 +218,7 @@
     } else if (M.crash === 2) {
       g.fillStyle = '#050000'; g.fillRect(0, 0, W, H);
       T(g, 'FATAL ERROR', W / 2, 250, { px: 56, w: 700, f: FD, c: RED, a: 'center', ls: 5 });
-      T(g, 'SUBJECT ' + M.id + ' / CONNECTION TERMINATED', W / 2, 300, { px: 16, c: INK, a: 'center', ls: 3 });
+      T(g, SUB(M.id) + ' / CONNECTION TERMINATED', W / 2, 300, { px: 16, c: INK, a: 'center', ls: 3 });
       for (let i = 0; i < 9; i += 1) { let s = ''; for (let k = 0; k < 40; k += 1) s += '0123456789ABCDEF'[Math.floor(r() * 16)] + (k % 4 === 3 ? ' ' : ''); T(g, s, W / 2, 350 + i * 22, { px: 13, c: i % 3 ? '#4b1010' : '#7a1c1a', a: 'center' }); }
     } else if (M.crash === 3) {
       g.fillStyle = '#000'; g.fillRect(0, 0, W, H);

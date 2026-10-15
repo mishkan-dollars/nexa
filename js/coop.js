@@ -129,9 +129,11 @@
       this.stage = spec.stage | 0; this.stages = {}; this.startSlots = new Set(NN.players.map((x) => x.slot));
       this.byId = new Map(); this.nid = 0; this.dmgBy = 1; this.chatOpen = false; this.lastEm = null; this.cap = null;
       this.hitRate = { t: 0, n: 0 }; this.rng0 = null; this.wave = null; this.pq = []; this.gone = false; this.lastSnapRx = 0; this.lastPos = { x: 1e9, z: 1e9, a: 1e9, c: 0, w: '', h: -1, d: 0, q: 0 };
+      this.spectator = !!spec.spectator && spec.role === 'guest'; if (this.spectator) { this.ffAvail = false; this.ff = false; }
       this.seedOn();
       this.hook();
-      if (this.mode === 'mission' && !this.solo) this.defSkip();
+      if (this.mode === 'mission' && !this.solo && !this.spectator) this.defSkip();
+      if (this.spectator) this.defSpec();
       if (!this.solo && PF) { PF.count('matches'); if (this.host) PF.count('hostMatches'); }
     }
     get peerReady() { return this.readySet.size > 0; }
@@ -308,7 +310,7 @@
     netUp() { return NN.connected || NN.state === 'lost'; }
     async barrierKey(key, ms) { try { await this.barrierKey0(key, ms); } finally { this.reseed('k:' + key); } }
     async barrierKey0(key, ms) {
-      if (this.solo || this.disposed) return;
+      if (this.solo || this.disposed || this.spectator) return;
       if (key.length > 32) key = 'h' + hash32(key).toString(36) + key.length;
       this.mk.add(key); NN.sendAction({ type: 'cev', k: 'barn', kn: key });
       let t0 = Date.now(), shown = 0, lt = t0;
@@ -361,6 +363,7 @@
     }
     async barrier() { try { await this.barrier0(); } finally { this.reseed('p:' + this.stage); } }
     async barrier0() {
+      if (this.spectator) return;
       this.stage += 1; NN.sendAction({ type: 'cev', k: 'bar', s: this.stage });
       let t0 = Date.now(), shown = 0, lt = t0;
       while (!this.disposed && !this.gone && !this.solo && this.netUp() && Date.now() - t0 < 90000) {
@@ -469,7 +472,7 @@
 
     // -------------------------------------------------------------- отправка своего состояния
     sendState(dt) {
-      const r = this.run, p = r.p; if (this.solo || !NN.connected) return;
+      const r = this.run, p = r.p; if (this.solo || !NN.connected || this.spectator) return;
       this.sendT += dt;
       const L = this.lastPos;
       const x = q(p.x, 50), z = q(p.z, 50), a = q(p.yaw, 50), c = r.pm && r.pm.crouch ? 1 : 0, w = r.wp ? r.wp.id : '', h = r.cb ? Math.round(clamp(r.hp / (r.maxHp || 100), 0, 1) * 100) : 100, d = r.dead ? 1 : 0, aim = q(r.aimK || 0, 4);
@@ -554,6 +557,7 @@
     onPos(p) {
       const m = this.rmFor(p.from); if (!m) return;
       const R = m.rem;
+      { const nt = performance.now(), od = (nt - (R.pt0 || 0)) / 1000; if (R.pt0 && od > 0.005 && od < 0.5) { R.vx = (num(p.x) - R.x) / od; R.vz = (num(p.z) - R.z) / od; } R.pt0 = nt; }
       R.x = num(p.x); R.z = num(p.z); R.yaw = num(p.a); R.crouch = !!p.c; R.w = typeof p.w === 'string' ? p.w.slice(0, 12) : ''; R.hp = clamp(num(p.h, 100), 0, 100); R.dead = !!p.d; R.aim = clamp(num(p.q), 0, 1); R.pitch = clamp(num(p.pt), -1.3, 1.3);
       R.rl = !!p.r; R.it = p.it | 0; R.ia = p.ia | 0; R.ip = p.ip | 0;
       R.p.x = R.x; R.p.z = R.z; R.p.yaw = R.yaw; R.p.moving = 0.5; R.got = true;
@@ -635,7 +639,7 @@
       if (!this.host || this.solo || !this.shared || !this.peerReady) return;
       this.snapT += dt; if (this.snapT < (document.hidden ? 0.5 : 0.05)) return; this.snapT = 0;
       this.snapPh = (this.snapPh || 0) ^ 1; if (!this.snapPh) this.snapFull += 1; const full = this.snapFull >= 5; if (full && !this.snapPh) this.snapFull = 0;
-      const ps = NN.players.map((q) => ({ slot: q.slot, m: this.remotes.get(q.slot) })), lists = new Map(); this.snapN = (this.snapN || 0) + 1;
+      const ps = NN.players.map((q) => ({ slot: q.slot, m: this.remotes.get(q.slot) })).concat(NN.spectatorSlots.map((s) => ({ slot: s, m: null }))), lists = new Map(); this.snapN = (this.snapN || 0) + 1;
       ps.forEach((q) => lists.set(q.slot, []));
       this.byId.forEach((e) => {
         if (e.dead || !e.n || e.nid < 0) return;
@@ -833,6 +837,45 @@
       for (let i = a.length - 1; i >= 0; i -= 1) { if (a[i].t <= t) { const n = a[i + 1]; if (n && n.t > a[i].t) { const k = (t - a[i].t) / (n.t - a[i].t); return { x: a[i].x + (n.x - a[i].x) * k, z: a[i].z + (n.z - a[i].z) * k }; } return a[i]; } p = a[i]; }
       return p;
     }
+    // ---- зритель (не игрок: без слота игрока, урона и барьеров): камера в глазах выбранного игрока, Q/E/←/→ цель, V вид, кнопка выхода
+    defSpec() {
+      const r = this.run; this.sp = { slot: 0, fp: true, cf: null, t: 0 };
+      r.god = true;
+      const kd = (e) => {
+        if (e.repeat) return;
+        if (e.code === 'KeyQ' || e.code === 'ArrowLeft') this.specPick(-1); else if (e.code === 'KeyE' || e.code === 'ArrowRight') this.specPick(1); else if (e.code === 'KeyV') this.sp.fp = !this.sp.fp;
+      };
+      document.addEventListener('keydown', kd, true); this.offs.push(() => document.removeEventListener('keydown', kd, true));
+      this.offs.push(() => { if (this.sp.cf && r.camFree === this.sp.cf) r.camFree = null; });
+      const L = r.layer, el = this.spEl = document.createElement('div'); el.className = 'nx-spec'; el.setAttribute('data-i18n', 'net');
+      el.innerHTML = '<b>SPECTATING</b> <em translate="no"></em><small>Q/E: NEXT PLAYER · V: VIEW</small><button type="button">LEAVE</button>';
+      el.querySelector('button').addEventListener('click', () => { try { r.finish(false); } catch (e) { /* ok */ } });
+      ['pointerdown', 'mousedown', 'touchstart'].forEach((n) => el.addEventListener(n, (e) => e.stopPropagation(), { passive: true }));
+      L.appendChild(el); this.offs.push(() => el.remove());
+      const cb = document.createElement('button'); cb.type = 'button'; cb.className = 'nx-specn'; cb.textContent = '▶'; cb.addEventListener('click', () => this.specPick(1)); el.appendChild(cb);
+    }
+    specList() { return Array.from(this.remotes.values()).filter((m) => m.rem.got && !m.rem.dead).map((m) => m.slot).sort((a, b) => a - b); }
+    specPick(d) { const l = this.specList(); if (!l.length) return; const i = l.indexOf(this.sp.slot); this.sp.slot = l[(i + d + l.length) % l.length]; }
+    specTick(dt) {
+      const r = this.run, S = this.sp; if (!S || !r.camera) return;
+      r.god = true; if (!S.frozen) { S.frozen = true; r.hacking = true; r.syncLock && r.syncLock(); }
+      if (!S.cf) S.cf = { pos: r.camera.position.clone(), look: new THREE.Vector3(), fov: r.camera.fov, roll: 0 };
+      const l = this.specList(); if (S.slot <= 0 || l.indexOf(S.slot) < 0) { S.slot = l[0] || 0; S.yaw0 = undefined; }
+      const m = S.slot ? this.remotes.get(S.slot) : null, cf = S.cf; r.camFree = cf;
+      this.spEl.querySelector('em').textContent = m ? this.ffName(S.slot) + '  ' + Math.round(m.rem.hp) + '%  ' + String(m.rem.w || '').toUpperCase() : '';
+      if (!m) return;
+      const R = m.rem, ex = Math.min(0.1, (performance.now() - (R.pt0 || performance.now())) / 1000), px = R.x + (R.vx || 0) * ex, pz = R.z + (R.vz || 0) * ex, ey = R.crouch ? 1.1 : 1.6, k = 1 - Math.exp(-dt * 16);
+      if (S.yaw0 === undefined) { S.yaw0 = R.yaw; S.pit0 = R.pitch || 0; cf.pos.set(px, ey, pz); }
+      let dy = R.yaw - S.yaw0; dy -= Math.round(dy / 6.2832) * 6.2832; S.yaw0 += dy * k; S.pit0 += ((R.pitch || 0) - S.pit0) * k;
+      if (S.fp) {
+        cf.pos.x += (px - Math.sin(S.yaw0) * 0.1 - cf.pos.x) * k; cf.pos.y += (ey - cf.pos.y) * k; cf.pos.z += (pz - Math.cos(S.yaw0) * 0.1 - cf.pos.z) * k;
+        const cp = Math.cos(S.pit0); cf.look.set(cf.pos.x - Math.sin(S.yaw0) * cp * 3, cf.pos.y + Math.sin(S.pit0) * 3, cf.pos.z - Math.cos(S.yaw0) * cp * 3); cf.fov = 74;
+      } else {
+        cf.pos.x += (px + Math.sin(S.yaw0) * 2.8 - cf.pos.x) * k * 0.4; cf.pos.y += (2.0 - cf.pos.y) * k * 0.4; cf.pos.z += (pz + Math.cos(S.yaw0) * 2.8 - cf.pos.z) * k * 0.4;
+        cf.look.set(px, 1.2, pz); cf.fov = 64;
+      }
+      cf.roll = 0;
+    }
     ffTick() {
       const r = this.run, cb = r.cb; if (!cb || !this.ffAvail || this.solo) return;
       if (this.host && this.ff) this.histPush();
@@ -914,7 +957,7 @@
       this.grenades(dt);
       if (this.story && !this.host) this.expireProv();
       this.cineSync();
-      this.ffTick();
+      this.ffTick(); if (this.spectator) this.specTick(dt);
       this.updateAvatars(dt);
       // свои эмоции: сообщаем остальным о начале и конце танца
       const es = r.em && r.em.ses;

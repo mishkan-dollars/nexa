@@ -555,8 +555,18 @@
   // Онлайн (coop.js): тот же режим запускается у обоих игроков; прогресс сюжета не трогаем, по выходу — обратно в онлайн-лобби
   function startCoop(spec) {
     if (missionActive || !window.Missions) return false;
-    var id = spec.mode === 'mission' ? spec.mission : spec.mode === 'br' ? 'brbox' : 'coopbox';
-    if (id !== 'coopbox' && id !== 'brbox' && (id < 1 || id > 48 || !Missions._core.MISSIONS[id])) return false;
+    if (spec.mode === 'hl') {
+      if (!window.TableOnline) return false;
+      missionActive = true;
+      if (window.Lobby3D) Lobby3D.sync(false);
+      audio.stopMusic();
+      audio.stopHarddrive();
+      var backHL = function () { missionActive = false; currentView = 'ONLINE'; audio.startHarddrive(); audio.playMusic('menu'); if (window.NexaCoop) NexaCoop.end(); render(); };
+      if (!TableOnline.start(spec, { audio: audio, playSfx: function (k) { audio.playSfx(k); }, stopMusic: function () { audio.stopMusic(); }, onEnd: backHL })) { backHL(); return false; }
+      return true;
+    }
+    var id = spec.mode === 'mission' ? spec.mission : spec.mode === 'br' ? 'brbox' : spec.mode === 'pvp' ? 'pvpbox' : 'coopbox';
+    if (id !== 'coopbox' && id !== 'brbox' && id !== 'pvpbox' && (id < 1 || id > 48 || !Missions._core.MISSIONS[id])) return false;
     missionActive = true;
     if (window.Lobby3D) Lobby3D.sync(false);
     audio.stopMusic();
