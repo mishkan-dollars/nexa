@@ -249,7 +249,13 @@
       return cin0.call(r, shots, o);
     };
     const shot0 = RunP.runShot;
-    if (shot0) RunP.runShot = function (s, ctx) {
+    if (shot0) RunP.runShot = async function (s, ctx) {
+      const r = this, co = r.__co, on = live(r) && !r.cineInsert && ctx;
+      if (on) {
+        r.mpShotI = ctx.first ? 0 : (r.mpShotI | 0) + 1;
+        if (NN.isHost) NN.sendAction({ type: 'cev', k: 'cs', c: co.cinN | 0, i: r.mpShotI });
+        else if (!ctx.first) { const t0 = Date.now(), g = () => co.cs && (co.cs.c > (co.cinN | 0) || (co.cs.c === (co.cinN | 0) && co.cs.i >= r.mpShotI)); while (!g() && !r.disposed && !r.cineSkip && Date.now() - t0 < 2500 && live(r)) await sleep(25); }
+      }
       const n = live(this) ? NN.players.length + 1 : 1;
       if (n >= 3 && s && !s.free) { const x = Math.min(16, 3 * (n - 2)); s = Object.assign({}, s, { fov: (s.fov || 60) + x }); if (s.fovTo !== undefined) s.fovTo += x; }
       return shot0.call(this, s, ctx);

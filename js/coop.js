@@ -297,6 +297,7 @@
         case 'ffs': if (!this.host) { this.ff = this.ffAvail && !!p.on; this.ffm = [0.25, 0.5, 1].indexOf(+p.m) >= 0 ? +p.m : 1; this.ffUi(); } break;
         case 'cskip': if (!this.host && this.run.inCinema) this.skipGo = true; break;
         case 'ffk': if (!this.host) this.ffKillMsg(p.a | 0, p.t | 0); break;
+        case 'cs': if (!this.host) { const c = p.c | 0, i = p.i | 0; if (!this.cs || c > this.cs.c || (c === this.cs.c && i > this.cs.i)) this.cs = { c, i }; } break;
         case 'sv': if (this.host && this.votes) { if (p.v) this.votes.add(from); else this.votes.delete(from); } break;
         case 'svn': if (!this.host) this.skipTxt(p.a | 0, p.b | 0); break;
         case 'eresync': if (this.host && this.ready) this.resendEnemies(); break;
