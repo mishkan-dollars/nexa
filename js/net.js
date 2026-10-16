@@ -289,6 +289,11 @@
       act = pc.createDataChannel('act', { negotiated: true, id: 1, ordered: false, maxRetransmits: 0 });
       act.binaryType = 'arraybuffer';
       rel = pc.createDataChannel('rel', { negotiated: true, id: 2, ordered: true });
+      try {
+        const png = pc.createDataChannel('png', { negotiated: true, id: 3, ordered: false, maxRetransmits: 0, priority: 'high' });
+        png.addEventListener('message', (e) => { if (typeof e.data !== 'string') return; L.rxPng = true; try { onMessage(L, e.data, true); } finally { L.rxPng = false; } });
+        L.png = png;
+      } catch (e) { /* без отдельного канала пинга */ }
     }
     [act, rel].forEach((ch) => {
       ch.addEventListener('open', () => checkOpen(L));
@@ -355,6 +360,7 @@
     L.state = 'open';
     if (L.dg) { L.dg.ok = true; L.dg.okAt = Date.now() - L.dg.t0; LA = L.dg; }
     if (R.role === 'host') { L.peerAt = Date.now(); }
+    lagStart();
     L.pingT = setInterval(() => pingTick(L), cfg.pingMs);
     L.statT = setInterval(() => { if (!document.hidden) pathTick(L); }, 20000);
     setTimeout(() => pathTick(L), 3000);
@@ -406,8 +412,8 @@
     if (L.bc) { try { L.bc.postMessage({ k: 'bye' }); L.bc.close(); } catch (e) { /* ok */ } L.bc = null; clearInterval(L.hiT); }
     const pc = L.pc; L.pc = null;
     if (pc) { try { pc.close(); } catch (e) { /* уже закрыто */ } }
-    [L.act, L.rel].forEach((ch) => { try { ch && ch.close(); } catch (e) { /* уже закрыто */ } });
-    L.act = L.rel = null; L.ready = false; L.making = false; L.lastN = {}; L.state = 'closed';
+    [L.act, L.rel, L.png].forEach((ch) => { try { ch && ch.close(); } catch (e) { /* уже закрыто */ } });
+    L.act = L.rel = L.png = null; L.ready = false; L.making = false; L.lastN = {}; L.state = 'closed';
   }
   // соединение пропало (штатно или нет)
   function linkGone(L, code) {
@@ -778,24 +784,43 @@
     let i = null;
     try { i = window.NexaProfile && NexaProfile.publicInfo ? NexaProfile.publicInfo() : null; } catch (e) { i = null; }
     i = i || { name: 'PLAYER', color: '#ff3b30', level: 1 };
-    return { name: cleanName(i.name), color: cleanColor(i.color), level: Math.max(1, Math.min(999, i.level | 0 || 1)), v: VERSION, lang: (window.I18N && I18N.lang) || 'en', pid: MYPID, k: (window.Toys && Toys.ident && Toys.ident.pk) || '', spec: spectatorWant ? 1 : 0 };
+    return { name: cleanName(i.name), color: cleanColor(i.color), level: Math.max(1, Math.min(999, i.level | 0 || 1)), v: VERSION, lang: (window.I18N && I18N.lang) || 'en', pid: MYPID, k: (window.Toys && Toys.ident && Toys.ident.pk) || '', spec: spectatorWant ? 1 : 0, png: 1 };
   }
-  // отправка в одно соединение; вернёт true, если ушло. Быстрые типы идут по 'act' (без повторов; при забитом буфере свежее важнее старого), остальные — по 'rel'
-  function sendLink(L, data, fastOpt, raw) {
+  // отправка в одно соединение; вернёт true, если ушло, 0 — если отброшено по заторам, false — канал закрыт/ошибка. Быстрые типы идут по 'act' (без повторов): очередь канала не копим — устаревшее (pos, снапшоты, aim) отбрасывается раньше, чем важное (shot/hit); остальное — по 'rel' с жёстким пределом очереди
+  const SOFT = { pos: 16384, snap: 8192, ev: 16384, crit: 32768 }, HARD = 65536, REL_MAX = 262144, KEEP = { bye: 1, hello: 1, welcome: 1, roster: 1, sdp: 1, chat: 1 };
+  const kindT = (t) => (t === 'pos' ? 'pos' : t === 'snap' ? 'snap' : t === 'shot' || t === 'hit' ? 'crit' : 'ev');
+  function sendLink(L, data, fastOpt, raw, ty) {
     const fast = fastOpt !== undefined ? !!fastOpt : !!FAST[data.type];
     const ch = fast ? L.act : L.rel;
     if (!ch || ch.readyState !== 'open') return false;
-    const bin = typeof raw === 'object' && raw !== null;
-    if (fast && ch.bufferedAmount > (bin ? 4096 : 64 * 1024)) { STAT.dropBuf += 1; return false; }
+    const bin = typeof raw === 'object' && raw !== null, t = ty || (data && data.type) || '';
+    const k = bin ? (new Uint8Array(raw)[0] === 3 ? 'snap' : 'pos') : kindT(t);
+    L.nsT = (L.nsT || 0) + 1;
+    if (fast) {
+      const q = ch.bufferedAmount;
+      if (q > 0 && (q > HARD || q > SOFT[k] * (L.bw > 0 ? Math.min(1, Math.max(1536, L.bw * 0.15) / 16384) : 1))) { STAT.dropBuf += 1; L.ndT = (L.ndT || 0) + 1; return 0; }
+      if ((k === 'pos' || k === 'snap') && L.thin > 1) { const c = k === 'pos' ? 'tp' : 'ts'; L[c] = (L[c] || 0) + 1; if (L[c] % L.thin) { STAT.thin += 1; return 0; } }
+    } else if (ch.bufferedAmount > REL_MAX && !KEEP[t]) { STAT.dropRel += 1; L.ndT = (L.ndT || 0) + 1; return 0; }
     let s = raw;
     if (!s) { const pkt = Object.assign({}, data); pkt.n = ++seq; pkt.ts = Date.now(); try { s = JSON.stringify(pkt); } catch (e) { return false; } }
     try { ch.send(s); } catch (e) { return false; }
-    if (fast && dupFlag) setTimeout(() => { if (ch.readyState === 'open') { try { ch.send(s); } catch (e) { /* ok */ } } }, 12);
-    L.tx += 1; L.txB += bin ? s.byteLength : s.length;
+    const n = bin ? s.byteLength : s.length;
+    if (fast && dupFlag) setTimeout(() => { if (ch.readyState === 'open' && ch.bufferedAmount < 8192) { try { ch.send(s); } catch (e) { /* ok */ } } }, 12);
+    L.tx += 1; L.txB += n;
+    if (fast) { L.actB = (L.actB || 0) + n; if (k === 'pos') L.cp = (L.cp || 0) + 1; else if (k === 'snap') L.cs = (L.cs || 0) + 1; }
+    return true;
+  }
+  function sendPng(L, d) {
+    const ch = L.png;
+    if (!ch || ch.readyState !== 'open') return false;
+    if (ch.bufferedAmount > 2048) { STAT.dropPng += 1; return false; }
+    const pkt = Object.assign({}, d); pkt.n = ++seq; pkt.ts = Date.now();
+    let s; try { s = JSON.stringify(pkt); ch.send(s); } catch (e) { return false; }
+    L.tx += 1; L.txB += s.length;
     return true;
   }
   let seq = 0;
-  const STAT = { dropBuf: 0 };
+  const STAT = { dropBuf: 0, dropRel: 0, dropPng: 0, thin: 0 };
   // единая точка отправки: {type, n, ts, ...поля}. Хост — всем гостям (или opts.to = слот), гость — Хосту (DIRECT-пакеты уходят адресату через Хоста)
   function sendAction(data, opts) {
     if (!data || typeof data.type !== 'string') return false;
@@ -810,7 +835,7 @@
         if (!l.ready || !l.opened || (to && l.slot !== to)) return;
         if (isPos && !l.virtual && !l.local) { if (!bin) bin = encPos(data, 1); (l.pb || (l.pb = new Map())).set(1, { b: bin, x: data.x, z: data.z }); if (!posTm) posTm = setInterval(flushPos, 33); ok = true; return; }
         if (!s) { const pkt = Object.assign({}, data); pkt.n = ++seq; pkt.ts = Date.now(); try { s = JSON.stringify(pkt); } catch (e) { s = '!'; } }
-        if (s !== '!' && sendLink(l, null, fast, s)) ok = true;                 // сериализуем один раз на всех получателей
+        if (s !== '!' && sendLink(l, null, fast, s, data.type)) ok = true;                 // сериализуем один раз на всех получателей
       });
     } else if (R.role === 'guest') {
       const l = R.links[0];
@@ -873,7 +898,7 @@
       let cp = null, js = null;
       R.links.forEach((l) => {
         if (l === L || !l.opened || !l.ready) return;
-        if (l.virtual || l.local) { if (!js) { const q = Object.assign({}, p); q.from = L.slot; q.n = ++seq; q.ts = Date.now(); delete q.fb; delete q.t16; js = JSON.stringify(q); } sendLink(l, null, true, js); return; }
+        if (l.virtual || l.local) { if (!js) { const q = Object.assign({}, p); q.from = L.slot; q.n = ++seq; q.ts = Date.now(); delete q.fb; delete q.t16; js = JSON.stringify(q); } sendLink(l, null, true, js, 'pos'); return; }
         if (!cp) { cp = raw.slice(0); new Uint8Array(cp)[1] = L.slot; if (p.at) new DataView(cp).setUint16(2, Math.round(p.at) & 65535, true); }
         (l.pb || (l.pb = new Map())).set(L.slot, { b: cp, x: p.x, z: p.z });
         if (!posTm) posTm = setInterval(flushPos, 33);
@@ -899,8 +924,17 @@
     L.lastRx = t; L.rx += 1; L.rxB += raw.length;
     if (L.state === 'lost') { L.state = 'open'; refreshState(); }
     switch (p.type) {
-      case 'ping': if (p.h) L.peerHid = now(); sendLink(L, { type: 'pong', t: p.t, u: Math.round(now() * 10) / 10 }); return;
-      case 'pong': if (typeof p.t === 'number') { const r = Math.max(0, now() - p.t); L.rtt = L.rtt ? L.rtt * 0.7 + r * 0.3 : r; L.rttMin = L.rttMin ? Math.min(L.rttMin, r) : r; const tn = now(); (L.rs || (L.rs = [])).push([tn, r, typeof p.u === 'number' ? p.u - (p.t + r / 2) : null]); while (L.rs.length && tn - L.rs[0][0] > 10000) L.rs.shift(); { let bm = 1e9; L.rs.forEach((x) => { if (x[2] !== null && x[1] < bm) { bm = x[1]; L.off = x[2]; } }); } const rm = Math.round(rttMain()); if (Math.abs(rm - rttEm) > 5) { rttEm = rm; emit('net:rtt', rm); } } return;
+      case 'ping': { if (p.h) L.peerHid = now(); const pg = { type: 'pong', t: p.t, u: Math.round(now() * 10) / 10, g: lagMax(2000), h: document.hidden ? 1 : 0 }; if (L.rxPng) sendPng(L, pg); else sendLink(L, pg); } return;
+      case 'pong': if (typeof p.t === 'number') {
+        const tn = now(), r = Math.max(0, tn - p.t);
+        if (L.rxPng) L.pngMiss = 0;
+        if (document.hidden || p.h || r > 60000) return;
+        if (!L.rttAt || tn - L.rttAt > 8000) L.rtt = r; else L.rtt = L.rtt * (r < L.rtt ? 0.4 : 0.7) + r * (r < L.rtt ? 0.6 : 0.3);
+        L.rttAt = tn; L.rttMin = L.rttMin ? Math.min(L.rttMin, r) : r;
+        (L.rs || (L.rs = [])).push([tn, r, typeof p.u === 'number' ? p.u - (p.t + r / 2) : null, +p.g || 0]); while (L.rs.length && tn - L.rs[0][0] > 10000) L.rs.shift();
+        { let bm = 1e9; L.rs.forEach((x) => { if (x[2] !== null && x[1] < bm) { bm = x[1]; L.off = x[2]; } }); }
+        const rm = Math.round(rttMain()); if (Math.abs(rm - rttEm) > 5) { rttEm = rm; emit('net:rtt', rm); }
+      } return;
       case 'sdp': onSdp(L, p); return;
       case 'bye': L.peerBye = true; linkGone(L, 'PEER_LEFT'); return;
       case 'rl': onTunnel(L, p); return;
@@ -928,16 +962,18 @@
     let s;
     if (typeof raw === 'string' && raw.charCodeAt(raw.length - 1) === 125) s = raw.slice(0, -1) + ',"from":' + from.slot + '}';       // без повторного разбора и JSON.stringify (последний from побеждает)
     else { const q = Object.assign({}, p); q.from = from.slot; s = JSON.stringify(q); }
-    R.links.forEach((l) => { if (l !== from && l.opened && l.ready) sendLink(l, null, f, s); });
+    R.links.forEach((l) => { if (l !== from && l.opened && l.ready) sendLink(l, null, f, s, p.type); });
   }
   function rttMain() {
-    if (R.role === 'guest') return R.links[0] ? R.links[0].rtt : 0;
-    let m = 0; R.links.forEach((l) => { if (l.rtt > m) m = l.rtt; });
+    const tn = now(), fresh = (l) => l.rttAt && tn - l.rttAt < 8000;
+    if (R.role === 'guest') return R.links[0] && fresh(R.links[0]) ? R.links[0].rtt : 0;
+    let m = 0; R.links.forEach((l) => { if (fresh(l) && l.rtt > m) m = l.rtt; });
     return m;
   }
   const JOINS = {}, JOIN_MAX = 6;
   function onHello(L, p) {
     const i = p.info || {};
+    if (i.png) L.pngOk = true;
     L.peer = { name: cleanName(i.name, L.gr === 'host' ? 'PLAYER ' + L.slot : 'HOST'), color: cleanColor(i.color), level: Math.max(1, Math.min(999, i.level | 0 || 1)), v: i.v | 0, lang: String(i.lang || '').slice(0, 2) };
     const first = !L.helloGot; L.helloGot = true;
     L.pid = cleanPid(i.pid);
@@ -968,10 +1004,36 @@
     emit('net:peer', Object.assign({ slot: L.slot, pid: L.pid }, L.peer));
   }
   function rttStats(L) {
+    const tn = now(); if (L.rs) while (L.rs.length && tn - L.rs[0][0] > 10000) L.rs.shift();
     const a = (L.rs || []).map((x) => x[1]).sort((x, y) => x - y);
     if (!a.length) return { n: 0, min: 0, avg: 0, p95: 0, max: 0 };
     return { n: a.length, min: Math.round(a[0]), avg: Math.round(a.reduce((x, y) => x + y, 0) / a.length), p95: Math.round(a[Math.min(a.length - 1, Math.floor(a.length * 0.95))]), max: Math.round(a[a.length - 1]) };
   }
+  const LAG = { s: [], lt: [], on: false };
+  function lagStart() {
+    if (LAG.on) return; LAG.on = true;
+    let last = performance.now();
+    setInterval(() => { const t = performance.now(), d = t - last - 100; last = t; if (document.hidden) return; LAG.s.push([t, Math.max(0, d)]); while (LAG.s.length && t - LAG.s[0][0] > 10000) LAG.s.shift(); }, 100);
+    try { new PerformanceObserver((l) => { const t = performance.now(); l.getEntries().forEach((e) => LAG.lt.push([t, e.duration])); while (LAG.lt.length && t - LAG.lt[0][0] > 10000) LAG.lt.shift(); }).observe({ entryTypes: ['longtask'] }); } catch (e) { /* нет longtask */ }
+  }
+  function lagMax(ms, arr) { const t = performance.now(); let m = 0; (arr || LAG.s).forEach((x) => { if (t - x[0] <= ms && x[1] > m) m = x[1]; }); return Math.round(m); }
+  function sampleBuf(L) {
+    const t = now(), a = L.act ? L.act.bufferedAmount : 0, r = L.rel ? L.rel.bufferedAmount : 0, g = L.png ? L.png.bufferedAmount : 0, bs = L.bs || (L.bs = []);
+    if (L.bt && a > 1024 && L.ba > 1024 && t - L.bt > 100 && t - L.bt < 600) { const d = ((L.actB || 0) + L.ba - a) / ((t - L.bt) / 1000); if (d > 0) { L.bw = L.bw ? L.bw * 0.7 + d * 0.3 : d; L.bwAt = t; } }
+    if (L.bw && t - L.bwAt > 8000) L.bw = 0;
+    L.bt = t; L.ba = a; L.actB = 0;
+    bs.push([t, a, r, g, L.nsT || 0, L.ndT || 0, L.cp || 0, L.cs || 0]); while (bs.length && t - bs[0][0] > 10000) bs.shift();
+    const th = L.thin || 1;
+    if (a > 8192) { L.loAt = 0; if (!L.hiAt) L.hiAt = t; else if (t - L.hiAt > 1000 && th < 4) { L.thin = th * 2; L.hiAt = t; } }
+    else { L.hiAt = 0; if (a < 2048 && th > 1) { if (!L.loAt) L.loAt = t; else if (t - L.loAt > 1000) { L.thin = th >> 1; L.loAt = t; } } else L.loAt = 0; }
+  }
+  function bufStat(L, i) { const b = L.bs || []; if (!b.length) return [0, 0]; let sum = 0, mx = 0; b.forEach((x) => { sum += x[i]; if (x[i] > mx) mx = x[i]; }); return [Math.round(sum / b.length), mx]; }
+  function linkDiag(L) {
+    const b = L.bs || [], f = b[0], e = b[b.length - 1], dt = f && e && e[0] > f[0] ? (e[0] - f[0]) / 1000 : 0;
+    const dn = f && e ? e[4] - f[4] : 0, dd = f && e ? e[5] - f[5] : 0;
+    return { act: bufStat(L, 1), rel: bufStat(L, 2), png: bufStat(L, 3), dropPct: dn + dd > 0 ? Math.round(100 * dd / (dn + dd + 0.0001) * 10) / 10 : 0, thin: L.thin || 1, bw: Math.round(L.bw || 0), posHz: dt ? Math.round((e[6] - f[6]) / dt * 10) / 10 : 0, snapHz: dt ? Math.round((e[7] - f[7]) / dt * 10) / 10 : 0, lagR: (L.rs || []).reduce((m, x) => (x[3] > m ? x[3] : m), 0), png_: L.pngOk && L.png && L.png.readyState === 'open' ? 1 : 0 };
+  }
+  function linkLine(l) { return 'buf act ' + l.act.join('/') + ' rel ' + l.rel.join('/') + ' png ' + l.png.join('/') + ' B(avg/max), drop ' + l.dropPct + '%, thin x' + l.thin + ', pos ' + l.posHz + '/s snap ' + l.snapHz + '/s, loop lag ' + l.lag + '/' + l.lagR + ' ms (own/peer), longtask ' + l.lt + ' ms, ping-ch ' + (l.png_ ? 'png' : 'act'); }
   async function pathTick(L) {
     if (!L.pc || L.local || L.virtual || L.state === 'closed') return;
     try {
@@ -985,12 +1047,13 @@
       L.path = L.ct === 'relay' || L.rct === 'relay' ? 'relay' : 'direct';
       L.ice = pair.currentRoundTripTime ? Math.round(pair.currentRoundTripTime * 1000) : 0;
       const s = rttStats(L);
-      console.log('[net] slot ' + L.slot + ' path=' + L.path + ' (' + L.ct + '/' + L.rct + ') ice-rtt=' + L.ice + 'ms ping min/avg/p95/max=' + s.min + '/' + s.avg + '/' + s.p95 + '/' + s.max + ' dropBuf=' + STAT.dropBuf + (L.off !== undefined ? ' clockOff=' + Math.round(L.off) : '') + (window.NexaCoop && NexaCoop.puppetStats ? NexaCoop.puppetStats() : ''));
+      console.log('[net] slot ' + L.slot + ' path=' + L.path + ' (' + L.ct + '/' + L.rct + ') ice-rtt=' + L.ice + 'ms ping min/avg/p95/max=' + s.min + '/' + s.avg + '/' + s.p95 + '/' + s.max + ' dropBuf=' + STAT.dropBuf + ' ' + linkLine(Object.assign({ lag: lagMax(10000), lt: lagMax(10000, LAG.lt) }, linkDiag(L))) + (L.off !== undefined ? ' clockOff=' + Math.round(L.off) : '') + (window.NexaCoop && NexaCoop.puppetStats ? NexaCoop.puppetStats() : ''));
       emit('net:path', L.path);
     } catch (e) { /* ok */ }
   }
   function diag() {
-    return { dropBuf: STAT.dropBuf, rttMain: Math.round(rttMain()), links: R.links.filter((l) => l.opened).map((l) => Object.assign({ slot: l.slot, path: l.path || '', ct: l.ct || '', ice: l.ice || 0 }, rttStats(l))) };
+    const lag = lagMax(10000), lt = lagMax(10000, LAG.lt);
+    return { dropBuf: STAT.dropBuf, dropRel: STAT.dropRel, dropPng: STAT.dropPng, thinned: STAT.thin, lag, lt, rttMain: Math.round(rttMain()), links: R.links.filter((l) => l.opened).map((l) => Object.assign({ slot: l.slot, path: l.path || '', ct: l.ct || '', ice: l.ice || 0, lag, lt }, rttStats(l), linkDiag(l))) };
   }
   function pingText(slot) {
     const d = diag(); if (!d.links.length) return '';
@@ -1000,9 +1063,13 @@
   }
   let rttEm = -99;
   function pingTick(L, force) {
+    sampleBuf(L);
     const t = now(), hid = document.hidden, gap = hid ? 2000 : Date.now() - L.openAt < 5000 ? 250 : 1000;
     if (!force && t - (L.pingAt || 0) < gap - 30) return;
-    L.pingAt = t; sendLink(L, hid ? { type: 'ping', t, h: 1 } : { type: 'ping', t });
+    L.pingAt = t;
+    const d = hid ? { type: 'ping', t, h: 1 } : { type: 'ping', t };
+    if (L.pngOk && L.png && L.png.readyState === 'open' && (L.pngMiss || 0) < 4) { if (sendPng(L, d)) L.pngMiss = (L.pngMiss || 0) + 1; }
+    else sendLink(L, d);
   }
   document.addEventListener('visibilitychange', () => { if (document.hidden) return; R.links.forEach((l) => { if (l.ready) { l.lastRx = now(); pingTick(l, true); } }); });
   function watchTick(L) {
@@ -1293,13 +1360,13 @@
     get state() { return state; }, get role() { return R.role; }, get slot() { return slot(); }, get peer() { return others()[0] || null; }, get players() { return others(); },
     get isHost() { return R.role === 'host'; }, get isOpen() { return state === 'open'; }, get connected() { return isOpen(); },
     get count() { return R.role ? 1 + R.links.filter((l) => l.opened).length : 1; },
-    get rtt() { return Math.round(rttMain()); }, linkStats: diag, pingText, get info() { const l = manual || R.links[0]; return l ? l.info : null; },
+    get rtt() { return Math.round(rttMain()); }, linkStats: diag, linkLine, pingText, get info() { const l = manual || R.links[0]; return l ? l.info : null; },
     get offerCode() { return manual ? manual.offerCode : ''; }, get answerCode() { return R.role === 'guest' && R.links[0] ? R.links[0].answerCode : ''; },
     get pending() { return !!manual; }, get pendingLinks() { return R.links.filter((l) => !l.opened).length; },
     stats: () => { let tx = 0, rx = 0, txB = 0, rxB = 0, up = 0; R.links.forEach((l) => { tx += l.tx; rx += l.rx; txB += l.txB; rxB += l.rxB; if (l.openAt) up = Math.max(up, Math.round((Date.now() - l.openAt) / 1000)); }); return { tx, rx, txB, rxB, rtt: Math.round(rttMain()), up }; },
     local: localApi, diag: diagLast, lastAttempt, candStats,
     createOffer, acceptAnswer, createAnswer, parse: parseInput, linkFor, pendingJoin, clearJoinFromUrl,
-    sendAction, sendRaw(slot, buf) { const l = findSlot(slot); return !!(l && l.opened && !l.virtual && !l.local && sendLink(l, null, true, buf)); }, on, off, close, reset: () => closeAll(false), localInfo,
+    sendAction, sendRaw(slot, buf) { const l = findSlot(slot); if (!(l && l.opened && !l.virtual && !l.local)) return false; const r = sendLink(l, null, true, buf); return r === 0 || !!r; }, on, off, close, reset: () => closeAll(false), localInfo,
     kick, kickWhere, banGate, setMuted, isMuted, report, isBlockedName, begin,
     setLan(v) { lsSet('nexaNetLan', v ? '1' : '0'); }, get lan() { return localMode(); },
     text: (code) => MSG[code] || String(code || ''),

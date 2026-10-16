@@ -271,7 +271,7 @@
     if (!root) return;
     const el = $('#cn-time'); if (!el) return;
     const st = NN.state;
-    if (st === 'open' || st === 'lost') { const s = NN.stats(); const ls = NN.linkStats ? NN.linkStats() : null, dg = ls ? ls.links[0] : null; if (ls) el.title = ls.links.map((l) => '#' + l.slot + ' ' + l.path + '/' + l.ct + ' min/avg/p95/max ' + l.min + '/' + l.avg + '/' + l.p95 + '/' + l.max + ' ms').join('\n') + '\ndropBuf ' + ls.dropBuf; el.textContent = fmtTime(s.up) + (s.rtt ? '  ·  ' + (NN.pingText ? NN.pingText() : s.rtt + ' ms') : '') + (dg && dg.path ? '  ·  ' + (window.I18N ? I18N.t(dg.path === 'relay' ? 'VIA RELAY' : 'DIRECT PATH') : dg.path) : ''); }
+    if (st === 'open' || st === 'lost') { const s = NN.stats(); const ls = NN.linkStats ? NN.linkStats() : null, dg = ls ? ls.links[0] : null; if (ls) el.title = ls.links.map((l) => '#' + l.slot + ' ' + l.path + '/' + l.ct + ' min/avg/p95/max ' + l.min + '/' + l.avg + '/' + l.p95 + '/' + l.max + ' ms' + (NN.linkLine ? '\n   ' + NN.linkLine(l) : '')).join('\n') + '\ndropBuf ' + ls.dropBuf + ' dropRel ' + ls.dropRel + ' thinned ' + ls.thinned; el.textContent = fmtTime(s.up) + (s.rtt ? '  ·  ' + (NN.pingText ? NN.pingText() : s.rtt + ' ms') : '') + (dg && dg.path ? '  ·  ' + (window.I18N ? I18N.t(dg.path === 'relay' ? 'VIA RELAY' : 'DIRECT PATH') : dg.path) : ''); }
     else if (L.t0 && (st === 'creating' || st === 'waiting-answer' || st === 'answering' || st === 'connecting')) el.textContent = fmtTime(Math.floor((Date.now() - L.t0) / 1000));
     else el.textContent = '';
   }
@@ -563,9 +563,9 @@
       'mode: ' + L.mode + (L.mode === 'mission' ? ' ' + L.mission : '') + (window.NexaCoop && NexaCoop.active ? ' (in match)' : ''), 'players: ' + (NN.connected ? NN.players.length + 1 : 1),
       'relays online/total: ' + (sm ? sm.online + '/' + sm.total + ' (found ' + sm.found + ', in use ' + sm.active + ', down ' + sm.down + ')' : 'n/a'), 'rtt: ' + (NN.rtt || 0) + ' ms'];
     if (ls) {
-      a.push('dropBuf: ' + ls.dropBuf);
+      a.push('dropBuf: ' + ls.dropBuf + ', dropRel: ' + ls.dropRel + ', dropPing: ' + ls.dropPng + ', thinned: ' + ls.thinned + ', loop lag max 10 s: ' + ls.lag + ' ms, longtask max 10 s: ' + ls.lt + ' ms');
       if (!ls.links.length) a.push('links: none');
-      ls.links.forEach((l) => a.push('link #' + l.slot + ': path=' + (l.path || '?') + ' (' + (l.ct || '?') + ') ice-rtt=' + l.ice + ' ms, ping min/avg/p95/max=' + l.min + '/' + l.avg + '/' + l.p95 + '/' + l.max + ' ms'));
+      ls.links.forEach((l) => a.push('link #' + l.slot + ': path=' + (l.path || '?') + ' (' + (l.ct || '?') + ') ice-rtt=' + l.ice + ' ms, ping min/avg/p95/max=' + l.min + '/' + l.avg + '/' + l.p95 + '/' + l.max + ' ms' + (NN.linkLine ? '\n    ' + NN.linkLine(l) : '')));
     }
     if (window.NexaCoop && NexaCoop.puppetStats) { const t = NexaCoop.puppetStats().trim(); if (t) a.push('puppets: ' + t); }
     iceLines().forEach((x) => a.push(x));
