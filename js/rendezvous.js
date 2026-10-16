@@ -703,7 +703,7 @@
     if (!serversOn()) return { ok: false, err: 'SERVERS_OFF' };
     if (typeof RTCPeerConnection !== 'function') return { ok: false, err: 'UNSUPPORTED' };
     NN.begin('host'); NN.setMax(opts.max || NN.MAX_PLAYERS); monitor.start(true);
-    Object.assign(H, { id, pub: !!opts.pub, title: String(opts.title || '').slice(0, 24), mode: opts.mode === 'mission' ? 'mission' : opts.mode === 'ffa' ? 'ffa' : opts.mode === 'pvp' ? 'pvp' : 'sandbox', mission: Math.max(1, Math.min(48, opts.mission | 0 || 1)) });
+    Object.assign(H, { id, pub: !!opts.pub, title: String(opts.title || '').slice(0, 24), mode: opts.mode === 'mission' ? 'mission' : opts.mode === 'ffa' ? 'ffa' : opts.mode === 'pvp' ? 'pvp' : 'sandbox', mission: Math.max(1, Math.min(48, opts.mission | 0 || 1)), kind: opts.kind === 'team' || opts.kind === 'duel' ? opts.kind : '' });
     H.startedAt = now();
     const byPid = new Map();
     const r = hostR = new Rendezvous('room/' + id, {
@@ -735,7 +735,7 @@
   function adOf() {
     const me = NN.localInfo();
     const max = NN.config.maxPlayers;
-    return { rid: H.id, title: H.title || me.name, host: me.name, lv: me.level, col: me.color, mode: H.mode, mission: H.mission, n: Math.min(max, NN.count || 1), max };
+    return { rid: H.id, title: H.title || me.name, host: me.name, lv: me.level, col: me.color, mode: H.mode, mission: H.mission, kind: H.kind || '', n: Math.min(max, NN.count || 1), max };
   }
 
   // ---- Гость: подключение к комнате по ссылке/имени/публичной. Гость предлагает offer'ы; хост отвечает.
@@ -897,7 +897,7 @@
     let age = Number(a.age); if (!isFinite(age)) age = 0; age = Math.max(0, Math.min(120, age));
     const title = cleanText(a.title, 24) || 'ROOM';
     const host = NN.util.cleanName(a.host, 'PLAYER');
-    return { rid, title, host, lv: Math.max(1, Math.min(999, a.lv | 0 || 1)), col: NN.util.cleanColor(a.col), mode, mission, n, max, age };
+    return { rid, title, host, lv: Math.max(1, Math.min(999, a.lv | 0 || 1)), col: NN.util.cleanColor(a.col), mode, mission, kind: mode === 'pvp' && (a.kind === 'team' || a.kind === 'duel') ? a.kind : '', n, max, age };
   }
   function adsOut(limit) {
     const t = now(), out = [];
@@ -1068,7 +1068,7 @@
     },
     lastAttempt: () => Object.assign({}, LAST, { log: LAST.log.slice() }),
     diag: () => ({ last: LAST, join: joinR ? joinR.report() : null, host: hostR ? hostR.report() : null, quick: quickR ? quickR.report() : null, tier: J.tier }),
-    adOf, setMeta(o) { Object.assign(H, o || {}); if (G.mine) { Object.assign(G.mine, { mode: H.mode, mission: H.mission }); } },
+    adOf, setMeta(o) { Object.assign(H, o || {}); if (G.mine) { Object.assign(G.mine, { mode: H.mode, mission: H.mission, kind: H.kind || '' }); } },
     get hosting() { return H.id ? { id: H.id, pub: H.pub, mode: H.mode, mission: H.mission } : null; },
     get joining() { return joinR ? { id: J.id, stage: J.stage } : null; },
     consented, consent, on, text: (c) => NN.text(c), cleanAd, scrub

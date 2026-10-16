@@ -232,11 +232,11 @@
     root.dataset.cd = L.cd ? '1' : '0';
     let label = 'PLAY', dis = false, hn = '';
     if (L.cd) { label = 'STARTING…'; dis = true; }
-    else if (L.mode === 'ffa' && (QM.on || !inRoom())) { const n = NN.connected ? NN.count : 1; label = QM.on ? (QM.host && n >= 2 ? 'START NOW' : 'CANCEL') : 'READY'; dis = !isHostSide() && NN.connected && !QM.on; hn = dis ? 'THE MATCH STARTS WHEN THE HOST BEGINS' : QM.on ? (QM.host ? 'WAITING FOR PLAYERS — START NOW WITH 2 OR MORE' : 'SEARCHING FOR PLAYERS') : 'PRESS READY TO FIND A MATCH'; }
+    else if (qmOnMode()) { const n = NN.connected ? NN.count : 1; label = QM.on ? (QM.host && n >= 2 ? 'START NOW' : 'CANCEL') : 'READY'; dis = !isHostSide() && NN.connected && !QM.on; hn = dis ? 'THE MATCH STARTS WHEN THE HOST BEGINS' : QM.on ? (QM.host ? 'WAITING FOR PLAYERS — START NOW WITH 2 OR MORE' : 'SEARCHING FOR PLAYERS') : 'PRESS READY TO FIND A MATCH'; }
     else if (!NN.connected) { label = 'PLAY'; hn = 'SOLO — OPEN CONNECTION TO PLAY WITH A FRIEND'; }
     else if (NN.isHost) { if (!NN.players.length) { hn = 'SOLO — OPEN CONNECTION TO PLAY WITH A FRIEND'; } else if (!guestsReady()) { dis = true; hn = NN.players.length > 1 ? 'WAITING FOR ALL PLAYERS TO PRESS READY' : 'WAITING FOR YOUR FRIEND TO PRESS READY'; } else hn = NN.players.length > 1 ? 'ALL PLAYERS ARE READY' : 'YOUR FRIEND IS READY'; }
     else { label = L.ready ? 'CANCEL' : 'READY'; hn = L.ready ? 'WAITING FOR THE HOST TO START' : 'PRESS READY WHEN YOU ARE SET'; }
-    if ((L.mode === 'pvp' || (L.mode === 'ffa' && inRoom() && !QM.on)) && !L.cd && isHostSide()) { const n = NN.connected ? NN.players.length + 1 : 1; if (n < 2 || (curCfg().kind === 'duel' && n !== 2)) { dis = true; hn = n < 2 ? 'PVP NEEDS 2–6 PLAYERS — OPEN CONNECTION' : 'DUEL NEEDS EXACTLY 2 PLAYERS'; } }
+    if (!qmOnMode() && (L.mode === 'pvp' || (L.mode === 'ffa' && inRoom() && !QM.on)) && !L.cd && isHostSide()) { const n = NN.connected ? NN.players.length + 1 : 1; if (n < 2 || (curCfg().kind === 'duel' && n !== 2)) { dis = true; hn = n < 2 ? 'PVP NEEDS 2–6 PLAYERS — OPEN CONNECTION' : 'DUEL NEEDS EXACTLY 2 PLAYERS'; } }
     voteUi(hint);
     tx.textContent = label; btn.disabled = dis; btn.classList.toggle('is-ready', !NN.isHost && NN.connected && L.ready);
     hint.textContent = hn;
@@ -627,7 +627,10 @@
   }
 
   // ------------------------------------------------------------------ быстрый подбор PvP «каждый сам за себя» (ГОТОВО: ищем открытый матч ~10 с, иначе хостим публичную комнату)
-  const QM_MAX = () => NN.MAX_PLAYERS;
+  const QK = { ffa: { mode: 'ffa', max: 0, title: 'FREE FOR ALL' }, team: { mode: 'pvp', max: 6, title: 'TEAM BATTLE' }, duel: { mode: 'pvp', max: 2, title: 'DUEL' } };
+  const qmKind = () => (QM.on && QM.kind ? QM.kind : L.mode === 'ffa' ? 'ffa' : (window.NexaPvp ? NexaPvp.norm(L.pvp).kind : 'ffa'));
+  const qmOnMode = () => (L.mode === 'ffa' || L.mode === 'pvp') && (QM.on || !inRoom());
+  const QM_MAX = () => QK[QM.kind || 'ffa'].max || NN.MAX_PLAYERS;
   const qmWait = () => { try { const m = /[?&]qmwait=(\d{1,3})/.exec(location.search); return m ? Number(m[1]) : 35; } catch (e) { return 35; } };
   const qmFind = () => { try { const m = /[?&]qmfind=(\d{1,2})/.exec(location.search); return m ? Number(m[1]) : 10; } catch (e) { return 10; } };
   const qmLeft = () => Math.ceil(qmWait() - (Date.now() - QM.t0) / 1000);
@@ -636,19 +639,29 @@
     if (!RM || QM.on) return;
     if (needConsent('ffa')) return;
     RM.stopHost(); RM.stopJoin(); if (NN.connected) NN.close();
-    QM.on = true; QM.host = false; QM.state = 'searching'; QM.t0 = Date.now(); L.mode = 'ffa'; L.qmt = -1;
+    QM.kind = qmKind(); QM.on = true; QM.host = false; QM.state = 'searching'; QM.t0 = Date.now(); L.qmt = -1;
+    if (QM.kind === 'ffa') L.mode = 'ffa'; else { L.mode = 'pvp'; L.pvp = NexaPvp.norm(Object.assign({}, L.pvp, { kind: QM.kind })); }
     updPlay();
     RM.gossip.start().then(() => { RM.gossip.refresh(); });
     QM.find0 = Date.now(); clearTimeout(QM.findT); QM.findT = setTimeout(qmDecide, 1500);
   }
+  // ищем открытую комнату того же вида; хост-одиночка уступает комнате, где уже есть игроки, а из двух одиночек — комнате с меньшим id (иначе два одновременных READY хостят порознь)
+  function qmFindRoom(alone) {
+    const K = QK[QM.kind || 'ffa'], me = alone && RM.adOf ? (RM.adOf() || {}).rid : '';
+    return RM.gossip.rooms().find((x) => x.mode === K.mode && (QM.kind === 'ffa' || x.kind === QM.kind) && x.n < x.max && x.rid !== me && (!alone || x.n >= 2 || x.rid < me));
+  }
+  function qmYield(r) {
+    QM.host = false; QM.state = 'joining'; QM.jAt = Date.now(); RM.stopHost(); if (NN.connected) NN.close(); startJoin(r.rid, 'join', true); updPlay();
+  }
   async function qmDecide() {
     if (!QM.on || !RM) return;
-    const r = RM.gossip.rooms().find((x) => x.mode === 'ffa' && x.n < x.max);
-    if (r) { QM.state = 'joining'; startJoin(r.rid, 'join', true); return; }
+    const K = QK[QM.kind || 'ffa'], r = qmFindRoom();
+    if (r) { QM.state = 'joining'; QM.jAt = Date.now(); startJoin(r.rid, 'join', true); return; }
     if (Date.now() - QM.find0 < qmFind() * 1000) { QM.findT = setTimeout(qmDecide, 1000); return; }      // сначала ищем уже открытый матч (рой находит комнаты за несколько секунд)
     QM.host = true; QM.state = 'waiting'; QM.t0 = Date.now();
-    const res = await RM.hostRoom({ pub: true, title: 'FREE FOR ALL', mode: 'ffa', max: QM_MAX() });
+    const res = await RM.hostRoom({ pub: true, title: K.title, mode: K.mode, kind: QM.kind === 'ffa' ? '' : QM.kind, max: QM_MAX() });
     if (!QM.on) { RM.stopHost(); return; }
+    if (res.ok && QM_MAX() < NN.config.maxPlayers) NN.setMax(QM_MAX());
     if (!res.ok) { QM.on = false; QM.host = false; toast(NN.text(res.err), 'bad'); } else { L.roomLink = res.link; L.pubSession = true; try { NN.voice.incoming(false); } catch (e) { /* ok */ } }
     updPlay();
   }
@@ -661,7 +674,7 @@
   function qmStart() {
     const n = NN.connected ? NN.count : 1;
     if (n < 2) return;
-    const cfg = resolveCfg(ffaCfg());
+    const cfg = resolveCfg(QM.kind && QM.kind !== 'ffa' ? NexaPvp.norm(Object.assign({}, L.pvp, { kind: QM.kind })) : ffaCfg());
     const spec = { mode: 'pvp', mission: 1, seed: mkSeed(), role: 'host', solo: false, ff: 1, ffm: 1, pvp: cfg };
     NN.sendAction({ type: 'start', mode: 'pvp', mission: 1, seed: spec.seed, ff: 1, ffm: 1, pvp: cfg });
     QM.on = false; QM.host = false; QM.state = ''; if (RM) RM.stopHost();
@@ -791,7 +804,7 @@
   function sendLobby() { if (NN.isHost && NN.connected) NN.sendAction(lobbyMsg()); }
   function setMode(mode, mission) {
     if (NN.connected && !NN.isHost) return;
-    if (QM.on && mode !== 'ffa') qmCancel();
+    if (QM.on && mode !== 'ffa' && mode !== 'pvp') qmCancel();
     L.mode = mode === 'ffa' && window.NexaPvp ? 'ffa' : mode === 'hl' ? 'hl' : mode === 'pvp' && window.NexaPvp ? 'pvp' : mode === 'mission' && validMission(mission) ? 'mission' : 'sandbox';
     if (L.mode === 'mission') L.mission = mission | 0;
     L.votes = {}; sendLobby(); updPlay(); sfx('mouse');
@@ -816,7 +829,7 @@
   function mkSeed() { try { const a = new Uint32Array(1); crypto.getRandomValues(a); return a[0] || 1; } catch (e) { return (Date.now() % 4294967295) || 1; } }
   function doPlay() {
     if (L.cd) return;
-    if (L.mode === 'ffa' && (QM.on || !inRoom())) { if (QM.on) { if (QM.host && NN.connected && NN.count >= 2) qmStart(); else qmCancel(); } else qmReady(); return; }
+    if (qmOnMode()) { if (QM.on) { if (QM.host && NN.connected && NN.count >= 2) qmStart(); else qmCancel(); } else qmReady(); return; }
     if ((L.mode === 'pvp' || L.mode === 'ffa') && (!NN.connected || NN.isHost)) {
       const cfg = curCfg(), n = NN.connected ? NN.players.length + 1 : 1;
       if (n < 2 || (cfg.kind === 'duel' && n !== 2) || !guestsReady()) return;
@@ -969,6 +982,7 @@
   function joinStage(stage, msg) {
     if (!L.joinUi) return;
     L.joinUi.stage = stage; L.joinUi.msg = msg || '';
+    if (QM.on && !QM.host && (stage === 'error' || stage === 'timeout' || stage === 'unavailable')) { setTimeout(() => { if (QM.on && !QM.host && !NN.connected) { closeJoin(); QM.state = 'searching'; QM.find0 = Date.now(); clearTimeout(QM.findT); QM.findT = setTimeout(qmDecide, 800); updPlay(); } }, 1500); }   // комната закрылась: ищем снова
     if (stage === 'open') { const el = $('#ol-join'); if (el) el.hidden = true; L.joinUi = null; return; }
     renderJoin();
   }
@@ -1031,7 +1045,7 @@
       const h = document.createElement('button'); h.type = 'button'; h.className = 'pb-host'; h.dataset.act = 'pub-card'; h.dataset.rid = r.rid;
       const av = document.createElement('span'); av.innerHTML = PF.avatar(r.host, r.col, 22); const hn = document.createElement('em'); hn.setAttribute('translate', 'no'); hn.textContent = r.host + ' · ' + r.lv;
       h.appendChild(av); h.appendChild(hn); row.appendChild(h);
-      const m = document.createElement('span'); m.className = 'pb-mode'; m.textContent = r.mode === 'mission' ? 'MISSION ' + String(r.mission).padStart(2, '0') : r.mode === 'hl' ? 'HIGH / LOW' : r.mode === 'ffa' ? 'FREE FOR ALL' : r.mode === 'pvp' ? 'PVP' : 'SANDBOX'; row.appendChild(m);
+      const m = document.createElement('span'); m.className = 'pb-mode'; m.textContent = r.mode === 'mission' ? 'MISSION ' + String(r.mission).padStart(2, '0') : r.mode === 'hl' ? 'HIGH / LOW' : r.mode === 'ffa' ? 'FREE FOR ALL' : r.mode === 'pvp' ? (r.kind === 'duel' ? 'DUEL' : r.kind === 'team' ? 'TEAM BATTLE' : 'PVP') : 'SANDBOX'; row.appendChild(m);
       const n = document.createElement('span'); n.className = 'pb-n'; n.setAttribute('translate', 'no'); n.textContent = r.n + '/' + r.max; row.appendChild(n);
       const a = document.createElement('span'); a.className = 'pb-age'; a.textContent = ageText(r.age); row.appendChild(a);
       const j = document.createElement('button'); j.type = 'button'; j.className = 'ol-btn'; j.dataset.act = 'pub-join'; j.dataset.rid = r.rid; j.textContent = r.mine ? 'YOUR ROOM' : 'JOIN'; j.disabled = !!r.mine || r.n >= r.max; row.appendChild(j);
@@ -1650,7 +1664,10 @@
   function onSecond() {
     if (!root || !root.isConnected) return;
     updTimer(); cdTick(); sec += 1;
-    if (QM.on) { if (QM.host && NN.connected) sendLobby(); if (QM.host && RM && RM.hosting && (NN.count >= QM_MAX() || (qmLeft() <= 0 && NN.count >= 2))) qmStart(); else updPlay(); }
+    if (QM.on && QM.host && RM && NN.count <= 1 && !L.cd) { const y = qmFindRoom(true); if (y) { qmYield(y); return; } }
+    if (QM.on && !QM.host && QM.state === 'joining' && !NN.connected && Date.now() - (QM.jAt || 0) > 25000) { RM.stopJoin(); closeJoin(); QM.state = 'searching'; QM.find0 = Date.now(); clearTimeout(QM.findT); QM.findT = setTimeout(qmDecide, 500); }   // вход завис: ищем заново
+    if (NN.count !== QM.lc) { QM.lc = NN.count; QM.cAt = Date.now(); }
+    if (QM.on) { if (QM.host && NN.connected) sendLobby(); if (QM.host && RM && RM.hosting && (NN.count >= QM_MAX() || (qmLeft() <= 0 && NN.count >= 2 && Date.now() - (QM.cAt || 0) > 5000))) qmStart(); else updPlay(); }
     if (L.tab === 'trade') updKP();
     if (L.tab === 'profile' && Date.now() - L.lastStats > 2000) { L.lastStats = Date.now(); const s = $('#ol-stats'); if (s) s.innerHTML = PF.renderStats(); updTop(); }
     if (sec % 25 === 0) profileTick(false);
@@ -1694,7 +1711,9 @@
     get active() { return !!root; },
     report: netReport,
     get state() { return L; },
-    _st: ST, _dn: DN, _qm: { st: QM, start: () => qmStart() }
+    // выбор режима снаружи (тесты, ссылки): choose('ffa'|'team'|'duel'|'pvp'|'sandbox'|'hl'|'mission', n)
+    choose(m, n) { if (m === 'team' || m === 'duel') { setMode('pvp'); L.pvp = window.NexaPvp ? NexaPvp.norm(Object.assign({}, L.pvp, { kind: m })) : L.pvp; L.votes = {}; sendLobby(); updPlay(); } else setMode(m, n); },
+    _st: ST, _dn: DN, _qm: { st: QM, start: () => qmStart(), ready: () => qmReady(), cancel: () => qmCancel() }
   };
   window.OnlineLobby = api;
 }());
