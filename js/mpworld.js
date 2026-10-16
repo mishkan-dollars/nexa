@@ -86,6 +86,7 @@
       W.detach();
       S = { run, recs: new Map(), subs: [], pend: new Map(), seq: 0, offs: [], its: new Map(), t: 0, known: new Set(), lst: new Map() };
       S.offs.push(NN.on(TYPE, onMsg));
+      S.offs.push(NN.on('cev', onSndEv));
       S.offs.push(NN.on('net:roster', () => { if (!NN.isHost) return; NN.players.forEach((x) => { if (!S.known.has(x.slot)) { S.known.add(x.slot); snapTo(x.slot); } }); }));
       S.offs.push(NN.on('net:left', () => { if (NN.isHost) expire(); }));
       run.hooks.push((dt) => { liftSync(run, dt); S.t += dt; if (NN.isHost && S.t > 0.5) { S.t = 0; expire(); } try { blocking(run); } catch (e) { /* ok */ } });
@@ -116,12 +117,33 @@
     on('lf:*', (k, q) => { const L = r.mpLifts && r.mpLifts[k]; if (L && q.v && typeof q.v.k === 'number' && Math.abs((L.k || 0) - q.v.k) > 0.05) L.set(q.v.k); });
     on('env:l', (k, q) => { if (!NN.isHost && typeof q.v === 'number' && Math.abs((r.lightLevel || 0) - q.v) > 0.02) r.lightsLevel(q.v); });
     on('env:f', (k, q) => { if (!NN.isHost && Array.isArray(q.v)) r.setFog(q.v[0], q.v[1]); });
+    on('mu:*', (k, q) => { const T = r.mpTracks && r.mpTracks[k]; if (T && !NN.isHost && (q.v === 1) !== !!T.mpOn) { try { if (q.v === 1) T.play(1.5); else T.stop(1.5); } catch (e) { /* ok */ } } });
     on('bl:*', (k) => { const b = r.cb && r.cb.shoot.find((x) => x.mpk === k && x.alive); if (b) b.damage(99); });
     on('al:*', (k, q) => { const o = r.mpStealth && r.mpStealth[k]; if (o && !o.S.alarm) o.a0.call(o.S, q.v); });
     on('cd:*', (k, q) => { const o = r.mpCd && r.mpCd[k]; if (o && o.on && !NN.isHost && q.v && Math.abs(o.left - q.v.l) > 0.5) o.left = q.v.l; });
   }
   // лифты миссии 48: хост раз в 0,5 с публикует положение кабины/дверей, когда оно перестало меняться; у остальных конечное состояние подтягивается (пропущенные и опоздавшие твины, поздний вход)
+  // звуки мира (тревога, взрыв, двери, стекло…): хост шлёт имя события, у остальных звук не дублируется, если свой скрипт уже сыграл его в пределах 1,5 с
+  const SNDW = { alarm: 1, boom: 1, slam: 1, thud: 1, c4beep: 1, train: 1, glitch: 1, glass: 1, vaultdoor: 1 };
+  function wrapSnd(r) {
+    const sn = r.snd; if (!sn || sn.__mp || typeof sn.play !== 'function') return; sn.__mp = true;
+    const p0 = sn.play, G = { ev: {}, loc: {} }; r.mpSnd = { G, p0: (n, o) => p0.call(sn, n, o) };
+    sn.play = function (name, o) {
+      if (live(r) && SNDW[name] && !r.__mpRem) {
+        const t = Date.now();
+        if (NN.isHost) NN.sendAction({ type: 'cev', k: 'snd', w: name });
+        else { if (t - (G.ev[name] || 0) < 1500) return undefined; G.loc[name] = t; }
+      }
+      return p0.apply(this, arguments);
+    };
+  }
+  function onSndEv(p) {
+    const r = S && S.run; if (!r || NN.isHost || p.k !== 'snd' || !r.mpSnd || !SNDW[p.w]) return;
+    const G = r.mpSnd.G, t = Date.now(); G.ev[p.w] = t;
+    if (t - (G.loc[p.w] || 0) > 1500) { try { r.mpSnd.p0(p.w); } catch (e) { /* ok */ } }
+  }
   function liftSync(r, dt) {
+    if (!r.mpSnd && r.snd) wrapSnd(r);
     if (!NN.isHost || !r.mpLifts || !live(r)) return;
     r.mpLT = (r.mpLT || 0) + dt; if (r.mpLT < 0.5) return; r.mpLT = 0;
     Object.keys(r.mpLifts).forEach((key) => { const L = r.mpLifts[key], k = L.k || 0; if (L.mpLast !== undefined && Math.abs(k - L.mpLast) < 0.002) { const cur = W.get(key); if (!cur || Math.abs(cur.k - k) > 0.01) W.set(key, { k: Math.round(k * 1000) / 1000 }); } L.mpLast = k; });
@@ -197,6 +219,19 @@
     if (ll0) RunP.lightsLevel = function (l) { const r = this; if (NN.isHost && live(r) && !r.__mpRem && typeof l === 'number') W.set('env:l', Math.round(l * 1000) / 1000); return ll0.apply(this, arguments); };
     const sf0 = RunP.setFog;
     if (sf0) RunP.setFog = function (d, c) { const r = this; if (NN.isHost && live(r) && !r.__mpRem) { try { W.set('env:f', [d, c && c.getHex ? c.getHex() : c]); } catch (e) { /* ok */ } } return sf0.apply(this, arguments); };
+    // музыка уровня: хост публикует вкл/выкл трека, остальные подтягиваются (поздний вход получает текущий трек из снапшота)
+    const mt0 = RunP.musicTrack;
+    if (mt0) RunP.musicTrack = function (name) {
+      const r = this, T = mt0.apply(this, arguments);
+      if (T && live(r) && !T.__mp && typeof T.play === 'function' && typeof T.stop === 'function') {
+        T.__mp = 1; const key = 'mu:' + String(name).slice(0, 24), play0 = T.play, stop0 = T.stop;
+        T.play = function () { if (NN.isHost && !r.__mpRem) W.set(key, 1); T.mpOn = true; return play0.apply(this, arguments); };
+        T.stop = function () { if (NN.isHost && !r.__mpRem) W.set(key, 0); T.mpOn = false; return stop0.apply(this, arguments); };
+        (r.mpTracks || (r.mpTracks = {}))[key] = T;
+        if (!NN.isHost && W.get(key) === 1) { T.mpOn = false; try { T.play(1.5); } catch (e) { /* ok */ } }
+      }
+      return T;
+    };
     const bar0 = RunP.barrel;
     if (bar0) RunP.barrel = function (x, z) {
       const r = this, b = bar0.apply(this, arguments);
