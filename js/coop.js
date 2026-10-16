@@ -271,6 +271,7 @@
     onReady() {
       if (this.ready) return;
       this.ready = true;
+      if (this.spec.inv && this.spec.inv.length && this.run.giveWeapon) { this.spec.inv.forEach((id, i) => { try { if (C.WEAPONS[id] && !(this.run.inv || []).some((w) => w.id === id)) this.run.giveWeapon(id, { equip: i === 0, reserve: 60 }); } catch (e) { /* ok */ } }); }   // поздний вход: оружие хоста
       if (this.ffAvail && this.ff) this.note('FRIENDLY FIRE IS ON', 3.6);
       if (!this.story) this.seedOff();
       if (!this.solo) NN.sendAction({ type: 'cev', k: 'ready' });
@@ -1010,6 +1011,7 @@
   const wrap1 = (name, fn) => { const o = P[name]; if (typeof o !== 'function') return; P[name] = function () { return fn.call(this, o, arguments); }; };
   wrap1('damageEnemy', function (o, a) {
     const co = this.__co, e = a[0];
+    if (co && this.__mpRem) return undefined;   // взрыв по событию мира (бочка): урон врагам уже отправил тот, кто стрелял
     if (co && e) {
       if (e.puppet) { co.puppetHit(e, a[1], a[2], a[3]); return undefined; }
       if (e.nid) { e.lastBy = co.dmgBy; e.noCredit = co.dmgBy !== co.slot; }   // убийство засчитывается тому, кто стрелял
@@ -1063,7 +1065,7 @@
   });
   wrap1('explode', function (o, a) {
     const co = this.__co;
-    if (co && !co.solo && NN.connected) NN.sendAction({ type: 'boom', x: q(a[0], 10), y: q(a[1], 10), z: q(a[2], 10), r: q(a[3] || 4, 10), k: a[5] });
+    if (co && !co.solo && NN.connected && !this.__mpRem) NN.sendAction({ type: 'boom', x: q(a[0], 10), y: q(a[1], 10), z: q(a[2], 10), r: q(a[3] || 4, 10), k: a[5] });
     return o.apply(this, a);
   });
   // общая песочница: смерть игрока не должна стирать врагов у обоих — clearEnemies в coopbox пропускаем (волны ведёт Хост)

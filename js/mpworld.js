@@ -113,6 +113,7 @@
     on('bk:*', (k) => { const b = (r.breakables || []).find((x) => x.mpk === k); if (b && !b.broken) r.shatter(b); });
     on('dr:*', (k) => { const d = r.mpDoors && r.mpDoors.get(k); if (d && !(d.userData.col && d.userData.col.off)) r.openDoor(d, 0.6); });
     on('pk:*', (k) => { const cb = r.cb; if (!cb) return; const i = cb.pickups.findIndex((x) => x.mpk === k && !x.dead); if (i >= 0) { const x = cb.pickups[i]; x.dead = true; x.mpRem = true; x.g.visible = false; cb.pickups.splice(i, 1); } });
+    on('bl:*', (k) => { const b = r.cb && r.cb.shoot.find((x) => x.mpk === k && x.alive); if (b) b.damage(99); });
     on('al:*', (k, q) => { const o = r.mpStealth && r.mpStealth[k]; if (o && !o.S.alarm) o.a0.call(o.S, q.v); });
     on('cd:*', (k, q) => { const o = r.mpCd && r.mpCd[k]; if (o && o.on && !NN.isHost && q.v && Math.abs(o.left - q.v.l) > 0.5) o.left = q.v.l; });
   }
@@ -181,6 +182,16 @@
       const before = cb.pickups.slice(), res = up0.apply(this, arguments);
       for (let i = 0; i < before.length; i += 1) { const k = before[i]; if (k.mpk && !k.dead && !k.mpRem && cb.pickups.indexOf(k) < 0) { k.mpRem = true; W.set(k.mpk, (W.get(k.mpk) | 0) + 1); } }
       return res;
+    };
+    const bar0 = RunP.barrel;
+    if (bar0) RunP.barrel = function (x, z) {
+      const r = this, b = bar0.apply(this, arguments);
+      if (live(r) && b && b.damage) {
+        b.mpk = 'bl:' + scope(r) + ':' + rd(x) + ',' + rd(z); const d0 = b.damage;
+        b.damage = function () { const was = b.alive; const v = d0.apply(this, arguments); if (was && !b.alive && !r.__mpRem && b.mpk) W.set(b.mpk, 1); return v; };
+        if (W.get(b.mpk) === 1) remote(r, () => d0(99));
+      }
+      return b;
     };
     const st0 = RunP.stealth;
     if (st0) RunP.stealth = function () {
