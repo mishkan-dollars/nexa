@@ -209,6 +209,7 @@
     };
     const until0 = RunP.until;
     RunP.until = function (cond) {
+      const co0 = this.__co; if (co0 && co0.catchUp && co0.catchUp()) return Promise.resolve();
       const r = this, p = until0.apply(this, arguments);
       if (!live(r) || r.__mpGate) return p;
       let src = ''; try { src = String(cond); } catch (e) { return p; }
@@ -217,6 +218,13 @@
       const key = 'u:' + scope(r) + ':' + h; n[key] = (n[key] | 0) + 1;
       return p.then(() => (live(r) && co.barrierKey ? co.barrierKey(key + ':' + n[key], 25000) : undefined));
     };
+    // поздний вход: пока клиент догоняет этап, паузы и реплики сценария пролетают мгновенно (ожидания по сигналам решает снапшот MPWorld)
+    const tw0 = RunP.tween;
+    if (tw0) RunP.tween = function (dur, fn, ease) { const co = this.__co; if (co && co.catchUp && co.catchUp()) dur = Math.min(dur, 0.03); return tw0.call(this, dur, fn, ease); };
+    const gz0 = RunP.gaze;
+    if (gz0) RunP.gaze = function () { const co = this.__co; if (co && co.catchUp && co.catchUp()) return Promise.resolve(); return gz0.apply(this, arguments); };
+    const say0 = RunP.say;
+    if (say0) RunP.say = function () { const co = this.__co; if (co && co.catchUp && co.catchUp()) return Promise.resolve(); return say0.apply(this, arguments); };
     const hack0 = RunP.hack;
     if (hack0) RunP.hack = function () { if (this.__mpAuto) return Promise.resolve(true); return hack0.apply(this, arguments); };
 
