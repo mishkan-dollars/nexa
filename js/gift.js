@@ -1,12 +1,12 @@
 (function () {
   'use strict';
-  const X = window.NexaGiftText, SK = 'nexaGifts', MAXQ = 50;
+  const X = window.NexaGiftText, SK = 'nexaGifts';
   const ST = window.NexaStore || { get: (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch (e) { /* ok */ } } };
   if (!X) return;
   const clean = (s, n) => Array.from(String(s == null ? '' : s).replace(/[\u0000-\u001f\u007f-\u009f​-‏‪-‮⁠-⁤﻿<>|]/g, ' ').replace(/\s+/g, ' ').trim()).slice(0, n).join('');
   const hexc = (c) => (/^#[0-9a-f]{6}$/i.test(c) ? c : '#ff3b30');
-  let st = 0, Q = [], cur = null, revealed = false, snooze = false, root = null, fx = null, gl = null, chip = null, busyOpen = false;
-  try { const j = JSON.parse(ST.get(SK) || '[]'); if (Array.isArray(j)) Q = j.filter((g) => g && typeof g.id === 'string' && Number.isInteger(g.a) && g.a >= 1 && g.a <= 2147483647).slice(0, MAXQ).map((g) => ({ id: g.id.slice(0, 40), k: g.k === 'a' ? 'a' : 'p', n: clean(g.n, 16), c: hexc(g.c), p: /^[0-9a-f]{6,16}$/.test(g.p || '') ? g.p : '', m: clean(g.m, 80), a: g.a })); } catch (e) { Q = []; }
+  let st = 0, all = null, Q = [], cur = null, revealed = false, snooze = false, root = null, fx = null, gl = null, chip = null, chip2 = null, busyOpen = false;
+  try { const j = JSON.parse(ST.get(SK) || '[]'); if (Array.isArray(j)) Q = j.filter((g) => g && typeof g.id === 'string' && Number.isInteger(g.a) && g.a >= 1 && g.a <= 2147483647).map((g) => ({ id: g.id.slice(0, 40), k: g.k === 'a' ? 'a' : 'p', n: clean(g.n, 16), c: hexc(g.c), p: /^[0-9a-f]{6,16}$/.test(g.p || '') ? g.p : '', m: clean(g.m, 80), a: g.a })); } catch (e) { Q = []; }
   const save = () => { try { ST.set(SK, JSON.stringify(Q)); } catch (e) { /* ok */ } };
   const el = (t, c, x) => { const e = document.createElement(t); if (c) e.className = c; if (x != null) e.textContent = x; return e; };
   const inMission = () => { try { return !!(window.Missions && Missions.current); } catch (e) { return false; } };
@@ -16,7 +16,7 @@
   function add(g) {
     if (!g || typeof g.id !== 'string' || !Number.isInteger(g.a) || g.a < 1 || g.a > 2147483647 || Q.some((x) => x.id === g.id)) return false;
     Q.push({ id: g.id.slice(0, 40), k: g.k === 'a' ? 'a' : 'p', n: clean(g.n, 16), c: hexc(g.c), p: /^[0-9a-f]{6,16}$/.test(g.p || '') ? g.p : '', m: clean(g.m, 80), a: g.a });
-    Q = Q.slice(-MAXQ); save(); snooze = false; tick(); if (cur) paint(); return true;
+    save(); snooze = false; tick(); if (cur) paint(); return true;
   }
 
   function scene(cv) {
@@ -90,8 +90,10 @@
     from.appendChild(av);
     const nm = el('div', 'gf-nm'); nm.appendChild(el('small', '', adm ? '' : X('from'))); const b = el('b', '', adm ? X('admin') : g.n); b.setAttribute('translate', 'no'); nm.appendChild(b); from.appendChild(nm);
     const msg = root.querySelector('.gf-msg'); msg.textContent = g.m; msg.hidden = !g.m;
-    const more = root.querySelector('.gf-more'); more.textContent = Q.length > 1 ? X('more', { n: Q.length - 1 }) : ''; more.hidden = Q.length < 2;
-    root.querySelector('.gf-amt b').textContent = '+' + g.a; root.querySelector('.gf-amt span').textContent = X('kp'); root.querySelector('.gf-amt small').textContent = X('added');
+    const more = root.querySelector('.gf-more'); more.textContent = Q.length > 1 ? X('more', { n: Q.length - 1 }) : ''; more.hidden = Q.length < 2 || !!all;
+    root.querySelector('.gf-all').hidden = revealed || Q.length < 2; root.querySelector('.gf-all').textContent = X('all');
+    const sum = all ? Q.filter((x) => all.indexOf(x.id) >= 0).reduce((a, x) => a + x.a, 0) : g.a;
+    root.querySelector('.gf-amt b').textContent = '+' + sum; root.querySelector('.gf-amt span').textContent = X('kp'); root.querySelector('.gf-amt small').textContent = all ? X('allsum', { n: all.length }) + ' · ' + X('added') : X('added');
     const go = root.querySelector('.gf-go'); go.textContent = X(revealed ? 'take' : 'open'); root.querySelector('.gf-later').textContent = X('later');
     root.classList.toggle('rev', revealed);
   }
@@ -100,9 +102,10 @@
     root = el('div', 'gf'); root.setAttribute('role', 'dialog'); root.setAttribute('aria-modal', 'true');
     root.innerHTML = '<div class="gf-bg"></div><div class="gf-stripes"></div><h2 class="gf-title"></h2><div class="gf-l"><div class="gf-from"></div><blockquote class="gf-msg"></blockquote></div>' +
       '<div class="gf-r"><canvas class="gf-cv"></canvas><div class="gf-amt" aria-live="polite"><b></b><span></span><small></small></div></div><div class="gf-flash"></div>' +
-      '<div class="gf-bar"><span class="gf-more"></span><button type="button" class="gf-later"></button><button type="button" class="gf-go"></button></div>';
+      '<div class="gf-bar"><span class="gf-more"></span><button type="button" class="gf-all"></button><button type="button" class="gf-later"></button><button type="button" class="gf-go"></button></div>';
     root.querySelector('.gf-go').onclick = () => (revealed ? claim() : reveal());
     root.querySelector('.gf-later').onclick = leave;
+    root.querySelector('.gf-all').onclick = takeAll;
     root.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); leave(); } else if (e.key === 'Enter' || e.key === ' ') { if (e.target.tagName !== 'BUTTON') { e.preventDefault(); revealed ? claim() : reveal(); } e.stopPropagation(); } else if (e.key === 'Tab') e.stopPropagation();
     }, true);
@@ -128,7 +131,7 @@
     sfx('notification');
     const bt = root.querySelector('.gf-go'); setTimeout(() => { try { bt.focus(); } catch (e) { /* ok */ } }, 50);
   }
-  function hide() { st += 1; if (root) root.hidden = true; document.body.classList.remove('gf-on'); if (fx) { fx.dispose(); fx = null; } cur = null; }
+  function hide() { st += 1; if (!revealed) all = null; if (root) root.hidden = true; document.body.classList.remove('gf-on'); if (fx) { fx.dispose(); fx = null; } cur = null; }
   function reveal() {
     if (revealed || !cur) return; revealed = true; sfx('succesfully');
     const fl = root.querySelector('.gf-flash'); fl.classList.remove('go'); void fl.offsetWidth; fl.classList.add('go');
@@ -137,8 +140,12 @@
     paint(); root.querySelector('.gf-go').disabled = true; setTimeout(() => { const b = root && root.querySelector('.gf-go'); if (b) { b.disabled = false; try { b.focus(); } catch (e) { /* ok */ } } }, fx ? 900 : 100);
   }
   function claim() {
-    if (!cur) return; const id = cur.id; Q = Q.filter((g) => g.id !== id); save(); hide();
+    if (!cur) return; const ids = all || [cur.id]; all = null; Q = Q.filter((g) => ids.indexOf(g.id) < 0); save(); hide();
     if (Q.length) setTimeout(show, 250); else tick();
+  }
+  function takeAll() {
+    if (!cur || revealed || Q.length < 2) return;
+    all = Q.map((g) => g.id); reveal();
   }
   function leave() {
     if (!cur) return;
@@ -146,10 +153,12 @@
     snooze = true; hide(); tick();
   }
   function tick() {
+    if (!chip2) { chip2 = el('button', 'gf-chip gf-chip2'); chip2.type = 'button'; chip2.hidden = true; chip2.onclick = () => { snooze = false; if (!cur) show(); takeAll(); }; document.body.appendChild(chip2); }
     if (!chip) { chip = el('button', 'gf-chip'); chip.type = 'button'; chip.hidden = true; chip.onclick = () => { snooze = false; if (!cur) show(); }; document.body.appendChild(chip); }
     const open = !!cur && root && !root.hidden;
     if (!open && Q.length && !snooze && !inMission() && !document.hidden && !busyOpen) { busyOpen = true; try { show(); } finally { busyOpen = false; } }
     const showing = !!cur && root && !root.hidden;
+    chip2.hidden = showing || Q.length < 2; if (!chip2.hidden) chip2.textContent = X('all');
     chip.hidden = showing || !Q.length; if (!chip.hidden) chip.textContent = X('chip', { n: Q.length });
     const tb = document.querySelector('.ol-tab[data-v="trade"]'); if (tb) { if (Q.length) tb.setAttribute('data-gift', String(Q.length)); else tb.removeAttribute('data-gift'); }
     const mi = document.getElementById('tr-msg'); if (mi && !mi.placeholder) mi.placeholder = X('msgph');

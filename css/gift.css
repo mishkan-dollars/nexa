@@ -47,3 +47,7 @@
 @media (max-aspect-ratio: 1/1) { .gf { grid-template-columns: 1fr; grid-template-rows: auto auto minmax(0, 1fr) auto; grid-template-areas: "t" "l" "r" "b"; } }
 @media (max-height: 300px) { .gf-title { font-size: 22px; } .gf-go, .gf-later { min-height: 44px; font-size: 17px; } .gf-msg { max-height: 24vh; } }
 @media (prefers-reduced-motion: reduce) { .gf-stripes, .gf-chip { animation: none; } .gf-flash.go { animation-duration: .01s; } }
+.gf-all { min-width: clamp(110px, 18vw, 220px); min-height: 48px; border-radius: 0; font-weight: 700; text-transform: uppercase; letter-spacing: .14em; font-size: clamp(15px, 3.8vh, 24px); cursor: pointer; padding: 6px 16px; background: #0a0a0c; color: #fff; border: 2px solid #ef4b45; touch-action: manipulation; }
+.gf-all[hidden] { display: none; }
+.gf-all:hover, .gf-all:focus-visible { background: #ef4b45; color: #0a0a0c; }
+.gf-chip2 { right: auto; left: 12px; animation: none; }
