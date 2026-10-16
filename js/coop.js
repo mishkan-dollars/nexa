@@ -862,7 +862,6 @@
       if (S.yaw0 === undefined) { S.yaw0 = R.yaw; S.pit0 = R.pitch || 0; cf.pos.set(px, ey, pz); }
       let dy = R.yaw - S.yaw0; dy -= Math.round(dy / 6.2832) * 6.2832; S.yaw0 += dy * k; S.pit0 += ((R.pitch || 0) - S.pit0) * k;
       if (S.fp) {
-        { const wid = String(R.w || ''); if (wid && C.WEAPONS && C.WEAPONS[wid] && (!r.wp || r.wp.id !== wid) && r.giveWeapon && performance.now() - (S.wt || 0) > 800) { S.wt = performance.now(); try { r.giveWeapon(wid, { equip: true, reserve: 999 }); } catch (e) { /* ok */ } } r.aimK = R.aim || 0; }
         cf.pos.x += (px - Math.sin(S.yaw0) * 0.1 - cf.pos.x) * k; cf.pos.y += (ey - cf.pos.y) * k; cf.pos.z += (pz - Math.cos(S.yaw0) * 0.1 - cf.pos.z) * k;
         const cp = Math.cos(S.pit0); cf.look.set(cf.pos.x - Math.sin(S.yaw0) * cp * 3, cf.pos.y + Math.sin(S.pit0) * 3, cf.pos.z - Math.cos(S.yaw0) * cp * 3); cf.fov = 74;
       } else {
@@ -1025,6 +1024,11 @@
     if (!co || !co.rng0 || !co.story || Math.random !== co.proxy) return o.apply(this, a);
     Math.random = co.rng0;
     try { return o.apply(this, a); } finally { if (co.rng0) Math.random = co.proxy; }
+  });
+  wrap1('updateWeapon', function (o, a) {    // зритель не рисует своё оружие и руки: в кадре видна кукла цели
+    const res = o.apply(this, a), co = this.__co, rg = this.rg;
+    if (co && co.spectator && rg) { rg.root.visible = false; if (rg.handMag) rg.handMag.visible = false; if (rg.handShell) rg.handShell.visible = false; if (rg.fh && C.fpsHands) C.fpsHands.hide(rg.fh); }
+    return res;
   });
   wrap1('updateEnemies', function (o, a) { const co = this.__co; return co ? co.updateEnemies(o, a[0], a[1]) : o.apply(this, a); });
   wrap1('enemyShoot', function (o, a) {
