@@ -1412,13 +1412,13 @@
       const co = window.NexaCoop && NexaCoop.session;
       if (!NN.isHost || !co || co.solo || co.gone || !co.ready || co.spec.mode === 'pvp' || !co.startSlots) return;
       if (!(co.spec.mode === 'sandbox' || co.spec.mode === 'mission')) return;
-      NN.players.map((q) => q.slot).concat(NN.spectatorSlots).forEach((slot) => { const q = { slot }; if (!co.startSlots.has(q.slot)) { co.startSlots.add(q.slot); NN.sendAction({ type: 'start', mode: co.spec.mode, mission: co.spec.mission, seed: co.spec.seed, ff: co.ff ? 1 : 0, ffm: co.ffm, late: 1, inv: co.run && co.run.inv ? co.run.inv.map((w) => w.id).slice(0, 8) : [], act: co.act || '', stage: co.stage | 0 }, { to: q.slot }); } });
+      NN.players.map((q) => q.slot).concat(NN.spectatorSlots).forEach((slot) => { const q = { slot }; if (!co.startSlots.has(q.slot)) { co.startSlots.add(q.slot); NN.sendAction({ type: 'start', mode: co.spec.mode, mission: co.spec.mission, seed: co.spec.seed, ff: co.ff ? 1 : 0, ffm: co.ffm, late: 1, inv: co.run && co.run.inv ? co.run.inv.map((w) => w.id).slice(0, 8) : [], gad: co.run && co.run.gad && co.run.gad.n ? Object.keys(co.run.gad.n).slice(0, 8).reduce((o, k) => { o[k] = co.run.gad.n[k] | 0; return o; }, {}) : {}, act: co.act || '', stage: co.stage | 0 }, { to: q.slot }); } });
     });
     NN.on('start', (p) => {
       if (NN.isHost || L.cd) return;
       if (QM.on) { QM.on = false; QM.state = ''; }
       const mode = p.mode === 'hl' ? 'hl' : p.mode === 'pvp' && window.NexaPvp ? 'pvp' : p.mode === 'mission' && validMission(p.mission) ? 'mission' : 'sandbox';
-      beginMatch({ mode, pvp: mode === 'pvp' ? NexaPvp.norm(p.pvp) : undefined, mission: mode === 'mission' ? p.mission | 0 : 1, seed: (p.seed >>> 0) || 1, role: 'guest', solo: false, spectator: NN.spectator ? 1 : 0, late: p.late ? 1 : 0, inv: p.late && Array.isArray(p.inv) ? p.inv.slice(0, 8).map((x) => String(x).slice(0, 12)) : [], jump: p.late ? String(p.act || '').slice(0, 12) : '', stage: p.late ? p.stage | 0 : 0, ff: p.ff === 0 ? 0 : 1, ffm: +p.ffm || 1 }, 3);
+      beginMatch({ mode, pvp: mode === 'pvp' ? NexaPvp.norm(p.pvp) : undefined, mission: mode === 'mission' ? p.mission | 0 : 1, seed: (p.seed >>> 0) || 1, role: 'guest', solo: false, spectator: NN.spectator ? 1 : 0, late: p.late ? 1 : 0, gad: p.late && p.gad && typeof p.gad === 'object' ? p.gad : {}, inv: p.late && Array.isArray(p.inv) ? p.inv.slice(0, 8).map((x) => String(x).slice(0, 12)) : [], jump: p.late ? String(p.act || '').slice(0, 12) : '', stage: p.late ? p.stage | 0 : 0, ff: p.ff === 0 ? 0 : 1, ffm: +p.ffm || 1 }, 3);
     });
     tradeHooks();
     NN.on('profile', onProfile); NN.on('profile?', onProfileReq);

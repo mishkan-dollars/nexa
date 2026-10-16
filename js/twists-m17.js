@@ -218,9 +218,9 @@
         });
       });
       const used = {}; const plate = [];
-      while (plate.length < 4) { const n = 10 + Math.floor(Math.random() * 89); if (!used[n % 10]) { used[n % 10] = 1; plate.push(n); } }
-      const lamps = ['steady', 'slow', 'fast', 'off'].sort(() => Math.random() - 0.5);
-      const goal = Math.floor(Math.random() * 4);
+      while (plate.length < 4) { const n = 10 + Math.floor((r.rand ? r.rand('plate') : Math.random()) * 89); if (!used[n % 10]) { used[n % 10] = 1; plate.push(n); } }
+      const lamps = ['steady', 'slow', 'fast', 'off'].sort(() => (r.rand ? r.rand('lamps') : Math.random()) - 0.5);
+      const goal = Math.floor((r.rand ? r.rand('goal') : Math.random()) * 4);
       const lampOf = [0, 1, 2, 3].map((i) => (i === goal ? 'steady' : lamps.filter((l) => l !== 'steady')[(i > goal ? i - 1 : i) % 3]));
       xs.forEach((x, i) => {
         // кузов + кабина (кабиной к стене-цели), коллайдер общий

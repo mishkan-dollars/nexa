@@ -396,7 +396,7 @@
       const k = +m[1] - 1;
       S.k = k; S.done[k] = false; S.trap = null;
       const bag = this.HOST[k] ? ['tenant', 'trap', 'none'] : ['tenant', 'trap', 'hostage'];
-      S.kind = bag[Math.floor(Math.random() * bag.length)];
+      S.kind = bag[Math.floor((r.rand ? r.rand('kind') : Math.random()) * bag.length)];
       T.att(() => { S.trap = null; if (S.chargeM) S.chargeM.visible = false; });
     },
     tick(r, T, dt) {

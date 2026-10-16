@@ -273,6 +273,7 @@
     onReady() {
       if (this.ready) return;
       this.ready = true;
+      if (this.spec.gad && this.run.addGadget) { Object.keys(this.spec.gad).slice(0, 8).forEach((id) => { const n = Math.max(0, Math.min(9, this.spec.gad[id] | 0)); if (n) { try { this.run.addGadget(String(id).slice(0, 12), n); } catch (e) { /* ok */ } } }); }   // гаджеты хоста
       if (this.spec.inv && this.spec.inv.length && this.run.giveWeapon) { this.spec.inv.forEach((id, i) => { try { if (C.WEAPONS[id] && !(this.run.inv || []).some((w) => w.id === id)) this.run.giveWeapon(id, { equip: i === 0, reserve: 60 }); } catch (e) { /* ok */ } }); }   // поздний вход: оружие хоста
       if (this.ffAvail && this.ff) this.note('FRIENDLY FIRE IS ON', 3.6);
       if (!this.story) this.seedOff();
