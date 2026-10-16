@@ -291,6 +291,7 @@
         case 'ffs': if (!this.host) { this.ff = this.ffAvail && !!p.on; this.ffm = [0.25, 0.5, 1].indexOf(+p.m) >= 0 ? +p.m : 1; this.ffUi(); } break;
         case 'cskip': if (!this.host && this.run.inCinema) this.skipGo = true; break;
         case 'ffk': if (!this.host) this.ffKillMsg(p.a | 0, p.t | 0); break;
+        case 'fin': if (!this.host && !this.finT) { const r = this.run; this.finT = setTimeout(() => { if (!r.disposed && !r.ending) { try { r.finish(true); } catch (e) { /* ok */ } } }, 6000); } break;   // хост завершил миссию победой: остальные заканчивают вместе с ним
         case 'npc': if (!this.host && Array.isArray(p.a)) this.npcA = p.a.slice(0, 80); break;
         case 'cs': if (!this.host) { const c = p.c | 0, i = p.i | 0; if (!this.cs || c > this.cs.c || (c === this.cs.c && i > this.cs.i)) this.cs = { c, i }; } break;
         case 'sv': if (this.host && this.votes) { if (p.v) this.votes.add(from); else this.votes.delete(from); } break;
@@ -993,6 +994,7 @@
       }
     }
     dispose() {
+      clearTimeout(this.finT);
       if (this.disposed) return;
       this.disposed = true;
       this.seedOff();
@@ -1121,6 +1123,7 @@
     return o.apply(this, a);
   });
   P.rand = function (tag) { const co = this.__co; return co && co.story && !co.solo && co.spec.seed ? co.rand(String(tag)) : Math.random(); };
+  wrap1('finish', function (o, a) { const co = this.__co; if (co && co.host && co.mode === 'mission' && !co.solo && a[0] && NN.connected) NN.sendAction({ type: 'cev', k: 'fin' }); return o.apply(this, a); });
   wrap1('phase', function (o, a) { const co = this.__co; if (co && co.catchUp && co.catchUp() && typeof a[1] === 'function') a = [a[0], () => Promise.resolve()].concat(Array.prototype.slice.call(a, 2)); const p = o.apply(this, a); return co && co.mode === 'mission' && !co.solo ? p.then((v) => co.barrier().then(() => v)) : p; });
   wrap1('cinematic', function (o, a) {
     const co = this.__co;
