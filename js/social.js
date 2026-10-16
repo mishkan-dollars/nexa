@@ -3,7 +3,7 @@
   const T = window.Toys, K = window.NexaSchnorr, RM = window.NexaRoom, NN = window.NexaNet, PF = window.NexaProfile;
   if (!T || !T.ident || !K || !RM || !NN || !PF) return;
   const ID = T.ident;
-  const KIND = { pres: 27780, msg: 27781, fmsg: 7781, chat: 27783, clanChat: 27784, report: 27785, prof: 30780, score: 30781, clan: 30782, dm: 4 };
+  const KIND = { pres: 27780, presS: 30783, msg: 27781, fmsg: 7781, chat: 27783, clanChat: 27784, report: 27785, prof: 30780, score: 30781, clan: 30782, dm: 4 };
   const SKEY = 'nexaSocial', DMKEY = 'nexaDM';
   const now = () => Date.now(), sec = () => Math.floor(Date.now() / 1000);
   const ls = { get: (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch (e) { /* ok */ } } };
@@ -76,6 +76,7 @@
     ws.onopen = () => { r.open = true; clearTimeout(to); NET.subs.forEach((s, id) => subSend(ws, id, s.f)); NET.outbox.slice(-40).forEach((m) => { try { ws.send(m); } catch (e) { /* ok */ } }); emit('net', netInfo()); };
     ws.onmessage = (m) => {
       let j; try { j = JSON.parse(m.data); } catch (e) { return; }
+      if (Array.isArray(j) && j[0] === 'OK' && j[2] === false) { const k = r.sk && r.sk.get(j[1]); if (k && /kind|blocked|not accepted|unsupported|disallow|restricted|not allowed/i.test(String(j[3] || ''))) (r.rk || (r.rk = new Set())).add(k); return; }
       if (!Array.isArray(j) || j[0] !== 'EVENT' || !j[2]) return;
       const e = j[2];
       if (!e.id || NET.seen.has(e.id) || VQ.ids.has(e.id)) return;
@@ -90,12 +91,15 @@
     NET.outbox = NET.outbox.filter((o) => true);
   }
   const netInfo = () => ({ on: netOk(), up: Array.from(NET.socks.values()).filter((r) => r.open).length });
-  function publish(e) {
+  function publish(e, skip) {
     if (!e || !netOk()) return false;
     if ((e.kind === KIND.chat || e.kind === KIND.clanChat || e.kind === KIND.msg || e.kind === KIND.fmsg || e.kind === KIND.dm || e.kind === KIND.clan || e.kind === KIND.score || e.kind === KIND.prof) && banMe()) return false;
     const m = JSON.stringify(['EVENT', e]); let n = 0;
-    NET.socks.forEach((r) => { if (r.open) { try { r.ws.send(m); n += 1; } catch (er) { /* ok */ } } });
-    if (e.kind >= 30000 || e.kind === KIND.dm) { NET.outbox.push(m); if (NET.outbox.length > 60) NET.outbox.shift(); }
+    NET.socks.forEach((r) => {
+      if (!r.open || (skip && skip.has(r.url)) || (r.rk && r.rk.has(e.kind))) return;
+      try { r.ws.send(m); n += 1; (r.sk || (r.sk = new Map())).set(e.id, e.kind); if (r.sk.size > 30) r.sk.delete(r.sk.keys().next().value); } catch (er) { /* ok */ }
+    });
+    if ((e.kind >= 30000 && e.kind !== KIND.presS) || e.kind === KIND.dm) { NET.outbox.push(m); if (NET.outbox.length > 60) NET.outbox.shift(); }
     return n > 0;
   }
   function subscribe(id, filters, cb) {
@@ -109,22 +113,28 @@
   const PRES = {};
   function myState() {
     const R = window.Missions && window.Missions.current, co = window.NexaCoop;
-    if (R && co && co.active) { const s = co.session; return s && s.spec && s.spec.mode === 'pvp' ? 'battle' : 'match'; }
+    if (document.hidden) return 'bg';
+    if (R && co && co.active) { const s = co.session; return s && s.spec && s.spec.mode === 'pvp' ? 'battle' : s && s.spec && s.spec.mode === 'mission' ? 'mission' : 'match'; }
     if (window.OnlineLobby && window.OnlineLobby.active) return 'lobby';
     return 'online';
   }
   const pinfo = () => PF.publicInfo();
-  function presEvent() {
+  function presEvent(stored) {
     if (!me()) return null;
-    const f = Object.keys(S.friends).filter((k) => S.friends[k].st === 'friend');
+    const f = stored ? [] : Object.keys(S.friends).filter((k) => S.friends[k].st === 'friend');
     const p = pinfo();
-    const a = AD(), tags = f.slice(0, 40).map((k) => ['p', k]), o = { s: myState(), n: p.name, l: p.level };
-    if (a && a.active) { tags.push(['p', a.pub]); o.g = a.flags(); const hs = RM.hosting, js = RM.joining; o.rm = String((hs && hs.id) || (js && js.id) || '').slice(0, 40); o.m = hs ? hs.mode : ''; }
-    return mk(KIND.pres, tags, JSON.stringify(o));
+    const a = AD(), tags = f.slice(0, 40).map((k) => ['p', k]), o = { s: myState(), n: p.name, l: p.level, v: 2 };
+    if (stored) tags.push(['d', 'nexa-pres']);
+    if (a && a.active) { tags.push(['p', a.pub]); o.g = a.flags(); if (!stored) { const hs = RM.hosting, js = RM.joining; o.rm = String((hs && hs.id) || (js && js.id) || '').slice(0, 40); o.m = hs ? hs.mode : ''; } }
+    return mk(stored ? KIND.presS : KIND.pres, tags, JSON.stringify(o));
   }
-  function sendPresence() {
+  let presN = 0;
+  function sendPresence(now) {
     if (!netOk() || !me()) return;
-    publish(presEvent());
+    const st = now || (presN += 1) % 2 === 0, ad = AD(), skip = ad && ad.active && ad.urls && ad.urls().length >= 2 ? new Set(ad.urls()) : null;
+    publish(presEvent(), skip);
+    if (st) publish(presEvent(true), skip);
+    if (ad && ad.active && ad.pulse) ad.pulse(st);
   }
   function subFriends() {
     const f = Object.keys(S.friends).filter((k) => S.friends[k].st === 'friend');
@@ -372,12 +382,14 @@
     if (started) return; started = true;
     me();
     netTick(); tm = setInterval(netTick, 8000);
-    const go = () => { if (!netInfo().up) return false; subFriends(); subDM(); subChat(); if (S.clan) subClans(); sendPresence(); pubProfile(); return true; };
+    const go = () => { if (!netInfo().up) return false; subFriends(); subDM(); subChat(); if (S.clan) subClans(); sendPresence(true); pubProfile(); return true; };
     let tries = 0;
     const w = setInterval(() => { tries += 1; if (go() || tries > 40) clearInterval(w); }, 1000);
     ev.addEventListener('net', () => { if (netInfo().up) { subFriends(); subDM(); subChat(); if (BOARD.on) { BOARD.on = 0; subBoard(); } if (CLANS.on || S.clan) { CLANS.on = 0; subClans(); } } });
     let tk = 0;
-    tp = setInterval(() => { sendPresence(); resendReqs(); if (sec() % 3 === 0) pubProfile(); rewardCheck(); if (++tk % 8 === 0) peek(); }, 45000);
+    setInterval(() => sendPresence(), 30000);
+    document.addEventListener('visibilitychange', () => sendPresence(true));
+    tp = setInterval(() => { resendReqs(); if (sec() % 3 === 0) pubProfile(); rewardCheck(); if (++tk % 8 === 0) peek(); }, 45000);
     setTimeout(peek, 20000);
   }
   function peek() {   // редкий «подсмотр» рейтинга и кланов без открытой вкладки: награды за рейтинг и вступление в клан
@@ -409,7 +421,7 @@
     const nav = h('div', 'sc-nav'); nav.setAttribute('role', 'tablist');
     SUBS.forEach((k) => { const b = h('button', 'sc-sub' + (UI.tab === k ? ' on' : ''), SUBN[k] + (k === 'friends' && inc ? ' (' + inc + ')' : '')); b.type = 'button'; b.setAttribute('role', 'tab'); b.onclick = () => { UI.tab = k; UI.open = ''; render(); }; nav.appendChild(b); });
     r.appendChild(nav);
-    const st = h('p', 'v-note sc-net', !RM.servers.on ? 'SIGNALING SERVERS ARE OFF — SOCIAL FEATURES NEED THEM' : !RM.consented() ? 'ALLOW PUBLIC MODE FIRST (PUBLIC TAB)' : info.up ? 'RELAYS CONNECTED: ' + info.up : 'CONNECTING TO RELAYS…');
+    const st = h('p', 'v-note sc-net', !RM.servers.on ? 'NODES ARE OFF — SOCIAL NEEDS THEM' : !RM.consented() ? 'ALLOW PUBLIC MODE FIRST (PUBLIC TAB)' : info.up ? 'RELAYS CONNECTED: ' + info.up : 'CONNECTING…');
     r.appendChild(st);
     const body = h('div', 'sc-body'); r.appendChild(body);
     if (banMe()) { body.appendChild(h('p', 'v-note bad sc-note', AD().text())); return; }

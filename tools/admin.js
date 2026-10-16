@@ -1,7 +1,7 @@
 (function () {
   'use strict';
   const K = window.NexaSchnorr, $ = (id) => document.getElementById(id);
-  const HEX64 = /^[0-9a-f]{64}$/, KB = 30791, KB2 = 30078, KG = 7790, KG2 = 27790, KA = 7791, KA2 = 27791, KPRES = 27780, KPROF = 30780, MAXKP = 2147483647;
+  const HEX64 = /^[0-9a-f]{64}$/, KB = 30791, KB2 = 30078, KG = 7790, KG2 = 27790, KA = 7791, KA2 = 27791, KPRES = 27780, KPRES2 = 30783, KPROF = 30780, MAXKP = 2147483647;
   const sec = () => Math.floor(Date.now() / 1000);
   const ls = { get: (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch (e) { /* ok */ } } };
   const jp = (s, d) => { try { const j = JSON.parse(s); return j == null ? d : j; } catch (e) { return d; } };
@@ -11,7 +11,7 @@
   const q = new URLSearchParams(location.search);
 
   let lastBans = [], key = null, avb = jp(ls.get('nexaAdminAvb'), {}), bans = jp(ls.get('nexaAdminBans'), {}), banAt = +ls.get('nexaAdminBanAt') || 0, LOG = jp(ls.get('nexaAdminLog'), []);
-  const AVRE = /^data:image\/(webp|jpeg|png);base64,[A-Za-z0-9+/]+=*$/, AV = {}, P = {}, grants = {}, track = {}, socks = new Map(), subs = new Map(), outbox = [];
+  const SEEN = new Set(), REJ = {}, RELERR = {}, AVRE = /^data:image\/(webp|jpeg|png);base64,[A-Za-z0-9+/]+=*$/, AV = {}, P = {}, grants = {}, track = {}, socks = new Map(), subs = new Map(), outbox = [];
   const log = (t, d) => { LOG.push({ t: Date.now(), a: t, d }); LOG = LOG.slice(-500); ls.set('nexaAdminLog', JSON.stringify(LOG)); drawLog(); };
 
   function setKey(skHex) {
@@ -53,16 +53,20 @@
     if (o.length) return o;
     const S = window.NexaServers; return S ? S.NOSTR_VERIFIED.slice(0, 12) : [];
   }
-  function subSend(ws, id, f) { try { ws.send(JSON.stringify(['REQ', id, ...f])); } catch (e) { /* ok */ } }
+  function subSend(ws, id, f) { try { ws.send(JSON.stringify(['REQ', id, ...(typeof f === 'function' ? f() : f)])); } catch (e) { /* ok */ } }
   function connect(url) {
     let ws; try { ws = new WebSocket(url); } catch (e) { return; }
-    const r = { ws, open: false }; socks.set(url, r);
-    ws.onopen = () => { r.open = true; subs.forEach((f, id) => subSend(ws, id, f)); outbox.forEach((m) => { try { ws.send(m); } catch (e) { /* ok */ } }); drawRelays(); };
+    const r = { ws, open: false, bl: true, idx: socks.size + 1 }; socks.set(url, r);
+    ws.onopen = () => { r.open = true; r.bl = true; subs.forEach((f, id) => subSend(ws, id, f)); outbox.forEach((m) => { try { ws.send(m); } catch (e) { /* ok */ } }); drawRelays(); };
     ws.onmessage = (m) => {
       const j = jp(m.data, null); if (!Array.isArray(j)) return;
       if (j[0] === 'OK') { const t = track[j[1]]; if (t) { if (j[2]) t.ok += 1; else { t.no += 1; t.why[String(j[3] || '').slice(0, 60)] = 1; } } return; }
+      if (j[0] === 'EOSE' && j[1] === 'pres') { r.bl = false; return; }
+      if (j[0] === 'CLOSED') { RELERR[r.idx] = String(j[1]) + ': ' + String(j[2] || '').slice(0, 60); drawRej(); return; }
       if (j[0] !== 'EVENT' || !j[2]) return;
-      const e = j[2]; if (!K.checkEvent(e)) return; onEvent(e);
+      const e = j[2]; if (!e.id || SEEN.has(e.id)) return; SEEN.add(e.id); if (SEEN.size > 6000) SEEN.clear();
+      if (!K.checkEvent(e)) { if (e.kind === KPRES || e.kind === KPRES2) rejP(e.pubkey, 'подпись'); return; }
+      onEvent(e, r);
     };
     ws.onclose = () => { socks.delete(url); drawRelays(); };
     ws.onerror = () => { try { ws.close(); } catch (e) { /* ok */ } };
@@ -77,8 +81,7 @@
   function resub() {
     if (!key) return;
     subs.clear();
-    subs.set('pres', [{ kinds: [KPRES], '#p': [key.pk], since: sec() - 300 }]);
-    subs.set('pres2', [{ kinds: [KPRES], since: sec() - 300, limit: 200 }]);
+    subs.set('pres', () => [{ kinds: [KPRES, KPRES2], since: sec() - 1500, limit: 1000 }]);
     subs.set('ack', [{ kinds: [KA, KA2], '#p': [key.pk], since: sec() - 3600 }]);
     subs.set('ack2', [{ kinds: [KA, KA2], since: sec() - 3600, limit: 200 }]);
     subs.set('avs', [{ kinds: [KPROF], since: sec() - 86400 * 14, limit: 300 }]);
@@ -89,13 +92,23 @@
   const drawRelays = () => { const n = Array.from(socks.values()).filter((r) => r.open).length; $('relays').textContent = 'релеев: ' + n + '/' + relayList().length; $('relays').className = n ? 'ok' : 'bad'; };
 
   // ---- события
-  function onEvent(e) {
-    if (!key || Math.abs(e.created_at - sec()) > 86400) return;
-    if (e.kind === KPRES && e.pubkey !== key.pk && e.tags.some((t) => t[0] === 'p' && t[1] === key.pk) && Math.abs(e.created_at - sec()) < 300) {
-      const c = jp(e.content, null); if (!c) return;
-      P[e.pubkey] = Object.assign(P[e.pubkey] || {}, { n: String(c.n || '').slice(0, 16), l: c.l | 0, s: String(c.s || '').slice(0, 10), rm: String(c.rm || '').slice(0, 40), m: String(c.m || '').slice(0, 10), g: c.g | 0, t: Date.now() });
-      drawPlayers();
-    } else if ((e.kind === KA || e.kind === KA2) && e.tags.some((t) => t[0] === 'p' && t[1] === key.pk)) {
+  function rejP(pk, why) { if (!HEX64.test(String(pk))) return; REJ[pk] = { why, t: Date.now() }; drawRej(); }
+  function onPres(e, r) {
+    const c = jp(e.content, null), d = e.created_at - sec(), old = P[e.pubkey], live = !(r && r.bl);
+    if (!c || typeof c !== 'object' || typeof c.n !== 'string') return rejP(e.pubkey, 'формат');
+    if (Math.abs(d) > 900) return rejP(e.pubkey, 'время ' + (d > 0 ? '+' : '') + Math.round(d / 60) + ' мин');
+    if (old && e.created_at <= old.ca && !(live && old.ca - e.created_at > 120)) return;
+    delete REJ[e.pubkey];
+    const keep = old && Date.now() - old.t < 180000;
+    P[e.pubkey] = { n: String(c.n || '').slice(0, 16), l: c.l | 0, s: String(c.s || '').slice(0, 10), rm: c.rm !== undefined ? String(c.rm).slice(0, 40) : (keep ? old.rm : ''), m: c.m !== undefined ? String(c.m).slice(0, 10) : (keep ? old.m : ''), g: c.g | 0, ca: e.created_at, sk: live && Math.abs(d) > 120 ? d : 0, v: c.v | 0,
+      t: live ? Date.now() : Math.min(Date.now() - 1000, e.created_at * 1000) };
+    drawPlayers(); drawRej();
+  }
+  function onEvent(e, r) {
+    if (!key) return;
+    if ((e.kind === KPRES || e.kind === KPRES2) && e.pubkey !== key.pk) { onPres(e, r); return; }
+    if (Math.abs(e.created_at - sec()) > 86400) return;
+    if ((e.kind === KA || e.kind === KA2) && e.tags.some((t) => t[0] === 'p' && t[1] === key.pk)) {
       const c = jp(e.content, {}), g = grants[c.i] || Object.keys(grants).map((k) => grants[k]).find((x) => x.ids.indexOf((e.tags.find((t) => t[0] === 'e') || [])[1]) >= 0);
       if (g && g.to === e.pubkey && c.ok === 0) {
         g.seen = true; if (g.why !== c.w) { g.why = c.w; log('не применено', short(g.to) + ' · ' + g.n + ' KP · ' + (WHY[c.w] || c.w) + (c.f ? ' · флаги: ' + flagTxt(c.f) : '')); }
@@ -170,16 +183,21 @@
   function drawPlayers() {
     const f = ($('flt').value || '').trim().toLowerCase(), tb = $('pl'); tb.textContent = '';
     const ks = Object.keys(P).filter((k) => k !== '_want' && (!f || (k + ' ' + P[k].n + ' ' + P[k].rm).toLowerCase().indexOf(f) >= 0)).sort((a, b) => P[b].t - P[a].t);
-    let on = 0;
+    let on = 0, recent = 0;
     ks.forEach((k) => {
-      const p = P[k], age = Math.floor((Date.now() - p.t) / 1000), live = age < 120; if (live) on += 1;
+      const p = P[k], age = Math.floor((Date.now() - p.t) / 1000), live = age < 180, rec = !live && age < 900; if (live) on += 1; else if (rec) recent += 1;
       const tr = document.createElement('tr');
-      tr.innerHTML = '<td>' + thumb(k, 28) + '</td><td><code title="' + k + '">' + short(k) + '</code></td><td>' + esc(p.n) + (bans[k] ? ' <span class="bad">[БАН]</span>' : '') + '</td><td>' + p.l + '</td><td class="' + (live ? 'st-' + p.s : 'st-off') + '">' + (live ? esc(p.s) : 'не в сети') + '</td><td>' + esc(p.rm || '') + (p.m ? ' · ' + esc(p.m) : '') + '</td><td class="bad">' + flagTxt(p.g) + '</td><td>' + ago(age) + '</td><td></td>';
+      tr.innerHTML = '<td>' + thumb(k, 28) + '</td><td><code title="' + k + '">' + short(k) + '</code></td><td>' + esc(p.n) + (bans[k] ? ' <span class="bad">[БАН]</span>' : '') + '</td><td>' + p.l + '</td><td class="' + (live ? 'st-' + p.s : 'st-off') + '">' + (live ? esc(p.s) : rec ? 'был ' + ago(age) + ' назад' : 'не в сети') + (p.sk ? ' <span class="bad" title="часы игрока сдвинуты">⏱' + Math.round(p.sk / 60) + 'м</span>' : '') + '</td><td>' + esc(p.rm || '') + (p.m ? ' · ' + esc(p.m) : '') + '</td><td class="bad">' + flagTxt(p.g) + '</td><td>' + ago(age) + '</td><td></td>';
       const td = tr.lastChild, mk = (t, c, fn) => { const b = document.createElement('button'); b.textContent = t; if (c) b.className = c; b.onclick = fn; td.appendChild(b); td.appendChild(document.createTextNode(' ')); };
       mk('Профиль', '', () => openProfile(k)); mk('KP', 'g', () => { $('gk').value = k; $('gn').focus(); }); mk('Бан', 'd', () => { $('bk').value = k; $('br').focus(); });
       tb.appendChild(tr);
     });
-    $('cnt').textContent = 'в сети: ' + on + ' · всего видели: ' + ks.length;
+    $('cnt').textContent = 'в сети: ' + on + ' · недавно: ' + recent + ' · всего видели: ' + ks.length;
+  }
+  function drawRej() {
+    const b = $('prej'); if (!b) return;
+    const a = Object.keys(REJ).map((k) => short(k) + ' — ' + REJ[k].why + ' (' + ago(Math.floor((Date.now() - REJ[k].t) / 1000)) + ' назад)'), e = Object.keys(RELERR).map((k) => 'релей #' + k + ' ' + RELERR[k]);
+    b.textContent = (a.length ? 'Отклонено: ' + a.join('; ') : 'Отклонённых нет') + (e.length ? ' · Подписку отклонили: ' + e.join('; ') : '');
   }
   const avOn = (pk) => avb[pk] && (!avb[pk].u || avb[pk].u > sec());
   function thumb(pk, px) {
@@ -235,6 +253,7 @@
   $('ggive').onclick = () => give(($('gk').value || '').trim().toLowerCase(), $('gn').value);
   drawKey(); drawBans(); drawLog(); drawAv();
   const saved = ls.get('nexaAdminSk'); if (saved) setKey(saved);
+  if ($('prefresh')) $('prefresh').onclick = () => { SEEN.clear(); Object.keys(REJ).forEach((k) => delete REJ[k]); Object.keys(RELERR).forEach((k) => delete RELERR[k]); socks.forEach((r) => { r.bl = true; }); resub(); drawRej(); drawPlayers(); };
   tickNet(); setInterval(tickNet, 5000); setInterval(drawPlayers, 5000); setInterval(() => { lastBans.forEach(publish); }, 60000); setInterval(summ, 4000); setInterval(drawGrants, 5000); setInterval(() => { if (key) { socks.forEach((r) => { if (r.open) subSend(r.ws, 'pres', subs.get('pres')); }); } }, 60000);
   window.NexaAdminConsole = { ban, unban, give, avAct, avRestore, avb: () => avb, AV, state: () => ({ P, bans, grants, key: !!key, pub: key && key.pk }) };
 }());

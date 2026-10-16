@@ -58,9 +58,9 @@
   };
   const chOpen = () => Array.from(CH.socks.values()).filter((r) => r.open);
   // не шлём на релей то, что он уже отверг: по kind — навсегда, по спаму/лимиту — пауза 10 мин, после трёх отказов подряд — релей на 30 мин в отставку
-  const chSend = (m) => {
+  const chSend = (m, only) => {
     const ev = typeof m !== 'string' && m && m[0] === 'EVENT' ? m[1] : null, j = typeof m === 'string' ? m : JSON.stringify(m);
-    chOpen().forEach((r) => {
+    (only ? [only] : chOpen()).forEach((r) => {
       if (ev && (r.rejK.has(ev.kind) || r.mute > Date.now())) return;
       try { r.ws.send(j); if (ev && ev.id) { r.sent.set(ev.id, ev.kind); if (r.sent.size > 40) r.sent.delete(r.sent.keys().next().value); } } catch (e) { /* ok */ }
     });
@@ -85,7 +85,7 @@
     const r = { ws, url, open: false, rejK: new Set(), sent: new Map(), mute: 0, nrej: 0 }; CH.socks.set(url, r);
     const drop = () => { CH.socks.delete(url); CH.bad[url] = Date.now() + 30000; };
     const to = setTimeout(() => { if (!r.open) { try { ws.close(); } catch (e) { /* ok */ } drop(); } }, 7000);
-    ws.onopen = () => { r.open = true; clearTimeout(to); log('relay up', url, '(' + chOpen().length + ')'); reqs(r); presence(); };
+    ws.onopen = () => { r.open = true; clearTimeout(to); log('relay up', url, '(' + chOpen().length + ')'); reqs(r); presence(true, r); };
     ws.onmessage = (m) => {
       let j; try { j = JSON.parse(m.data); } catch (e) { return; }
       if (!Array.isArray(j)) return;
@@ -138,7 +138,7 @@
     else { CH.seen.add(e.id); delete pending[e.id]; if (r.err === 'DUP') ack(e, { n: 0, bal: T.credits, id: '' }); else { D.refused += 1; D.why = why; nack(e, why); rej('grant: ' + r.err); } }
   }
   function retry() { Object.keys(pending).forEach((id) => applyGrant(pending[id])); }
-  function presence() { const p0 = SO.presEvent && SO.presEvent(); if (p0) chSend(['EVENT', p0]); }
+  function presence(stored, only) { if (!SO.presEvent) return; const p0 = SO.presEvent(); if (p0) chSend(['EVENT', p0], only); if (stored) { const p1 = SO.presEvent(true); if (p1) chSend(['EVENT', p1], only); } }
   const active = () => { try { return SO.net().on; } catch (e) { return false; } };
 
   function tick() {
@@ -165,7 +165,6 @@
     log('channel start, admin', ADM.slice(0, 8));
     setInterval(tick, 4000);
     setInterval(() => { chOpen().forEach(reqs); }, 30000);
-    setInterval(presence, 45000);
     setInterval(paintUi, 1500);
     tick();
   }
@@ -174,6 +173,6 @@
   const flags = () => { const g = window.NexaGuard; return g ? g.flags() : 0; };
   window.NexaAdmin = {
     active: !!ADM, pub: ADM, avBlocked: (pk) => (ADM && HEX64.test(String(pk)) ? avBlocked(pk) : null), banned: (pk) => (ADM && HEX64.test(String(pk)) ? banned(pk) : null), me: ADM ? me : () => null, text, flags,
-    on: (t, f) => ev.addEventListener(t, f), diag: () => Object.assign({ relays: chOpen().length, entries: Object.keys(bans).length }, D), _apply: applyBans
+    urls: () => chOpen().map((r) => r.url), pulse: presence, on: (t, f) => ev.addEventListener(t, f), diag: () => Object.assign({ relays: chOpen().length, entries: Object.keys(bans).length }, D), _apply: applyBans
   };
 }());
