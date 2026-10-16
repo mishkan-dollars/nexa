@@ -735,7 +735,7 @@
   function adOf() {
     const me = NN.localInfo();
     const max = NN.config.maxPlayers;
-    return { rid: H.id, title: H.title || me.name, host: me.name, lv: me.level, col: me.color, mode: H.mode, mission: H.mission, kind: H.kind || '', n: Math.min(max, NN.count || 1), max };
+    return { rid: H.id, title: H.title || me.name, host: me.name, lv: me.level, col: me.color, mode: H.mode, mission: H.mission, kind: H.kind || '', nat: NN.natType || '', n: Math.min(max, NN.count || 1), max };
   }
 
   // ---- Гость: подключение к комнате по ссылке/имени/публичной. Гость предлагает offer'ы; хост отвечает.
@@ -897,7 +897,7 @@
     let age = Number(a.age); if (!isFinite(age)) age = 0; age = Math.max(0, Math.min(120, age));
     const title = cleanText(a.title, 24) || 'ROOM';
     const host = NN.util.cleanName(a.host, 'PLAYER');
-    return { rid, title, host, lv: Math.max(1, Math.min(999, a.lv | 0 || 1)), col: NN.util.cleanColor(a.col), mode, mission, kind: mode === 'pvp' && (a.kind === 'team' || a.kind === 'duel') ? a.kind : '', n, max, age };
+    return { rid, title, host, lv: Math.max(1, Math.min(999, a.lv | 0 || 1)), col: NN.util.cleanColor(a.col), mode, mission, kind: mode === 'pvp' && (a.kind === 'team' || a.kind === 'duel') ? a.kind : '', nat: a.nat === 'cone' || a.nat === 'symmetric' || a.nat === 'blocked' ? a.nat : '', n, max, age };
   }
   function adsOut(limit) {
     const t = now(), out = [];

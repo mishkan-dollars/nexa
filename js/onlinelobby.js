@@ -647,8 +647,8 @@
   }
   // ищем открытую комнату того же вида; хост-одиночка уступает комнате, где уже есть игроки, а из двух одиночек — комнате с меньшим id (иначе два одновременных READY хостят порознь)
   function qmFindRoom(alone) {
-    const K = QK[QM.kind || 'ffa'], me = alone && RM.adOf ? (RM.adOf() || {}).rid : '';
-    return RM.gossip.rooms().find((x) => x.mode === K.mode && (QM.kind === 'ffa' || x.kind === QM.kind) && x.n < x.max && x.rid !== me && (!alone || x.n >= 2 || x.rid < me));
+    const K = QK[QM.kind || 'ffa'], me = alone && RM.adOf ? (RM.adOf() || {}).rid : '', rk = (n) => ({ cone: 0, '': 1, symmetric: 2, blocked: 3 }[n || ''] || 0), mine = rk(NN.natType === 'unknown' ? '' : NN.natType);   // из двух одиночек хостит тот, у кого лучше NAT (cone), при равенстве — меньший id
+    return RM.gossip.rooms().find((x) => x.mode === K.mode && (QM.kind === 'ffa' || x.kind === QM.kind) && x.n < x.max && x.rid !== me && (!alone || x.n >= 2 || rk(x.nat) < mine || (rk(x.nat) === mine && x.rid < me)));
   }
   function qmYield(r) {
     QM.host = false; QM.state = 'joining'; QM.jAt = Date.now(); RM.stopHost(); if (NN.connected) NN.close(); startJoin(r.rid, 'join', true); updPlay();
