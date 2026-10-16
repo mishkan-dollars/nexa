@@ -78,6 +78,10 @@
     MIC_NONE: 'No microphone found.',
     MIC_FAIL: 'The microphone could not be started.',
     VOICE_BLOCKED: 'Click anywhere to let the browser play the friend\'s voice.',
+    RELAY_MODE: 'VIA RELAY (SLOW MODE)',
+    RELAY_HINT: 'The direct connection failed, so game data goes through public servers in encrypted form, about 4 updates per second. Voice and PvP are not available. The game tries a direct connection again later.',
+    PVP_DIRECT: 'FOR PVP A DIRECT CONNECTION IS NEEDED',
+    VOICE_RELAY: 'Voice is off in relay mode (slow backup channel). Use the text chat or switch to another network.',
     VOICE_FULL: 'Voice is full (4 microphones at once). You can still use the text chat.',
     CHAT_FLOOD: 'Slow down — too many messages.',
     CHAT_EMPTY: 'Type a message first.',
@@ -261,6 +265,7 @@
 
   // ------------------------------------------------------------------ соединение (Link)
   let linkSeq = 0;
+  let ICE_FAIL = false; try { ICE_FAIL = /[?&]icefail\b/.test(location.search); } catch (e) { /* ok */ }   // тест: принудительный провал ICE (политика relay без TURN)
   function fakeChan(label) {
     const ls = { open: [], close: [], message: [] };
     const c = { label, readyState: 'connecting', bufferedAmount: 0, out: () => {},
@@ -280,7 +285,7 @@
     if (local) { L.local = true; act = fakeChan('act'); rel = fakeChan('rel'); }
     else {
       const srv = round >= 2 && cfg.iceServers.length ? cfg.iceServersExt : cfg.iceServers;
-      const pc = L.pc = new RTCPeerConnection({ iceServers: srv, bundlePolicy: 'max-bundle', iceCandidatePoolSize: (pool == null ? 2 : pool) | 0 });      // pool > 0: кандидаты собираются заранее (быстрее offer/answer)
+      const pc = L.pc = new RTCPeerConnection({ iceServers: srv, bundlePolicy: 'max-bundle', iceTransportPolicy: ICE_FAIL ? 'relay' : 'all', iceCandidatePoolSize: (pool == null ? 2 : pool) | 0 });      // pool > 0: кандидаты собираются заранее (быстрее offer/answer)
       pc.addEventListener('connectionstatechange', () => onPcState(L));
       pc.addEventListener('iceconnectionstatechange', () => onPcState(L));
       pc.addEventListener('negotiationneeded', () => negotiate(L));
@@ -303,6 +308,14 @@
   // с обычным слотом. Для остальных игроков и для самого игрока это обычный гость (голос через ретранслятор не передаётся).
   const MAX_KIDS = 2;
   function tunnel(carrier, cid, fast) { return (x) => { sendLink(carrier, { type: 'rl', c: cid, d: x, f: fast ? 1 : 0 }, fast); }; }
+  // запасной канал: соединение, носитель которого — Nostr-релеи (js/rendezvous.js, DataRelay); ведёт себя как virtual-ссылка (JSON, без пингов и голоса)
+  function relayLink(role, onOut) {
+    const V = newLink(role === 'host' ? 'host' : 'guest', true); V.local = false; V.virtual = true; V.viaRelay = true;
+    V.act.out = (x) => onOut(x, true); V.rel.out = (x) => onOut(x, false);
+    if (!attach(V)) return null;
+    V.state = 'connecting'; V.act.open(); V.rel.open();
+    return { link: V, feed(raw, fast) { try { (fast ? V.act : V.rel).dispatch('message', { data: raw }); } catch (e) { /* ok */ } }, close() { linkGone(V, 'PEER_LEFT'); } };
+  }
   function virtualLink(carrier, cid) {
     const V = newLink('host', true); V.local = false; V.virtual = true; V.carrier = carrier; V.cid = cid;
     V.act.out = tunnel(carrier, cid, true); V.rel.out = tunnel(carrier, cid, false);
@@ -1000,6 +1013,7 @@
   }
   let rttEm = -99;
   function pingTick(L, force) {
+    if (L.viaRelay) return;
     const t = now(), hid = document.hidden, gap = hid ? 2000 : Date.now() - L.openAt < 5000 ? 250 : 1000;
     if (!force && t - (L.pingAt || 0) < gap - 30) return;
     L.pingAt = t; sendLink(L, hid ? { type: 'ping', t, h: 1 } : { type: 'ping', t });
@@ -1007,7 +1021,7 @@
   document.addEventListener('visibilitychange', () => { if (document.hidden) return; R.links.forEach((l) => { if (l.ready) { l.lastRx = now(); pingTick(l, true); } }); });
   function watchTick(L) {
     if (!L.ready) return;
-    const lim = document.hidden || now() - (L.peerHid || -1e9) < 6000 ? Math.max(cfg.silentMs, 20000) : cfg.silentMs;
+    const lim = L.viaRelay ? 45000 : document.hidden || now() - (L.peerHid || -1e9) < 6000 ? Math.max(cfg.silentMs, 20000) : cfg.silentMs;
     if (now() - L.lastRx > lim) markLost(L);
     if (cfg.restartOnRtt && L.pc && L.rttMin > 0) {
       L.hi = L.rtt > L.rttMin * 2 && L.rtt > 80 ? (L.hi || 0) + 1 : 0;
@@ -1116,6 +1130,7 @@
     V.err = null;
     if (!isOpen() || !R.links.length) { V.err = 'NOT_CONNECTED'; voiceEvt(); return { ok: false, err: 'NOT_CONNECTED' }; }
     if (V.mic) return { ok: true };
+    if (R.links.some((l) => l.viaRelay)) { V.err = 'VOICE_RELAY'; voiceEvt(); return { ok: false, err: 'VOICE_RELAY' }; }
     if (R.links.every((l) => !l.pc)) { V.err = 'VOICE_LOCAL'; voiceEvt(); return { ok: false, err: 'VOICE_LOCAL' }; }
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { V.err = 'MIC_UNSUPPORTED'; voiceEvt(); return { ok: false, err: V.err }; }
     try {
@@ -1287,6 +1302,7 @@
   window.addEventListener('pagehide', () => { R.links.forEach((l) => { if (l.ready) sendLink(l, { type: 'bye' }); }); });
 
   window.NexaNet = {
+    relayAllowed: () => true, get viaRelay() { return R.links.some((l) => l.viaRelay && l.opened); },
     setSpectator(on) { spectatorWant = !!on; }, get spectator() { return spectatorWant; }, get spectatorSlots() { return R.links.filter((l) => l.spec && l.opened).map((l) => l.slot); }, probeNat, get natType() { return natType; }, get natBoth() { return R.links.some((l) => l.bothSym); }, VERSION, TELEGRAM, ICE_SERVERS, ICE_SERVERS_EXT, MSG, config: cfg, FAST, MAX_PLAYERS, MAX_BR, MAX_VOICE, setMax(n) { if (R.role !== 'guest') cfg.maxPlayers = Math.max(2, Math.min(MAX_BR, n | 0 || MAX_PLAYERS)); }, RELAY, DIRECT, PID: MYPID,
     supported: () => typeof RTCPeerConnection === 'function',
     canDeflate,
@@ -1306,7 +1322,7 @@
     chat: { send: chatSend, get history() { return chat.history; }, sys: chatSys, clean: cleanChat, clear() { chat.history.length = 0; } },
     voice: { enable: voiceEnable, disable: voiceDisable, setMuted: voiceSetMuted, setVolume: voiceSetVolume, incoming: voiceIncoming, get state() { return voiceState(); }, unlock: playRemote },
     // низкоуровневый доступ для js/rendezvous.js: соединения без ручных кодов
-    rtc: { newOffer, newAnswer, applyAnswer, attach, attachChild, childFree: () => (R.role === 'guest' && R.links[0] && R.links[0].opened ? Math.max(0, MAX_KIDS - R.children.length) : 0), drop: dropLink, connecting: startConnecting, fullSdp: true, free: () => (R.role === 'guest' ? (R.links.length ? 0 : 1) : Math.max(0, cfg.maxPlayers - 1 - R.links.length)) },
+    rtc: { relayLink, newOffer, newAnswer, applyAnswer, attach, attachChild, childFree: () => (R.role === 'guest' && R.links[0] && R.links[0].opened ? Math.max(0, MAX_KIDS - R.children.length) : 0), drop: dropLink, connecting: startConnecting, fullSdp: true, free: () => (R.role === 'guest' ? (R.links.length ? 0 : 1) : Math.max(0, cfg.maxPlayers - 1 - R.links.length)) },
     util: { scrub, cleanName, cleanChat, cleanColor, cleanPid, shrinkSdp, packCode, crc16, rndHex },
     log: () => logBuf.slice()
   };
