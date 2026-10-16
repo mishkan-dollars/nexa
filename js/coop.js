@@ -291,6 +291,7 @@
         case 'ffs': if (!this.host) { this.ff = this.ffAvail && !!p.on; this.ffm = [0.25, 0.5, 1].indexOf(+p.m) >= 0 ? +p.m : 1; this.ffUi(); } break;
         case 'cskip': if (!this.host && this.run.inCinema) this.skipGo = true; break;
         case 'ffk': if (!this.host) this.ffKillMsg(p.a | 0, p.t | 0); break;
+        case 'npc': if (!this.host && Array.isArray(p.a)) this.npcA = p.a.slice(0, 80); break;
         case 'cs': if (!this.host) { const c = p.c | 0, i = p.i | 0; if (!this.cs || c > this.cs.c || (c === this.cs.c && i > this.cs.i)) this.cs = { c, i }; } break;
         case 'sv': if (this.host && this.votes) { if (p.v) this.votes.add(from); else this.votes.delete(from); } break;
         case 'svn': if (!this.host) this.skipTxt(p.a | 0, p.b | 0); break;
@@ -832,6 +833,18 @@
       for (let i = a.length - 1; i >= 0; i -= 1) { if (a[i].t <= t) { const n = a[i + 1]; if (n && n.t > a[i].t) { const k = (t - a[i].t) / (n.t - a[i].t); return { x: a[i].x + (n.x - a[i].x) * k, z: a[i].z + (n.z - a[i].z) * k }; } return a[i]; } p = a[i]; }
       return p;
     }
+    // ---- мирные NPC сценария (r.npc): хост раз в 0,25 с шлёт позиции, у остальных NPC плавно подтягиваются, если разошлись больше чем на 0,5 м
+    npcTick(dt) {
+      const r = this.run, L = r.npcs; if (!L || !L.length) return;
+      if (this.host) {
+        this.npT = (this.npT || 0) + dt; if (this.npT < 0.25) return; this.npT = 0;
+        const a = []; for (let i = 0; i < L.length && i < 40; i += 1) a.push(Math.round(L[i].g.position.x * 20), Math.round(L[i].g.position.z * 20));
+        const key = a.join(','); if (key === this.npK) return; this.npK = key; NN.sendAction({ type: 'cev', k: 'npc', a });
+      } else if (this.npcA) {
+        const a = this.npcA, k = 1 - Math.exp(-dt * 5);
+        for (let i = 0; i < L.length && i * 2 + 1 < a.length; i += 1) { const g = L[i].g.position, dx = a[i * 2] / 20 - g.x, dz = a[i * 2 + 1] / 20 - g.z; if (dx * dx + dz * dz > 0.25) { g.x += dx * k; g.z += dz * k; } }
+      }
+    }
     // ---- зритель (не игрок: без слота игрока, урона и барьеров): камера в глазах выбранного игрока, Q/E/←/→ цель, V вид, кнопка выхода
     defSpec() {
       const r = this.run; this.sp = { slot: 0, fp: true, cf: null, t: 0 };
@@ -957,6 +970,7 @@
       if (this.story && !this.host) this.expireProv();
       this.cineSync();
       this.ffTick(); if (this.spectator) this.specTick(dt);
+      if (this.mode === 'mission' && !this.solo) this.npcTick(dt);
       this.updateAvatars(dt);
       // свои эмоции: сообщаем остальным о начале и конце танца
       const es = r.em && r.em.ses;
