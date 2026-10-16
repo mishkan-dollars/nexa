@@ -114,7 +114,8 @@
       this.kset = {}; this.mk = new Set(); this.ek = {}; this.cinN = 0; this.act = ''; this.snapFull = 0; this.eReq = 0; this.dropCap = null;
       this.remotes = new Map(); this.readySet = new Set();
       this.xs = { ex: 0, ip: 0 }; this.ready = false; this.offs = []; this.sendT = 0; this.snapT = 0; this.hudT = 0; this.lastSend = 0;
-      this.stage = spec.stage | 0; this.stages = {}; this.startSlots = new Set(NN.players.map((x) => x.slot));
+      this.catchTo = spec.late && spec.mode === 'mission' && String(spec.mission) !== '48' ? spec.stage | 0 : 0; this.t0c = performance.now();
+      this.stage = this.catchTo ? 0 : spec.stage | 0; this.stages = {}; this.startSlots = new Set(NN.players.map((x) => x.slot));
       this.byId = new Map(); this.nid = 0; this.dmgBy = 1; this.chatOpen = false; this.lastEm = null; this.cap = null;
       this.hitRate = { t: 0, n: 0 }; this.rng0 = null; this.wave = null; this.pq = []; this.gone = false; this.lastSnapRx = 0; this.lastPos = { x: 1e9, z: 1e9, a: 1e9, c: 0, w: '', h: -1, d: 0, q: 0 };
       this.spectator = !!spec.spectator && spec.role === 'guest'; if (this.spectator) { this.ffAvail = false; this.ff = false; }
@@ -295,6 +296,7 @@
         default: break;
       }
     }
+    catchUp() { return this.catchTo > 0 && this.stage < this.catchTo && performance.now() - this.t0c < 120000; }   // поздний вход: пройденные этапы пропускаются без исполнения
     netUp() { return NN.connected || NN.state === 'lost'; }
     async barrierKey(key, ms) { try { await this.barrierKey0(key, ms); } finally { this.reseed('k:' + key); } }
     async barrierKey0(key, ms) {
@@ -335,6 +337,7 @@
       const r = this.run;
       if (this.solo || this.mode !== 'mission' || !this.votes) return;
       const now = performance.now(), p = r.p;
+      if (this.catchUp() && r.inCinema) this.skipGo = true;
       if (!r.inCinema) {
         if (this.skipGo || this.votes.size || this.myV) { this.skipGo = false; this.votes.clear(); this.myV = false; this.skipTxt(0, 0); }
         const mv = (o, x, z, a) => Math.abs(o.lx - x) > 0.05 || Math.abs(o.lz - z) > 0.05 || Math.abs(o.la - a) > 0.02;
@@ -1089,7 +1092,7 @@
     if (co && co.story && co.host && !co.solo && a[0] && a[0].nid > 0) { co.dropCap = []; try { return o.apply(this, a); } finally { co.dropCap = null; } }
     return o.apply(this, a);
   });
-  wrap1('phase', function (o, a) { const co = this.__co, p = o.apply(this, a); return co && co.mode === 'mission' && !co.solo ? p.then((v) => co.barrier().then(() => v)) : p; });
+  wrap1('phase', function (o, a) { const co = this.__co; if (co && co.catchUp && co.catchUp() && typeof a[1] === 'function') a = [a[0], () => Promise.resolve()].concat(Array.prototype.slice.call(a, 2)); const p = o.apply(this, a); return co && co.mode === 'mission' && !co.solo ? p.then((v) => co.barrier().then(() => v)) : p; });
   wrap1('cinematic', function (o, a) {
     const co = this.__co;
     if (co && co.mode === 'mission' && !co.solo && String(this.taskId) === '48' && !this.inCinema && !this.cineInsert) return co.barrierKey('c:' + co.act + ':' + (++co.cinN), 20000).then(() => o.apply(this, a));

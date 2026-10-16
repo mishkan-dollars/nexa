@@ -218,6 +218,7 @@
     r.kick(kick[0], kick[1] * sg, kick[2] * sg, kick[3]);
     s.hs = heavy ? 0.07 : 0.04;
     r.rumble && r.rumble(heavy ? 0.9 : 0.5, 0.5, heavy ? 140 : 90);
+    { const fh = r.rg && r.rg.fh; if (fh) fh.blood = Math.min(1, (fh.blood || 0) + (heavy ? 0.4 : 0.22)); }
   }
   function hitEnemy(r, s, e, o, dx, dz) {
     const T = e.t, sc = T.scale || 1, g = e.n.g;
