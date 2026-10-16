@@ -6,7 +6,7 @@
   const online = () => { try { return !!(window.NexaNet && NexaNet.connected) || !!(window.NexaRoom && NexaRoom.servers.on && NexaRoom.consented()); } catch (e) { return false; } };
   const block = () => online() && (st.dev || !st.integ);
   const flags = () => (st.dev ? 1 : 0) | (st.integ ? 0 : 2) | (window.Toys && Toys.tampered ? 4 : 0);
-  let trap = false, big = 0, calm = 0, bar = null;
+  let trap = false, trapSeen = false, tk = 0, big = 0, calm = 0, bar = null;
   const bait = new Image();
   try { Object.defineProperty(bait, 'id', { get() { trap = true; return ''; } }); } catch (e) { /* ok */ }
 
@@ -14,9 +14,8 @@
     if (touch || document.hidden) return;
     const wide = !document.fullscreenElement && (outerWidth - innerWidth > 250 || outerHeight - innerHeight > 330);
     big = wide ? big + 1 : 0;
-    trap = false;
-    if (online()) { try { console.log(bait); } catch (e) { /* ok */ } }
-    if (trap || big >= 3) { st.dev = true; calm = 0; } else if (st.dev && (calm += 1) >= 2) st.dev = false;
+    if (online() && (tk += 1) % 10 === 1) { trap = false; try { console.debug(bait); } catch (e) { /* ok */ } trapSeen = trap; }   // ловушка раз в ~30 с и на уровне verbose: консоль не засоряется <img>
+    if (trapSeen || big >= 3) { st.dev = true; calm = 0; } else if (st.dev && (calm += 1) >= 2) st.dev = false;
     paint();
   }
   function paint() {

@@ -44,7 +44,8 @@
     d.style.cssText = 'position:fixed;left:50%;top:14px;transform:translateX(-50%);z-index:99999;background:#0b1d12;color:#7dffb0;border:1px solid #7dffb0;padding:8px 14px;font:700 13px monospace;letter-spacing:.06em;max-width:90vw;text-align:center';
     d.textContent = msg; document.body.appendChild(d); setTimeout(() => d.remove(), 6000);
   }
-  const log = (...a) => { try { console.log('[admin]', ...a); } catch (e) { /* ok */ } };
+  const DBG = (() => { try { return /[?&]adminlog\b/.test(location.search) || localStorage.getItem('nexaAdminLog') === '1'; } catch (e) { return false; } })();
+  const log = (...a) => { if (DBG) { try { console.log('[admin]', ...a); } catch (e) { /* ok */ } } };   // по умолчанию тихо: релеи часто отвергают чужие kind и спам
   const D = { bans: 0, applied: 0, grants: 0, granted: 0, refused: 0, why: '', rej: {}, lastSync: 0, lastBan: 0 };
   const nacked = new Set(), lastAck = {};
   const rej = (why) => { D.rej[why] = (D.rej[why] || 0) + 1; log('rejected:', why); };
@@ -56,7 +57,21 @@
     const SV = window.NexaServers; return (o.length ? o : (SV ? SV.NOSTR_VERIFIED : [])).slice(0, POOL);
   };
   const chOpen = () => Array.from(CH.socks.values()).filter((r) => r.open);
-  const chSend = (m) => { const j = typeof m === 'string' ? m : JSON.stringify(m); chOpen().forEach((r) => { try { r.ws.send(j); } catch (e) { /* ok */ } }); return chOpen().length; };
+  // не шлём на релей то, что он уже отверг: по kind — навсегда, по спаму/лимиту — пауза 10 мин, после трёх отказов подряд — релей на 30 мин в отставку
+  const chSend = (m) => {
+    const ev = typeof m !== 'string' && m && m[0] === 'EVENT' ? m[1] : null, j = typeof m === 'string' ? m : JSON.stringify(m);
+    chOpen().forEach((r) => {
+      if (ev && (r.rejK.has(ev.kind) || r.mute > Date.now())) return;
+      try { r.ws.send(j); if (ev && ev.id) { r.sent.set(ev.id, ev.kind); if (r.sent.size > 40) r.sent.delete(r.sent.keys().next().value); } } catch (e) { /* ok */ }
+    });
+    return chOpen().length;
+  };
+  function refused(r, id, why) {
+    const k = r.sent.get(id), w = String(why || '');
+    if (/kind|blocked|not accepted|unsupported|disallow|restricted|not allowed/i.test(w) && k) { r.rejK.add(k); return; }
+    r.mute = Date.now() + 600000; r.nrej += 1;
+    if (r.nrej >= 3 || /pow|proof|paid|payment|auth|whitelist/i.test(w)) { CH.bad[r.url] = Date.now() + 1800000; try { r.ws.close(); } catch (e) { /* ok */ } }
+  }
   function reqs(r) {
     const pk = T.ident.pk, t = sec() - 900; if (!pk) return;
     const send = (id, f) => { try { r.ws.send(JSON.stringify(['REQ', id].concat(f))); } catch (e) { /* ok */ } };
@@ -67,7 +82,7 @@
   }
   function chConnect(url) {
     let ws; try { ws = new WebSocket(url); } catch (e) { CH.bad[url] = Date.now() + 60000; return; }
-    const r = { ws, url, open: false }; CH.socks.set(url, r);
+    const r = { ws, url, open: false, rejK: new Set(), sent: new Map(), mute: 0, nrej: 0 }; CH.socks.set(url, r);
     const drop = () => { CH.socks.delete(url); CH.bad[url] = Date.now() + 30000; };
     const to = setTimeout(() => { if (!r.open) { try { ws.close(); } catch (e) { /* ok */ } drop(); } }, 7000);
     ws.onopen = () => { r.open = true; clearTimeout(to); log('relay up', url, '(' + chOpen().length + ')'); reqs(r); presence(); };
@@ -75,7 +90,9 @@
       let j; try { j = JSON.parse(m.data); } catch (e) { return; }
       if (!Array.isArray(j)) return;
       if (j[0] === 'EOSE' && /^adm-bans/.test(j[1])) { D.lastSync = Date.now(); return; }
-      if (j[0] === 'OK' && j[2] === false) { log('relay refused our event', url, String(j[3] || '').slice(0, 80)); return; }
+      if (j[0] === 'OK' && j[2] === false) { log('relay refused our event', url, String(j[3] || '').slice(0, 80)); refused(r, j[1], j[3]); return; }
+      if (j[0] === 'OK' && j[2] === true) { r.nrej = 0; return; }
+      if (j[0] === 'NOTICE' && /spam|rate|slow|too many/i.test(String(j[1] || ''))) { r.mute = Date.now() + 600000; r.nrej += 1; return; }
       if (j[0] !== 'EVENT' || !j[2]) return;
       const e = j[2];
       if (/^adm-bans/.test(j[1])) { D.lastSync = Date.now(); onBanEv(e); } else if (/^adm-grant/.test(j[1])) onGrant(e);
