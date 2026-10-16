@@ -550,7 +550,7 @@
       '  result: ' + (A.ok ? 'connected in ' + A.okAt + ' ms' : A.fail ? 'failed (' + A.fail + ')' : 'in progress / no verdict') + (A.why ? ', reason: ' + A.why : ''),
       '  local candidates: ' + ct(A.loc), '  remote candidates: ' + ct(A.rem), '  first public candidate: ' + (A.firstPub >= 0 ? A.firstPub + ' ms' : 'none')];
     a.push('  STUN' + (A.noUrl ? ' (browser reports the server for some candidates only)' : '') + ':');
-    A.stun.forEach((x) => a.push('    ' + x.u + ' - ' + (x.ok ? 'answered in ' + x.ms + ' ms' : x.err ? 'error ' + (x.code || '?') + (x.code === 701 ? ' (no answer)' : '') : 'no answer')));
+    A.stun.forEach((x, i) => a.push('    stun ' + (i + 1) + ' - ' + (x.ok ? 'answered in ' + x.ms + ' ms' : x.err ? 'error ' + (x.code || '?') + (x.code === 701 ? ' (no answer)' : '') : 'no answer')));
     a.push('  ice events (ms): ' + (A.ev.length ? A.ev.map((e) => e[0] + ' ' + e[1]).join(', ') : 'none'));
     return a;
   }
@@ -561,7 +561,7 @@
     const a = ['NEXA network report', 'time: ' + new Date().toISOString(), 'game: net.js v' + sv('net.js') + ', onlinelobby.js v' + sv('onlinelobby.js') + (q ? ', url v=' + q[1] : ''),
       'userAgent: ' + navigator.userAgent, 'language: ' + (navigator.language || '?'), 'state: ' + NN.state + ', role: ' + (NN.role || '-') + ', uptime: ' + (st.up | 0) + ' s',
       'mode: ' + L.mode + (L.mode === 'mission' ? ' ' + L.mission : '') + (window.NexaCoop && NexaCoop.active ? ' (in match)' : ''), 'players: ' + (NN.connected ? NN.players.length + 1 : 1),
-      'relays online/total: ' + (sm ? sm.online + '/' + sm.total + ' (found ' + sm.found + ', in use ' + sm.active + ', down ' + sm.down + ')' : 'n/a'), 'rtt: ' + (NN.rtt || 0) + ' ms'];
+      'nodes online/total: ' + (sm ? sm.online + '/' + sm.total + ' (found ' + sm.found + ', in use ' + sm.active + ', down ' + sm.down + ')' : 'n/a'), 'rtt: ' + (NN.rtt || 0) + ' ms'];
     if (ls) {
       a.push('dropBuf: ' + ls.dropBuf + ', dropRel: ' + ls.dropRel + ', dropPing: ' + ls.dropPng + ', thinned: ' + ls.thinned + ', loop lag max 10 s: ' + ls.lag + ' ms, longtask max 10 s: ' + ls.lt + ' ms');
       if (!ls.links.length) a.push('links: none');
@@ -892,7 +892,7 @@
         const li = document.createElement('li'); li.className = 'srv st-' + s.state;
         const dot = document.createElement('i'); dot.setAttribute('aria-hidden', 'true');
         const nm = document.createElement('b'); nm.setAttribute('translate', 'no'); nm.textContent = s.host;
-        const ty = document.createElement('em'); ty.setAttribute('translate', 'no'); ty.textContent = s.type;
+        const ty = document.createElement('em'); ty.setAttribute('translate', 'no'); ty.textContent = '';
         const st = document.createElement('span'); st.textContent = SRV_TXT[s.state] || SRV_TXT.idle;
         const ms = document.createElement('small'); ms.setAttribute('translate', 'no'); ms.textContent = s.ms && (s.state === 'online' || s.state === 'active') ? s.ms + ' ms' : '';
         li.appendChild(dot); li.appendChild(nm); li.appendChild(ty); li.appendChild(ms); li.appendChild(st);

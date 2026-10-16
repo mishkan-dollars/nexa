@@ -80,8 +80,15 @@
     return url.protocol === 'ws:' && loopback(u);     // ws:// — только петля (тесты); публичные — только wss://
   }
   const validTracker = validServer;
-  const lbl = (u) => (loopback(u) ? u.replace(/^wss?:\/\//, '') : hostLabel(u));
-  const hostLabel = (u) => { try { const h = new URL(u); return loopback(u) ? 'localhost (test)' : h.hostname + (h.port && h.port !== '443' ? ':' + h.port : ''); } catch (e) { return 'server'; } };
+  const NODES = new Map();
+  const hostLabel = (u) => {
+    if (!NODES.has(u)) {
+      try { serverEntries().forEach((e) => { if (!NODES.has(e.url)) NODES.set(e.url, NODES.size + 1); }); } catch (e) { /* ok */ }
+      if (!NODES.has(u)) NODES.set(u, NODES.size + 1);
+    }
+    return 'NODE ' + String(NODES.get(u)).padStart(2, '0');
+  };
+  const lbl = hostLabel;
   function paramList(name) {
     try { const q = new URLSearchParams(location.search).getAll(name).join(','); return q ? q.split(',') : null; } catch (e) { return null; }
   }
