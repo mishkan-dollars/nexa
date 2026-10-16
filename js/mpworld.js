@@ -88,7 +88,7 @@
       S.offs.push(NN.on(TYPE, onMsg));
       S.offs.push(NN.on('net:roster', () => { if (!NN.isHost) return; NN.players.forEach((x) => { if (!S.known.has(x.slot)) { S.known.add(x.slot); snapTo(x.slot); } }); }));
       S.offs.push(NN.on('net:left', () => { if (NN.isHost) expire(); }));
-      run.hooks.push((dt) => { S.t += dt; if (NN.isHost && S.t > 0.5) { S.t = 0; expire(); } try { blocking(run); } catch (e) { /* ok */ } });
+      run.hooks.push((dt) => { liftSync(run, dt); S.t += dt; if (NN.isHost && S.t > 0.5) { S.t = 0; expire(); } try { blocking(run); } catch (e) { /* ok */ } });
       if (!NN.isHost) NN.sendAction({ type: TYPE, o: 'hi' });
       wireSignals(run); wireWorld(run);
     },
@@ -113,9 +113,16 @@
     on('bk:*', (k) => { const b = (r.breakables || []).find((x) => x.mpk === k); if (b && !b.broken) r.shatter(b); });
     on('dr:*', (k) => { const d = r.mpDoors && r.mpDoors.get(k); if (d && !(d.userData.col && d.userData.col.off)) r.openDoor(d, 0.6); });
     on('pk:*', (k) => { const cb = r.cb; if (!cb) return; const i = cb.pickups.findIndex((x) => x.mpk === k && !x.dead); if (i >= 0) { const x = cb.pickups[i]; x.dead = true; x.mpRem = true; x.g.visible = false; cb.pickups.splice(i, 1); } });
+    on('lf:*', (k, q) => { const L = r.mpLifts && r.mpLifts[k]; if (L && q.v && typeof q.v.k === 'number' && Math.abs((L.k || 0) - q.v.k) > 0.05) L.set(q.v.k); });
     on('bl:*', (k) => { const b = r.cb && r.cb.shoot.find((x) => x.mpk === k && x.alive); if (b) b.damage(99); });
     on('al:*', (k, q) => { const o = r.mpStealth && r.mpStealth[k]; if (o && !o.S.alarm) o.a0.call(o.S, q.v); });
     on('cd:*', (k, q) => { const o = r.mpCd && r.mpCd[k]; if (o && o.on && !NN.isHost && q.v && Math.abs(o.left - q.v.l) > 0.5) o.left = q.v.l; });
+  }
+  // лифты миссии 48: хост раз в 0,5 с публикует положение кабины/дверей, когда оно перестало меняться; у остальных конечное состояние подтягивается (пропущенные и опоздавшие твины, поздний вход)
+  function liftSync(r, dt) {
+    if (!NN.isHost || !r.mpLifts || !live(r)) return;
+    r.mpLT = (r.mpLT || 0) + dt; if (r.mpLT < 0.5) return; r.mpLT = 0;
+    Object.keys(r.mpLifts).forEach((key) => { const L = r.mpLifts[key], k = L.k || 0; if (L.mpLast !== undefined && Math.abs(k - L.mpLast) < 0.002) { const cur = W.get(key); if (!cur || Math.abs(cur.k - k) > 0.01) W.set(key, { k: Math.round(k * 1000) / 1000 }); } L.mpLast = k; });
   }
   const progress = () => { let n = 0; S.recs.forEach((q) => { if (q.v === 'done') n += 1; }); return n; };
 
@@ -236,6 +243,12 @@
     if (gz0) RunP.gaze = function () { const co = this.__co; if (co && co.catchUp && co.catchUp()) return Promise.resolve(); return gz0.apply(this, arguments); };
     const say0 = RunP.say;
     if (say0) RunP.say = function () { const co = this.__co; if (co && co.catchUp && co.catchUp()) return Promise.resolve(); return say0.apply(this, arguments); };
+    const F48 = window.Missions && window.Missions._core && window.Missions._core.f48;
+    if (F48 && F48.lift && !F48.lift.__mp) {
+      const lift0 = F48.lift;
+      F48.lift = function (R) { const L = lift0.apply(this, arguments), r = R && R.world && R.world.r; if (r && L && live(r)) { const key = 'lf:' + scope(r) + ':' + (r.mpLN = (r.mpLN | 0) + 1); (r.mpLifts || (r.mpLifts = {}))[key] = L; } return L; };
+      F48.lift.__mp = true;
+    }
     const hack0 = RunP.hack;
     if (hack0) RunP.hack = function () { if (this.__mpAuto) return Promise.resolve(true); return hack0.apply(this, arguments); };
 
