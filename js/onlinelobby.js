@@ -66,15 +66,15 @@
   const COLOR_NAMES = ['Red', 'Orange', 'Yellow', 'Green', 'Blue', 'Indigo', 'Purple', 'White'];
 
   function srvHTML(id) {
-    return '<section class="ol-srv" data-srv="' + id + '"><div class="srv-h"><h3>SIGNALING SERVERS</h3><b class="srv-count"></b></div>' +
-      '<p class="cn-priv">Public servers only pass the short connection messages. The game, chat and voice go directly between players. Without servers the manual codes below always work.</p>' +
-      '<div class="srv-row"><label class="cn-lan"><input type="checkbox" class="srv-on"><span>USE SIGNALING SERVERS (off = manual mode only)</span></label>' +
+    return '<section class="ol-srv" data-srv="' + id + '"><div class="srv-h"><h3>NODES</h3><b class="srv-count"></b></div>' +
+      '<p class="cn-priv">Nodes only pass the connection handshake. Game, chat and voice go directly between players.</p>' +
+      '<div class="srv-row"><label class="cn-lan"><input type="checkbox" class="srv-on"><span>USE NODES (off: manual mode only)</span></label>' +
         '<button type="button" class="ol-btn" data-act="srv-probe">CHECK SERVERS</button></div>' +
       '<ul class="srv-list" role="list"></ul></section>';
   }
 
   function shell() {
-    const tabs = [['play', 'PLAY'], ['public', 'PUBLIC'], ['trade', 'TRADES'], ['social', 'SOCIAL'], ['profile', 'PROFILE'], ['connect', 'CONNECTION'], ['rules', 'RULES']].filter((x) => TRADES_ENABLED || x[0] !== 'trade');
+    const tabs = [['play', 'PLAY'], ['public', 'PUBLIC'], ['trade', 'TRADES'], ['social', 'SOCIAL'], ['profile', 'PROFILE'], ['connect', 'CONNECTION'], ['rules', 'RULES']].filter((x) => (TRADES_ENABLED || x[0] !== 'trade') && (window.__ONLINE !== 0 || ['play', 'profile', 'rules'].indexOf(x[0]) >= 0));
     return '<div class="ol" id="ol" data-i18n="net" data-tab="play" data-state="idle">' +
       '<div class="ol-bg" aria-hidden="true"><i class="ol-moon"></i><i class="ol-haze"></i></div>' +
       '<div class="ol-stage" id="ol-stage"><div class="ol-floor"></div>' +
@@ -93,7 +93,7 @@
       '</header>' +
       '<main class="ol-main">' + paneHTML() + '</main>' +
       '<div class="ol-cd" id="ol-cd" hidden><div><small>THE MATCH STARTS IN</small><b translate="no">3</b></div></div>' +
-      '<div class="rl-bar" id="rl-bar"><span>AS IS, P2P: ROOM MEMBERS MAY SEE YOUR IP; YOUR BALANCE IS STORED IN YOUR BROWSER.</span> <button type="button" data-act="rules-open">DISCLAIMER · DETAILS</button></div>' +
+      '<div class="rl-bar" id="rl-bar"><button type="button" data-act="rules-open">RULES</button></div>' +
       '<div class="ol-toast" id="ol-toast" role="status" aria-live="polite"></div>' +
       '<div class="ol-modal" id="ol-pick" hidden role="dialog" aria-modal="true" aria-label="Choose a mode"></div>' +
       '<div class="ol-modal" id="ol-card" hidden role="dialog" aria-modal="true" aria-label="Player profile"></div>' +
@@ -138,7 +138,7 @@
       '<div class="pb-priv"><h3>PRIVATE ROOM BY NAME</h3><div class="pf-nm"><input type="text" id="pr-name" maxlength="24" spellcheck="false" autocomplete="off" aria-label="Room name" placeholder="room-name"><button type="button" class="ol-btn" data-act="pr-create">CREATE</button><button type="button" class="ol-btn" data-act="pr-join">JOIN</button></div>' +
         '<p class="cn-priv">Anyone who knows the room name can join — pick a long, unusual name and share it only with friends.</p><p class="v-note" id="pr-note"></p></div>' +
       srvHTML('pub') +
-      '<p class="cn-priv">Strangers in public rooms and the signaling servers can technically see your network address (WebRTC); a VPN hides it. Public chat is not moderated: you can mute or report any player.</p>' +
+      '<p class="cn-priv">Players in public rooms and the nodes can see your network address (WebRTC). A VPN hides it. Chat is not moderated; mute or report players.</p>' +
     '</div></section>' +
     // -------- TRADES: передача KP игрокам комнаты
     '<section class="ol-pane ol-sheet" data-pane="trade"><div class="sh-in">' +
@@ -162,7 +162,7 @@
     '<section class="ol-pane ol-sheet" data-pane="connect"><div class="sh-in">' +
       '<ol class="cn-steps" id="cn-steps"><li>INVITE</li><li>ANSWER</li><li>LINK</li><li>PLAY</li></ol>' +
       '<div class="cn-bar"><b id="cn-state">NOT CONNECTED</b><span id="cn-time" translate="no"></span><button type="button" class="ol-btn danger" data-act="disconnect" id="cn-dis" hidden>DISCONNECT</button><button type="button" class="ol-btn" data-act="net-report" id="cn-rep">COPY NETWORK REPORT</button></div>' +
-      '<article class="cn-card cn-room" id="cn-room"><h3>ONE-CLICK INVITE LINK</h3><p class="cn-p">Create a room and send the link. Your friend opens it and connects automatically — no codes. Several friends can join one link (up to 6 players).</p>' +
+      '<article class="cn-card cn-room" id="cn-room"><h3>ONE-CLICK INVITE LINK</h3><p class="cn-p">Create a room and send the link. Up to 6 players.</p>' +
         '<button type="button" class="ol-btn big" data-act="room-create" id="rm-create">CREATE ROOM LINK</button>' +
         '<div class="cn-out" id="rm-out" hidden><label for="rm-link">ROOM LINK</label><textarea id="rm-link" readonly rows="2" spellcheck="false"></textarea>' +
           '<div class="pf-btns"><button type="button" class="ol-btn" data-act="copy" data-v="rm-link">COPY LINK</button><button type="button" class="ol-btn danger" data-act="room-close">CLOSE ROOM</button></div>' +
@@ -171,7 +171,7 @@
       '<article class="cn-card cn-local" id="cn-local"><h3>THIS COMPUTER</h3><p class="cn-p">Two tabs or windows of the same browser (not private windows): no codes, no internet, no servers. Open the room in one tab, join it in the other.</p>' +
         '<div class="pf-btns"><button type="button" class="ol-btn" data-act="local-host" id="lc-host">OPEN A ROOM HERE</button><button type="button" class="ol-btn" data-act="local-join" id="lc-join">JOIN A ROOM HERE</button></div><p class="v-note" id="lc-note"></p></article>' +
       '<details class="cn-manual" open><summary>MANUAL CONNECTION (works without servers)</summary>' +
-      '<p class="cn-priv" id="cn-hint">Do all steps within 1–2 minutes: every code is single-use. If it does not connect, press TRY AGAIN and start over with a new invitation.</p>' +
+      '<p class="cn-priv" id="cn-hint">Codes are single-use and expire in 1–2 minutes. If it fails, start over.</p>' +
       '<div class="cn-cols">' +
         '<article class="cn-card" id="cn-host"><h3>HOST</h3><p class="cn-p">You are player 1. Create an invitation and send the link to your friend.</p>' +
           '<button type="button" class="ol-btn big" data-act="host-create" id="h-create">CREATE INVITATION</button>' +
@@ -189,8 +189,8 @@
       '<div class="cn-diag" id="cn-diag" hidden><p class="v-note bad" id="cn-diag-t"></p><p class="v-note" id="cn-diag-c" translate="no"></p><button type="button" class="ol-btn big" data-act="manual-retry">TRY AGAIN</button></div>' +
       '</details>' +
       '<div class="cn-foot"><label class="cn-lan"><input type="checkbox" id="cn-lan"><span>SAME WI-FI / LAN MODE (less private, helps when both of you are on one network)</span></label>' +
-        '<p class="cn-priv" id="cn-priv">Your IP address is never shown in the game. With a direct P2P link your friend\'s browser can technically see your network address (a WebRTC property); a VPN hides it.</p>' +
-        '<p class="cn-priv">The invitation code carries your connection data in encoded form — send it only to your friend. On itch.io the game frame needs allow="microphone" for voice chat.</p></div>' +
+        '<p class="cn-priv" id="cn-priv">A direct link exposes your network address to the other player (WebRTC). A VPN hides it.</p>' +
+        '<p class="cn-priv">The code holds your connection data. Send it only to your friend.</p></div>' +
     '</div></section>';
   }
 
@@ -233,8 +233,8 @@
     let label = 'PLAY', dis = false, hn = '';
     if (L.cd) { label = 'STARTING…'; dis = true; }
     else if (qmOnMode()) { const n = NN.connected ? NN.count : 1; label = QM.on ? (QM.host && n >= 2 ? 'START NOW' : 'CANCEL') : 'READY'; dis = !isHostSide() && NN.connected && !QM.on; hn = dis ? 'THE MATCH STARTS WHEN THE HOST BEGINS' : QM.on ? (QM.host ? 'WAITING FOR PLAYERS — START NOW WITH 2 OR MORE' : 'SEARCHING FOR PLAYERS') : 'PRESS READY TO FIND A MATCH'; }
-    else if (!NN.connected) { label = 'PLAY'; hn = 'SOLO — OPEN CONNECTION TO PLAY WITH A FRIEND'; }
-    else if (NN.isHost) { if (!NN.players.length) { hn = 'SOLO — OPEN CONNECTION TO PLAY WITH A FRIEND'; } else if (!guestsReady()) { dis = true; hn = NN.players.length > 1 ? 'WAITING FOR ALL PLAYERS TO PRESS READY' : 'WAITING FOR YOUR FRIEND TO PRESS READY'; } else hn = NN.players.length > 1 ? 'ALL PLAYERS ARE READY' : 'YOUR FRIEND IS READY'; }
+    else if (!NN.connected) { label = 'PLAY'; hn = ''; }
+    else if (NN.isHost) { if (!NN.players.length) { hn = ''; } else if (!guestsReady()) { dis = true; hn = NN.players.length > 1 ? 'WAITING FOR ALL PLAYERS TO PRESS READY' : 'WAITING FOR YOUR FRIEND TO PRESS READY'; } else hn = NN.players.length > 1 ? 'ALL PLAYERS ARE READY' : 'YOUR FRIEND IS READY'; }
     else { label = L.ready ? 'CANCEL' : 'READY'; hn = L.ready ? 'WAITING FOR THE HOST TO START' : 'PRESS READY WHEN YOU ARE SET'; }
     if (!qmOnMode() && (L.mode === 'pvp' || (L.mode === 'ffa' && inRoom() && !QM.on)) && !L.cd && isHostSide()) { const n = NN.connected ? NN.players.length + 1 : 1; if (n < 2 || (curCfg().kind === 'duel' && n !== 2)) { dis = true; hn = n < 2 ? 'PVP NEEDS 2–6 PLAYERS — OPEN CONNECTION' : 'DUEL NEEDS EXACTLY 2 PLAYERS'; } }
     voteUi(hint);
@@ -907,7 +907,7 @@
         const mk = (tag, txt, nt) => { const e = document.createElement(tag); if (nt) e.setAttribute('translate', 'no'); e.textContent = txt; la.appendChild(e); la.appendChild(document.createTextNode(' ')); };
         mk('em', 'LAST ATTEMPT');
         if (L.ok) { mk('span', 'CONNECTED IN ' + (L.ms / 1000).toFixed(1) + ' S, ROUND ' + L.rounds); if (L.via) mk('b', L.via, true); }
-        else { mk('span', 'NO CONNECTION AFTER ' + L.rounds + ' ROUNDS'); mk('small', 'SERVERS ' + L.up + ' OF ' + L.total); mk('i', L.why === 'servers' ? 'NO SIGNALING SERVER REACHABLE' : L.why === 'ice' ? 'DIRECT CONNECTION FAILED (NAT / FIREWALL)' : 'NO ANSWER FROM THE HOST - IS THE ROOM OPEN?'); }
+        else { mk('span', 'NO CONNECTION AFTER ' + L.rounds + ' ROUNDS'); mk('small', 'SERVERS ' + L.up + ' OF ' + L.total); mk('i', L.why === 'servers' ? 'NO NODE REACHABLE' : L.why === 'ice' ? 'DIRECT CONNECTION FAILED (NAT / FIREWALL)' : 'NO ANSWER FROM THE HOST - IS THE ROOM OPEN?'); }
         const A = NN.lastAttempt ? NN.lastAttempt() : null;
         if (A) {
           const k = A.ok ? '' : A.why === 'no-srflx' ? 'ICE: NO PUBLIC ADDRESS (STUN SILENT)' : A.why === 'remote-no-srflx' ? 'ICE: FRIEND HAS NO PUBLIC ADDRESS' : A.why === 'no-pairs' ? 'ICE: NO CONNECTION CHECKS STARTED' : A.why === 'checking-failed' ? 'ICE: CHECKS FAILED (STRICT NAT)' : A.why === 'disconnected' ? 'ICE: LINK DROPPED' : A.why === 'timeout' ? 'ICE: TIMED OUT' : '';
@@ -1001,8 +1001,8 @@
     const el = $('#ol-consent'); if (!el) return;
     L.consentNext = next;
     el.innerHTML = '<div class="pk-box"><div class="pk-h"><h3>PUBLIC PLAY</h3><button type="button" class="ol-ic" data-act="consent-no" aria-label="Close">×</button></div>' +
-      '<p class="cn-p">Public rooms and quick play connect you to strangers through free public servers.</p>' +
-      '<ul class="cs-list"><li>The signaling servers and the other players can technically see your network address (WebRTC / P2P). To hide it you need a VPN.</li>' +
+      '<p class="cn-p">Public rooms connect you with strangers.</p>' +
+      '<ul class="cs-list"><li>Other players and the nodes can see your network address (WebRTC). A VPN hides it.</li>' +
       '<li>The public chat is not moderated. You can mute or report any player at any time.</li>' +
       '<li>Strangers\' voice is off by default. Your nickname is visible to everyone in the room.</li>' +
       '<li>No account or personal data is sent — only your nickname, color and level.</li></ul>' +

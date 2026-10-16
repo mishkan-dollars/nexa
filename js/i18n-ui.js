@@ -60,7 +60,7 @@
     // ---------------------------------------------------------------- загрузка данных (preload.js)
     'NEXA INDUSTRIES / TERMINAL 083': ['NEXA INDUSTRIES / ТЕРМИНАЛ 083', 'NEXA INDUSTRIES / TERMINAL 083'],
     'DOWNLOADING GAME DATA': ['ЗАГРУЗКА ДАННЫХ ИГРЫ', 'SPIELDATEN WERDEN GELADEN'],
-    'First launch only. Sounds, textures and models are stored on this device — the next launch starts instantly.': ['Только при первом запуске. Звуки, текстуры и модели сохраняются на этом устройстве — следующий запуск будет мгновенным.', 'Nur beim ersten Start. Sounds, Texturen und Modelle werden auf diesem Gerät gespeichert — der nächste Start erfolgt sofort.'],
+    'Loads once. Data stays on this device.': ['Загрузка один раз. Данные остаются на устройстве.', 'Einmalig. Die Daten bleiben auf dem Gerät.'],
     'PREPARING...': ['ПОДГОТОВКА...', 'VORBEREITUNG...'],
     '[ ENTER SYSTEM ]': ['[ ВОЙТИ В СИСТЕМУ ]', '[ SYSTEM BETRETEN ]'],
     '[ RETRY ]': ['[ ПОВТОРИТЬ ]', '[ ERNEUT VERSUCHEN ]'],

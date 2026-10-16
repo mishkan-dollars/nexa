@@ -167,8 +167,9 @@
       const hintEl = this.qs('.m-hint');
       hintEl.textContent = this.touch ? '' : ['forward', 'left', 'back', 'right'].map(KL).join('') + ' MOVE  |  MOUSE LOOK  |  ' + KL('use') + ' INTERACT  |  ' + KL('run') + ' RUN  |  ESC PAUSE';
       // подсказка клавиш видна ~12 с после каждой смены текста и потом гаснет; полный список — в меню паузы
-      const hintHide = () => { if (/(cine|bars|cinema)/.test(this.layer.className)) this.hintTm = setTimeout(hintHide, 1500); else hintEl.classList.remove('show'); };   // во время катсцены отсчёт стоит
-      const hintShow = this.hintPoke = () => { if (!hintEl.textContent) return; hintEl.classList.add('show'); clearTimeout(this.hintTm); this.hintTm = setTimeout(hintHide, 12000); };
+      let ctlSeen = false; try { ctlSeen = !!localStorage.getItem('nexaCtl1'); } catch (e) { /* ok */ }
+      const hintHide = () => { if (/(cine|bars|cinema)/.test(this.layer.className)) this.hintTm = setTimeout(hintHide, 1500); else { hintEl.classList.remove('show'); ctlSeen = true; try { localStorage.setItem('nexaCtl1', '1'); } catch (e) { /* ok */ } } };   // во время катсцены отсчёт стоит
+      const hintShow = this.hintPoke = () => { if (ctlSeen || !hintEl.textContent) return; hintEl.classList.add('show'); clearTimeout(this.hintTm); this.hintTm = setTimeout(hintHide, 12000); };
       new MutationObserver(hintShow).observe(hintEl, { childList: true, characterData: true, subtree: true });
       hintShow();
       // viewport без zoom только на время миссии

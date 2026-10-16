@@ -32,7 +32,7 @@
     },
     kb: {},                  // действие → [коды клавиш]; пусто — по умолчанию
     pad: { map: {}, swap: false, invertY: false, dead: 0, sens: 100, trig: 35, rumble: true },
-    touch: { scale: 100, opacity: 85, lefty: false, stick: 'float', look: 100, dead: 10, haptics: true, spread: 100, hints: true }
+    touch: { scale: 100, opacity: 85, lefty: false, stick: 'float', look: 100, dead: 10, haptics: true, spread: 100, hints: false }
   };
 
   // ------------------------------------------------------------------ действия клавиатуры

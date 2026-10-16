@@ -23,11 +23,11 @@
   const now = () => Date.now();
 
   Object.assign(NN.MSG, {
-    NO_TRACKER: 'The meeting servers (public WebTorrent trackers) are not reachable. Use the manual connection with codes — it works without them.',
+    NO_TRACKER: 'Nodes unreachable. Use the manual connection with codes.',
     TRACKER_TIMEOUT: 'No answer from your friend yet. Check that the host keeps the game open, or use the manual connection with codes.',
     ROOM_BAD: 'This room link is not valid.',
     ROOM_NAME_BAD: 'Use 3–24 letters, digits, - or _ for the room name.',
-    SERVERS_OFF: 'Signaling servers are switched off. Use the manual connection with codes.',
+    SERVERS_OFF: 'Nodes are off. Use the manual connection with codes.',
     ROOM_GONE: 'The room is no longer available.',
     QUICK_TIMEOUT: 'No players found right now. Create a public room and wait for others.',
     PUBLIC_OFF: 'Public rooms need your consent first.',

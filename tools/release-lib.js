@@ -79,7 +79,7 @@ function encServers(src, re) {
   const dec = "const _d=(s)=>{const b=atob(s);let r='';for(let i=0;i<b.length;i+=1)r+=String.fromCharCode(b.charCodeAt(i)^(" + K + "+(i%7)));return decodeURIComponent(escape(r));};";
   let n = 0;
   const body = src.replace(re, (m, u) => { n += 1; return '_d(\'' + enc(u) + '\')'; });
-  if (!n) throw new Error('servers: nothing encoded');
+  if (!n) return src;
   return body.replace("'use strict';", "'use strict';\n  " + dec);
 }
 
@@ -169,9 +169,9 @@ function build(opt) {
     if (/^(js\/|sw\.js)/.test(name) && ext === '.js') s = data.toString('utf8').replace(/\r\n/g, '\n').replace(/^﻿/, '');
     if (s !== null) {
       if (name === 'js/guard.js') s = s.replace('/*@INTEGRITY@*/null', '__INTEG__');
+      if (opt.transformJs) s = opt.transformJs(name, s);
       if (name === 'js/servers.js' && !opt.dev) s = encServers(s, /'(wss?:\/\/[^']+)'/g);
       if (name === 'js/net.js' && !opt.dev) s = encServers(s, /'(stun:[^']+)'/g);
-      if (opt.transformJs) s = opt.transformJs(name, s);
       if (!opt.dev) s = splitScheme(s).replace(/'([^'\\\n]*)localhost([^'\\\n]*)'/g, "'$1local'+'host$2'").replace(/localhost/g, 'local(?:)host').replace(/console\.log\(/g, '(()=>{})(');
       rawBytes.js += data.length;
       if (!opt.noMin && !SKIP_MIN.test(name)) s = minifyJs(s, name);
