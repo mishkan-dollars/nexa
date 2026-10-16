@@ -1354,7 +1354,7 @@
         r.room(0, 0, 14, 14, 3.6, 0x888888);
         r.setAmbient(0.7);
         r.lamp(-3, 3.5, 0, 0.7); r.lamp(3, 3.5, -5, 0.7);
-        r.secret = 1 + Math.floor(Math.random() * 7);
+        r.secret = 1 + Math.floor((r.rand ? r.rand('secret') : Math.random()) * 7);
         r.lo = 1; r.hi = 7; r.busy = false;
         r.pads = [];
         for (let i = 1; i <= 7; i += 1) {

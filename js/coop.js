@@ -111,7 +111,7 @@
       this.host = spec.role !== 'guest'; this.slot = spec.role === 'guest' ? (NN.slot || 2) : 1; this.solo = !!spec.solo;
       if (!this.solo) run.noPause = true;   // в онлайне паузы нет (мир идёт у друзей): Esc/кнопка/потеря фокуса не ставят игру на паузу
       this.story = this.mode === 'mission'; this.shared = true; this.pseq = 0; this.ffAvail = !spec.solo; this.ff = this.ffAvail && spec.ff !== 0; this.ffm = [0.25, 0.5, 1].indexOf(+spec.ffm) >= 0 ? +spec.ffm : 1; this.ffRate = new Map(); this.ffLast = {};
-      this.kset = {}; this.mk = new Set(); this.ek = {}; this.cinN = 0; this.act = ''; this.snapFull = 0; this.eReq = 0; this.dropCap = null;
+      this.kset = {}; this.mk = new Set(); this.ek = {}; this.rc = {}; this.cinN = 0; this.act = ''; this.snapFull = 0; this.eReq = 0; this.dropCap = null;
       this.remotes = new Map(); this.readySet = new Set();
       this.xs = { ex: 0, ip: 0 }; this.ready = false; this.offs = []; this.sendT = 0; this.snapT = 0; this.hudT = 0; this.lastSend = 0;
       this.catchTo = spec.late && spec.mode === 'mission' && String(spec.mission) !== '48' ? spec.stage | 0 : 0; this.t0c = performance.now();
@@ -132,6 +132,8 @@
     }
     seedOff() { if (this.rng0) { if (Math.random === this.proxy) Math.random = this.rng0; this.rng0 = null; } }
     reseed(key) { if (this.rng0 && this.story) this.rng = seeded(hash32(this.spec.seed + '|' + key)); }
+    // r.rand(тег): общее игровое решение — хеш(seed, этап/акт, тег, номер вызова этого тега); не зависит от кадров и ввода, в отличие от потока Math.random
+    rand(tag) { const k = this.stage + ':' + this.act + ':' + tag, n = this.rc[k] = (this.rc[k] | 0) + 1; return seeded(hash32(this.spec.seed + '|' + k + '|' + n))(); }
     ekey(type) { const s = this.stage + ':' + this.act + ':' + type; this.ek[s] = (this.ek[s] | 0) + 1; return s + ':' + this.ek[s]; }
     on(type, fn) { this.offs.push(NN.on(type, fn.bind(this))); }
     hook() {
@@ -1095,6 +1097,7 @@
     if (co && co.story && co.host && !co.solo && a[0] && a[0].nid > 0) { co.dropCap = []; try { return o.apply(this, a); } finally { co.dropCap = null; } }
     return o.apply(this, a);
   });
+  P.rand = function (tag) { const co = this.__co; return co && co.story && !co.solo && co.spec.seed ? co.rand(String(tag)) : Math.random(); };
   wrap1('phase', function (o, a) { const co = this.__co; if (co && co.catchUp && co.catchUp() && typeof a[1] === 'function') a = [a[0], () => Promise.resolve()].concat(Array.prototype.slice.call(a, 2)); const p = o.apply(this, a); return co && co.mode === 'mission' && !co.solo ? p.then((v) => co.barrier().then(() => v)) : p; });
   wrap1('cinematic', function (o, a) {
     const co = this.__co;
