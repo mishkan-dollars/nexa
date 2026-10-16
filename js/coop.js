@@ -575,6 +575,7 @@
       const A = m.av, R = m.rem; if (!A || !r.cb || !r.scene) return;
       const n = A.n, id = typeof p.w === 'string' ? p.w : R.w;
       m.shotAt = r.time; A.muz = 0.05; n.kick = 1;
+      if (this.spectator && this.sp && this.sp.fp && (p.from | 0) === this.sp.slot && r.rg) { r.rigJolt(0.18, -1.6, 0); r.rg.flashT = 0.045; }   // отдача оружия цели у зрителя
       const d = Math.hypot(R.x - r.p.x, R.z - r.p.z);
       if (r.snd) { try { r.snd.shot(SND[id] || 'erifle', { dist: d, at: [R.x, 1.4, R.z] }); } catch (e) { /* звук не критичен */ } }
       const list = Array.isArray(p.tr) ? p.tr.slice(0, 3) : [];
@@ -861,9 +862,13 @@
       const R = m.rem, ex = Math.min(0.1, (performance.now() - (R.pt0 || performance.now())) / 1000), px = R.x + (R.vx || 0) * ex, pz = R.z + (R.vz || 0) * ex, ey = R.crouch ? 1.1 : 1.6, k = 1 - Math.exp(-dt * 16);
       if (S.yaw0 === undefined) { S.yaw0 = R.yaw; S.pit0 = R.pitch || 0; cf.pos.set(px, ey, pz); }
       let dy = R.yaw - S.yaw0; dy -= Math.round(dy / 6.2832) * 6.2832; S.yaw0 += dy * k; S.pit0 += ((R.pitch || 0) - S.pit0) * k;
-      if (S.fp) {
-        cf.pos.x += (px - Math.sin(S.yaw0) * 0.1 - cf.pos.x) * k; cf.pos.y += (ey - cf.pos.y) * k; cf.pos.z += (pz - Math.cos(S.yaw0) * 0.1 - cf.pos.z) * k;
-        const cp = Math.cos(S.pit0); cf.look.set(cf.pos.x - Math.sin(S.yaw0) * cp * 3, cf.pos.y + Math.sin(S.pit0) * 3, cf.pos.z - Math.cos(S.yaw0) * cp * 3); cf.fov = 74;
+      if (S.fp) {      // вид от первого лица: собственный игрок зрителя повторяет позу цели, поэтому рисуются те же руки и оружие, что у игрока (оружие, прицел, выстрелы)
+        if (r.camFree === cf) r.camFree = null;
+        const p = r.p, wid = String(R.w || '');
+        p.x = px; p.z = pz; p.yaw = S.yaw0; p.pitch = S.pit0; p.moving = Math.min(1, Math.hypot(R.vx || 0, R.vz || 0) / 3);
+        if (wid && C.WEAPONS && C.WEAPONS[wid] && (!r.wp || r.wp.id !== wid) && performance.now() - (S.wt || 0) > 500) { S.wt = performance.now(); try { r.giveWeapon(wid, { equip: true, reserve: 999 }); } catch (e) { /* ok */ } }
+        r.aimK = R.aim || 0;
+        return;
       } else {
         cf.pos.x += (px + Math.sin(S.yaw0) * 2.8 - cf.pos.x) * k * 0.4; cf.pos.y += (2.0 - cf.pos.y) * k * 0.4; cf.pos.z += (pz + Math.cos(S.yaw0) * 2.8 - cf.pos.z) * k * 0.4;
         cf.look.set(px, 1.2, pz); cf.fov = 64;
@@ -1027,7 +1032,7 @@
   });
   wrap1('updateWeapon', function (o, a) {    // зритель не рисует своё оружие и руки: в кадре видна кукла цели
     const res = o.apply(this, a), co = this.__co, rg = this.rg;
-    if (co && co.spectator && rg) { rg.root.visible = false; if (rg.handMag) rg.handMag.visible = false; if (rg.handShell) rg.handShell.visible = false; if (rg.fh && C.fpsHands) C.fpsHands.hide(rg.fh); }
+    if (co && co.spectator && co.sp && !co.sp.fp && rg) { rg.root.visible = false; if (rg.handMag) rg.handMag.visible = false; if (rg.handShell) rg.handShell.visible = false; if (rg.fh && C.fpsHands) C.fpsHands.hide(rg.fh); }
     return res;
   });
   wrap1('updateEnemies', function (o, a) { const co = this.__co; return co ? co.updateEnemies(o, a[0], a[1]) : o.apply(this, a); });
