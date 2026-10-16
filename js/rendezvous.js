@@ -379,7 +379,6 @@
       let c; try { c = JSON.parse(ev.content); } catch (e) { return; }
       if (!c || typeof c !== 'object' || typeof c.pid !== 'string' || !/^[0-9a-f]{40}$/.test(c.pid) || c.pid === this.mt.ctx.peerHex) return;
       this.rx += 1;
-      if (c.a === 'f') { if (typeof c.rid === 'string' && this.mt.h.fallback) this.mt.h.fallback(c, this); return; }      // просьба гостя о запасном канале
       if (typeof c.oid !== 'string' || c.oid.length > 64 || typeof c.sdp !== 'string' || c.sdp.length > 24000) return;
       const pb = String.fromCharCode.apply(null, NexaSchnorr.unhex(c.pid));
       if (c.a === 'o') this.mt.h.message({ action: 'announce', info_hash: this.mt.ctx.hash, peer_id: pb, offer_id: c.oid, offer: { type: 'offer', sdp: c.sdp } }, this);
@@ -392,7 +391,7 @@
     }
     pump() {
       if (this.state !== 'open' || this.pumping || !this.q.length) return;
-      const wait = Math.max(0, (this.gap || 600) - (now() - (this.lastPub || 0)), this.pauseUntil - now());         // не чаще ~1.6 событий в секунду на реле (не спамим), пауза после лимита
+      const wait = Math.max(0, 600 - (now() - (this.lastPub || 0)), this.pauseUntil - now());         // не чаще ~1.6 событий в секунду на реле (не спамим), пауза после лимита
       this.pumping = setTimeout(() => {
         this.pumping = 0;
         const c = this.q.shift(); if (!c || this.state !== 'open') return;
@@ -435,7 +434,7 @@
         if (free <= 0) break;
         if (this.adapters.some((a) => a.url === e.url && (a.state === 'connecting' || a.state === 'open'))) continue;
         if (e.core ? (this.hardDead.has(e.url) || (this.cool.get(e.url) || 0) > now()) : isDead(e.url)) continue;
-        const a = e.type === 'nostr' ? new (this.ctx.NostrCls || NostrAdapter)(this, e) : new TrackerAdapter(this, e);
+        const a = e.type === 'nostr' ? new NostrAdapter(this, e) : new TrackerAdapter(this, e);
         a.core = !!e.core;
         this.adapters = this.adapters.filter((x) => x.url !== e.url);
         this.adapters.push(a); hl(e.url, e.type).state = 'connecting'; free -= 1;
@@ -540,8 +539,7 @@
       this.tr = this.transportFactory(this.entries, {
         status: () => this.status(),
         open: (a) => this.onOpen(a),
-        message: (m, t) => this.onMessage(m, t),
-        fallback: (c) => { if (this.o.onFallback) this.o.onFallback(c); }
+        message: (m, t) => this.onMessage(m, t)
       }, { hash: this.hash, peerId: this.peerId, liveMax: this.o.liveMax });
       this.tr.open();
       this.startedAt = this.roundAt = now();
@@ -710,7 +708,6 @@
     const byPid = new Map();
     const r = hostR = new Rendezvous('room/' + id, {
       mode: 'answerer', entries: roomEntries(id, 0, true), liveMax: winSize() * 3 + 2,
-      onFallback: (c) => hostRelayOpen(id),
       onStatus: (s) => emit('status', Object.assign({ kind: 'host' }, s)),
       accept: () => NN.rtc.free() > 0 && pendingLinks() < 3 && !NN.config.testNoAccept,
       onOffer: async (sdp, pid) => {
@@ -734,7 +731,7 @@
   const pendingLinks = () => NN.pendingLinks || 0;
   // нет ни одного живого сервера и взять запасной неоткуда (или слишком долго ничего не открылось)
   const noServers = (s) => s.up === 0 && ((s.connecting === 0 && s.reserve === 0 && s.ms > 2500) || s.ms > 12000);
-  function stopHost() { if (hostR) { hostR.stop(); hostR = null; } relayStop(); Gossip.advertise(null); H.id = ''; H.pub = false; }
+  function stopHost() { if (hostR) { hostR.stop(); hostR = null; } Gossip.advertise(null); H.id = ''; H.pub = false; }
   function adOf() {
     const me = NN.localInfo();
     const max = NN.config.maxPlayers;
@@ -846,139 +843,10 @@
   NN.on('net:error', (e) => {
     if (!joinR || !e || !e.code) return;
     if (J.attempt < J.of && (e.code === 'CONNECT_TIMEOUT' || e.code === 'ICE_FAILED')) { nextAttempt('connect'); return; }      // соединение не состоялось — другая попытка через другие серверы
-    if ((e.code === 'CONNECT_TIMEOUT' || e.code === 'ICE_FAILED') && relayFallbackGuest(J.id)) return;      // последняя мера: запасной канал через релеи
     Object.assign(LAST, { ok: false, rounds: J.attempt, ms: now() - J.t0, why: 'ice' }); rdv('failed: ' + e.code + ' after ' + J.attempt + ' rounds');
     stopJoin(); emit('join', { stage: 'error', err: e.code });
   });
   NN.on('net:close', () => { stopRelay(); if (joinR) { stopJoin(); } });
-
-  // ------------------------------------------------------------------ запасной канал: игровые данные через Nostr-релеи (крайняя мера при провале ICE)
-  // Хост слушает тему комнаты 'rl/<id>' только после просьбы гостя ({a:'f'} по обычным релеям поиска); оба конца шифруют пакеты AES-GCM (ключ из id комнаты),
-  // события эфемерные, подписаны ключом сессии. Хост шлёт одно «мировое» событие 4 Гц на все гости, гость — 2 Гц (при нескольких гостях меньше),
-  // надёжные сообщения идут через seq/ack с повтором, быстрые (pos/aim/snap) — только последнее. Потолок: 8 событий/с на комнату, ~2/с на релей.
-  const RLB = { eps: 8, hostMs: 250, minGuestMs: 500, maxMsg: 2800, beat: 3000 };
-  const b64 = (u8) => { let t = ''; for (let i = 0; i < u8.length; i += 0x8000) t += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000)); return btoa(t); };
-  const unb64 = (t) => Uint8Array.from(atob(t), (c) => c.charCodeAt(0));
-  class DataAdapter extends NostrAdapter {
-    constructor(mt, e) { super(mt, e); this.gap = 480; }
-    req() { const f = { kinds: kinds(), since: Math.floor(Date.now() / 1000) - 2, limit: 20 }; if (!this.noTag) f['#t'] = [this.mt.hashHex]; this.raw(['REQ', this.sub, f]); }
-    onEvent(ev) {
-      if (!ev || typeof ev !== 'object' || typeof ev.content !== 'string' || ev.content.length > 12000) return;
-      if (!Array.isArray(ev.tags) || !ev.tags.some((t) => Array.isArray(t) && t[0] === 't' && t[1] === this.mt.hashHex)) return;
-      let c; try { c = JSON.parse(ev.content); } catch (e) { return; }
-      if (!c || typeof c.p !== 'string' || !/^[0-9a-f]{40}$/.test(c.p) || c.p === this.mt.ctx.peerHex || typeof c.d !== 'string') return;
-      this.rx += 1; this.mt.dr.onEnvelope(c);
-    }
-  }
-  const kindOf = (x) => {
-    const t = (/"type":"(\w+)"/.exec(x.slice(0, 80)) || [])[1] || '';
-    if (t === 'ping' || t === 'pong') return null;
-    if (t === 'pos' || t === 'aim') return { f: 1, k: t + ':' + ((/"from":(\d+)/.exec(x) || [])[1] || '0') };
-    if (t === 'snap') return { f: 1, k: 'snap:' + ((/"e":\[\[(\d+)/.exec(x) || [])[1] || '0') };
-    return { f: 0 };
-  };
-  class DataRelay {
-    constructor(id, role, o) { this.id = id; this.role = role; this.o = o; this.peers = new Map(); this.closed = false; this.pub = []; this.rr = 0; this.myHex = ''; this.timer = 0; this.lastEv = 0; this.hostPeer = null; this.st = { tx: 0, rx: 0 }; }
-    async open() {
-      try {
-        const hash = await infoHash('rl/' + this.id), peerId = randBin(20);
-        this.key = await crypto.subtle.importKey('raw', await crypto.subtle.digest('SHA-256', new TextEncoder().encode('nexa-rl1|' + this.id)), 'AES-GCM', false, ['encrypt', 'decrypt']);
-        if (this.closed) return;
-        let ents = roomEntries(this.id, 2, true).filter((e) => e.type === 'nostr').map((e, i) => Object.assign({}, e, { core: i < 3 }));
-        if (ents.length < 2) ents = ents.concat(ranked(serverEntries().filter((e) => e.type === 'nostr' && !ents.some((x) => x.url === e.url))).slice(0, 3).map((e) => Object.assign({}, e)));
-        this.mt = new MultiTransport(ents, { status() {}, open() {}, message() {} }, { hash, peerId, liveMax: 3, NostrCls: DataAdapter });
-        this.mt.dr = this; this.myHex = this.mt.ctx.peerHex; this.mt.open();
-        this.timer = setInterval(() => this.tick(), 100);
-      } catch (e) { if (this.o.fail) this.o.fail(e); }
-    }
-    peer(hex) {
-      let P = this.peers.get(hex);
-      if (!P) { P = { hex, h: null, sq: [], ns: 1, rx: 1, buf: new Map(), fast: new Map(), last: now(), sentAt: 0, ackDirty: false, denied: false }; this.peers.set(hex, P); }
-      return P;
-    }
-    enq(P, x, fast) {
-      if (typeof x !== 'string' || x.length > 3000) return;
-      const k = kindOf(x); if (!k) return;
-      if (k.f && fast) P.fast.set(k.k, x); else { P.sq.push({ s: P.ns++, m: x, at: 0 }); if (P.sq.length > 300) P.sq.shift(); }
-    }
-    tick() {
-      if (this.closed || !this.mt) return;
-      const t = now(), n = Math.max(1, NN.players.length || 1), gap = this.role === 'host' ? RLB.hostMs : Math.max(RLB.minGuestMs, 1000 / Math.min(2, 4 / n));
-      this.peers.forEach((P, hex) => { if (t - P.last > (this.role === 'host' ? 45000 : 60000)) { if (P.h) { try { P.h.close(); } catch (e) { /* ok */ } } this.peers.delete(hex); if (this.role === 'guest') relayStop(); } });
-      if (t - this.lastEv < gap) return;
-      this.pub = this.pub.filter((x) => t - x < 1000); if (this.pub.length >= RLB.eps) return;
-      const open = this.mt.adapters.filter((a) => a.state === 'open' && a.q.length < 4).sort((a, b) => (a.url < b.url ? -1 : 1)); if (!open.length) return;
-      this.lastEv = t;
-      this.build(t).then((content) => { if (!content || this.closed) return; open[this.rr++ % open.length].publish(content); this.pub.push(now()); this.st.tx += 1; }).catch(() => {});
-    }
-    async build(t) {
-      const sect = (P) => {
-        const s = []; let n = 0;
-        for (const e of P.sq) { if (e.at && t - e.at < 1100) continue; if (n + e.m.length > RLB.maxMsg) break; s.push([e.s, e.m]); n += e.m.length; e.at = t; }
-        const f = []; P.fast.forEach((m) => { if (n + m.length < RLB.maxMsg + 600) { f.push(m); n += m.length; } }); P.fast.clear();
-        if (!s.length && !f.length && !P.ackDirty && t - P.sentAt < RLB.beat) return null;
-        P.sentAt = t; P.ackDirty = false;
-        return { s, a: P.rx - 1, f };
-      };
-      let obj;
-      if (this.role === 'host') { const g = {}; let any = false; this.peers.forEach((P, hex) => { if (!P.h) return; const x = sect(P); if (x) { g[hex] = x; any = true; } }); if (!any) return null; obj = { t: 'w', g }; }
-      else { const P = this.hostPeer; if (!P || !P.h) return null; const x = sect(P); if (!x) return null; obj = Object.assign({ t: 'g' }, x); }
-      const pt = new TextEncoder().encode(JSON.stringify(obj)), iv = crypto.getRandomValues(new Uint8Array(12));
-      const ct = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, this.key, pt)), out = new Uint8Array(12 + ct.length); out.set(iv); out.set(ct, 12);
-      return JSON.stringify({ p: this.myHex, d: b64(out) });
-    }
-    async onEnvelope(c) {
-      if (this.closed || !this.key) return;
-      let obj; try { const u = unb64(c.d); if (u.length < 29) return; obj = JSON.parse(new TextDecoder().decode(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: u.subarray(0, 12) }, this.key, u.subarray(12)))); } catch (e) { return; }
-      if (!obj || typeof obj !== 'object') return;
-      this.st.rx += 1;
-      if (this.role === 'host') { if (obj.t === 'g') this.recv(this.guestPeer(c.p), obj); }
-      else if (obj.t === 'w' && obj.g && typeof obj.g === 'object' && obj.g[this.myHex] && this.hostPeer) this.recv(this.hostPeer, obj.g[this.myHex]);
-    }
-    guestPeer(hex) {
-      const P = this.peer(hex);
-      if (!P.h && !P.denied) {
-        if (!this.o.accept()) { P.denied = true; return P; }
-        P.h = NN.rtc.relayLink('host', (x, f) => this.enq(P, x, f));
-        if (!P.h) P.denied = true; else emit('relay', { on: true, role: 'host' });
-      }
-      return P;
-    }
-    recv(P, o) {
-      P.last = now();
-      if (!P.h) return;
-      const ack = o.a | 0; if (ack > 0) P.sq = P.sq.filter((e) => e.s > ack);
-      if (Array.isArray(o.s)) {
-        o.s.forEach((x) => { if (!Array.isArray(x)) return; const s = x[0] | 0, m = x[1]; if (typeof m !== 'string' || s < 1) return; if (s < P.rx) { P.ackDirty = true; return; } if (s > P.rx + 200) return; P.buf.set(s, m); });
-        while (P.buf.has(P.rx)) { const m = P.buf.get(P.rx); P.buf.delete(P.rx); P.rx += 1; P.ackDirty = true; P.h.feed(m, false); }
-      }
-      if (Array.isArray(o.f)) o.f.forEach((m) => { if (typeof m === 'string') P.h.feed(m, true); });
-    }
-    close() { this.closed = true; clearInterval(this.timer); if (this.mt) this.mt.close(); this.peers.forEach((P) => { if (P.h) { try { P.h.close(); } catch (e) { /* ok */ } } }); this.peers.clear(); }
-  }
-  let dataRelay = null, relayAt = 0;
-  function relayStop() { if (dataRelay) { const d = dataRelay; dataRelay = null; d.close(); emit('relay', { on: false }); } }
-  function hostRelayOpen(id) {
-    if (dataRelay || !window.crypto || !crypto.subtle || !NN.relayAllowed()) return;
-    dataRelay = new DataRelay(id, 'host', { accept: () => NN.relayAllowed() && NN.rtc.free() > 0, fail: relayStop });
-    dataRelay.open(); rdv('relay fallback: host listens on rl/' + id);
-  }
-  function relayFallbackGuest(id) {
-    if (!id || dataRelay || !window.crypto || !crypto.subtle || now() - relayAt < 120000) return false;
-    relayAt = now();
-    const jr = joinR, pid = jr && jr.peerId ? toHex(jr.peerId) : NN.util.rndHex(20);
-    try { if (jr && jr.tr) jr.tr.adapters.forEach((a) => { if (a.state === 'open' && a.type === 'nostr') a.publish(JSON.stringify({ a: 'f', pid, rid: String(id).slice(0, 40) })); }); } catch (e) { /* ok */ }
-    setTimeout(() => { if (joinR === jr) stopJoin(); }, 3500);
-    const dr = dataRelay = new DataRelay(id, 'guest', { fail: relayStop });
-    emit('join', { stage: 'relay', id }); rdv('relay fallback: guest after ICE failure');
-    dr.open().then(() => {
-      if (dataRelay !== dr || dr.closed) return;
-      const P = dr.hostPeer = dr.peer('host'); P.h = NN.rtc.relayLink('guest', (x, f) => dr.enq(P, x, f));
-      if (!P.h) { relayStop(); emit('join', { stage: 'error', err: 'CONNECT_TIMEOUT' }); } else { dr.up = true; emit('relay', { on: true, role: 'guest' }); }
-    });
-    return true;
-  }
-  NN.on('net:close', () => { if (dataRelay && dataRelay.role === 'guest' && dataRelay.up) relayStop(); });
 
   // ---- Быстрая игра: очередь 'quick/<режим>' (маяки), меньший peer_id — хост; дальше — обычная комната по общему id
   async function quickPlay(mode, opts) {
@@ -1187,7 +1055,6 @@
 
   if (window.NexaSingle) window.NexaSingle.on('change', () => { if (!window.NexaSingle.owner()) { stopHost(); stopJoin(); stopQuick(); if (NN.connected) NN.close(); } });
   window.NexaRoom = {
-    relay: { stop: relayStop, get active() { return !!dataRelay; }, stats: () => (dataRelay ? Object.assign({ role: dataRelay.role }, dataRelay.st) : null) },
     DEFAULT_TRACKERS: SV.TRACKERS, trackers: trackerList, validTracker, Rendezvous, MultiTransport, infoHash, sha1js,
     servers: {
       list: serverList, summary, probe, monitor, discover, discovered: () => discUrls().length, entries: serverEntries, health: HEALTH, get on() { return serversOn(); },

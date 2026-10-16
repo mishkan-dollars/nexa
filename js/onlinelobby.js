@@ -186,7 +186,6 @@
             '<div class="pf-btns"><button type="button" class="ol-btn" data-act="copy" data-v="g-code">COPY CODE</button></div></div><p class="v-note" id="g-note"></p></article>' +
       '</div>' +
       '<p class="v-note" id="cn-nat" hidden></p>' +
-      '<p class="v-note bad" id="cn-relay" hidden></p>' +
       '<div class="cn-diag" id="cn-diag" hidden><p class="v-note bad" id="cn-diag-t"></p><p class="v-note" id="cn-diag-c" translate="no"></p><button type="button" class="ol-btn big" data-act="manual-retry">TRY AGAIN</button></div>' +
       '</details>' +
       '<div class="cn-foot"><label class="cn-lan"><input type="checkbox" id="cn-lan"><span>SAME WI-FI / LAN MODE (less private, helps when both of you are on one network)</span></label>' +
@@ -828,7 +827,6 @@
     if (!NN.connected || (NN.isHost && !NN.players.length)) { beginMatch({ mode: L.mode, mission: L.mission, seed: mkSeed(), role: 'solo', solo: true }, 1); return; }
     if (NN.isHost) {
       if (!guestsReady()) return;
-      if (NN.viaRelay && (L.mode === 'pvp' || L.mode === 'ffa')) { toast(NN.text('PVP_DIRECT'), 'bad'); return; }
       const spec = { mode: L.mode, mission: L.mission, seed: mkSeed(), role: 'host', solo: false, ff: L.ff ? 1 : 0, ffm: L.ffm };
       NN.sendAction({ type: 'start', mode: spec.mode, mission: spec.mission, seed: spec.seed, ff: spec.ff, ffm: spec.ffm });
       beginMatch(spec, 3);
@@ -1350,9 +1348,6 @@
   function netHooks() {
     const updNat = () => { const el = $('#cn-nat'); if (!el) return; const k = NN.natType === 'symmetric' ? 'NAT_SYM' : NN.natType === 'blocked' ? 'NAT_BLOCKED' : ''; el.hidden = !k; if (k) el.textContent = NN.text(k); };
     NN.on('net:nat', updNat); setTimeout(updNat, 4500);
-    const updRelay = () => { const el = $('#cn-relay'); if (!el) return; const on = NN.viaRelay; el.hidden = !on; if (on) el.textContent = NN.text('RELAY_MODE') + ' — ' + NN.text('RELAY_HINT'); };
-    NN.on('net:open', () => setTimeout(updRelay, 300)); NN.on('net:close', updRelay); setInterval(updRelay, 3000);
-    NN.relayAllowed = () => L.mode !== 'pvp' && L.mode !== 'ffa';
     NN.on('net:close', () => { if (!NN.isHost) NN.setSpectator(false); });
     NN.on('net:state', (s) => {
       if (s.state === 'creating' || s.state === 'answering') L.t0 = Date.now();

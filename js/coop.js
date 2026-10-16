@@ -176,7 +176,6 @@
       const hud = this.hud = document.createElement('div'); hud.className = 'nx-hud'; hud.setAttribute('data-i18n', 'net');
       hud.innerHTML = '';
       L.appendChild(hud);
-      { const rb = this.rlBadge = document.createElement('div'); rb.className = 'nx-rl'; rb.setAttribute('data-i18n', 'net'); rb.hidden = true; rb.textContent = NN.text('RELAY_MODE'); L.appendChild(rb); }
       if (this.ffAvail) { const fb = this.ffBadge = document.createElement('div'); fb.className = 'nx-ff'; fb.setAttribute('data-i18n', 'net'); L.appendChild(fb); this.ffUi(); }
       const chat = this.chat = document.createElement('div'); chat.className = 'nx-chat'; chat.setAttribute('data-i18n', 'net');
       chat.innerHTML = '<div class="nx-log" role="log"></div><form class="nx-in" autocomplete="off"><input type="text" maxlength="200" placeholder="Type a message…" aria-label="Chat message" enterkeyhint="send"><button type="submit">SEND</button></form>';
@@ -947,7 +946,6 @@
       if (this.story && !this.host) this.expireProv();
       this.cineSync();
       this.ffTick(); if (this.spectator) this.specTick(dt);
-      if (this.rlBadge && ((this.rlT = (this.rlT || 0) + dt) > 1)) { this.rlT = 0; this.rlBadge.hidden = !NN.viaRelay; }
       this.updateAvatars(dt);
       // свои эмоции: сообщаем остальным о начале и конце танца
       const es = r.em && r.em.ses;
