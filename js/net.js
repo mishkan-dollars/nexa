@@ -445,7 +445,7 @@
   // ------------------------------------------------------------------ комната: роли, слоты, список игроков
   function allocSlot() {
     for (let s = 2; s <= cfg.maxPlayers; s += 1) if (!R.links.some((l) => l.slot === s)) return s;
-    for (let s = cfg.maxPlayers + 1; s <= Math.min(MAX_BR, cfg.maxPlayers + 6); s += 1) if (!R.links.some((l) => l.slot === s)) return s;   // слоты зрителей (после рукопожатия не-зрители отклоняются)
+    for (let s = cfg.maxPlayers + 1; s <= Math.min(MAX_BR, cfg.maxPlayers + 4); s += 1) if (!R.links.some((l) => l.slot === s)) return s;   // слоты зрителей (после рукопожатия не-зрители отклоняются)
     return 0;
   }
   // присоединить соединение к сессии (Хост: выдать слот; гость: единственное соединение с Хостом)
@@ -947,7 +947,7 @@
       if (ad && ad.active && (!L.pk || ad.banned(L.pk))) { deny(); return; }
       if (first) {
         if (i.spec === 1) {
-          if (L.slot <= cfg.maxPlayers) { let ss = 0; for (let s = cfg.maxPlayers + 1; s <= Math.min(MAX_BR, cfg.maxPlayers + 6); s += 1) if (!R.links.some((l) => l.slot === s)) { ss = s; break; } if (!ss) { deny(); return; } L.slot = ss; sendLink(L, { type: 'welcome', slot: ss, max: cfg.maxPlayers }); }
+          if (L.slot <= cfg.maxPlayers) { let ss = 0; for (let s = cfg.maxPlayers + 1; s <= Math.min(MAX_BR, cfg.maxPlayers + 4); s += 1) if (!R.links.some((l) => l.slot === s)) { ss = s; break; } if (!ss) { deny(); return; } L.slot = ss; sendLink(L, { type: 'welcome', slot: ss, max: cfg.maxPlayers }); }
           L.spec = true;
         } else if (L.slot > cfg.maxPlayers) { deny(); return; }
       }
@@ -1306,7 +1306,7 @@
     chat: { send: chatSend, get history() { return chat.history; }, sys: chatSys, clean: cleanChat, clear() { chat.history.length = 0; } },
     voice: { enable: voiceEnable, disable: voiceDisable, setMuted: voiceSetMuted, setVolume: voiceSetVolume, incoming: voiceIncoming, get state() { return voiceState(); }, unlock: playRemote },
     // низкоуровневый доступ для js/rendezvous.js: соединения без ручных кодов
-    rtc: { newOffer, newAnswer, applyAnswer, attach, attachChild, childFree: () => (R.role === 'guest' && R.links[0] && R.links[0].opened ? Math.max(0, MAX_KIDS - R.children.length) : 0), drop: dropLink, connecting: startConnecting, fullSdp: true, free: () => (R.role === 'guest' ? (R.links.length ? 0 : 1) : Math.max(0, cfg.maxPlayers - 1 - R.links.length)) },
+    rtc: { newOffer, newAnswer, applyAnswer, attach, attachChild, childFree: () => (R.role === 'guest' && R.links[0] && R.links[0].opened ? Math.max(0, MAX_KIDS - R.children.length) : 0), drop: dropLink, connecting: startConnecting, fullSdp: true, free: () => (R.role === 'guest' ? (R.links.length ? 0 : 1) : Math.max(0, Math.min(MAX_BR, cfg.maxPlayers + 4) - 1 - R.links.length)) },   // + слоты зрителей
     util: { scrub, cleanName, cleanChat, cleanColor, cleanPid, shrinkSdp, packCode, crc16, rndHex },
     log: () => logBuf.slice()
   };

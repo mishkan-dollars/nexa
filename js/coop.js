@@ -859,6 +859,7 @@
       if (S.yaw0 === undefined) { S.yaw0 = R.yaw; S.pit0 = R.pitch || 0; cf.pos.set(px, ey, pz); }
       let dy = R.yaw - S.yaw0; dy -= Math.round(dy / 6.2832) * 6.2832; S.yaw0 += dy * k; S.pit0 += ((R.pitch || 0) - S.pit0) * k;
       if (S.fp) {
+        { const wid = String(R.w || ''); if (wid && C.WEAPONS && C.WEAPONS[wid] && (!r.wp || r.wp.id !== wid) && r.giveWeapon && performance.now() - (S.wt || 0) > 800) { S.wt = performance.now(); try { r.giveWeapon(wid, { equip: true, reserve: 999 }); } catch (e) { /* ok */ } } r.aimK = R.aim || 0; }
         cf.pos.x += (px - Math.sin(S.yaw0) * 0.1 - cf.pos.x) * k; cf.pos.y += (ey - cf.pos.y) * k; cf.pos.z += (pz - Math.cos(S.yaw0) * 0.1 - cf.pos.z) * k;
         const cp = Math.cos(S.pit0); cf.look.set(cf.pos.x - Math.sin(S.yaw0) * cp * 3, cf.pos.y + Math.sin(S.pit0) * 3, cf.pos.z - Math.cos(S.yaw0) * cp * 3); cf.fov = 74;
       } else {
