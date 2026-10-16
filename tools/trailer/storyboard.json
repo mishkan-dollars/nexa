@@ -1,0 +1,726 @@
+{
+ "fps": 60,
+ "note": "Скелет трейлера по долям трека (0 = 0.242 с). span — геймплей (его заполняет plan-cuts.js), card — чёрная карточка. Сумма = 484 доли.",
+ "post": {
+  "flash": 0.13,
+  "pulse": 0.008,
+  "rate": 12,
+  "accents": [
+   1.8968,
+   6.0339,
+   7.2751,
+   11.8259,
+   12.2396,
+   14.7218,
+   16.3767,
+   17.2041,
+   19.2727,
+   25.0646,
+   28.3743,
+   30.0291,
+   31.2703,
+   32.9251,
+   33.3388,
+   34.1662,
+   54.8517,
+   72.2275,
+   85.4663,
+   85.88,
+   90.8445,
+   96.2227,
+   98.705,
+   104.0832,
+   104.4969,
+   104.9106,
+   159.5204,
+   159.9341,
+   161.1752,
+   163.6575,
+   165.3123,
+   166.9671,
+   175.2413,
+   180.6196,
+   181.447,
+   182.2744,
+   187.2389,
+   191.7897,
+   192.2034,
+   193.0309,
+   194.6857
+  ]
+ },
+ "sfx": [
+  {
+   "b": 251,
+   "file": "explosion.mp3",
+   "reverse": true,
+   "gain": 0.9,
+   "len": 1,
+   "rate": 0.8
+  },
+  {
+   "b": 253,
+   "file": "explosion.mp3",
+   "gain": 0.9
+  },
+  {
+   "b": 383,
+   "file": "explosion.mp3",
+   "reverse": true,
+   "gain": 0.7,
+   "len": 1,
+   "rate": 0.85
+  },
+  {
+   "b": 385,
+   "file": "explosion.mp3",
+   "gain": 0.85
+  },
+  {
+   "b": 462,
+   "file": "explosion.mp3",
+   "reverse": true,
+   "gain": 0.8,
+   "len": 1,
+   "rate": 0.8
+  }
+ ],
+ "timeline": [
+  {
+   "type": "card",
+   "id": "intro",
+   "beat": 0,
+   "beats": 15,
+   "vig": 0.3,
+   "grain": 0.05,
+   "words": [
+    {
+     "text": "NEXA INDUSTRIES",
+     "size": 0.12,
+     "sub": "ОТДЕЛ ПОВЕДЕНЧЕСКИХ ИССЛЕДОВАНИЙ",
+     "split": 0.6,
+     "b": 0
+    },
+    {
+     "text": "1992",
+     "size": 0.3,
+     "b": 1
+    },
+    {
+     "text": "ЧИСЛО",
+     "size": 0.26,
+     "b": 2
+    },
+    {
+     "text": "ОТ 1 ДО 7",
+     "size": 0.26,
+     "b": 3
+    },
+    {
+     "text": "*ВЫШЕ*",
+     "size": 0.42,
+     "rate": 7,
+     "b": 4
+    },
+    {
+     "text": "ИЛИ",
+     "size": 0.2,
+     "b": 5
+    },
+    {
+     "text": "*НИЖЕ*",
+     "size": 0.42,
+     "rate": 7,
+     "b": 6
+    },
+    {
+     "text": "УГАДАЛ —",
+     "size": 0.26,
+     "b": 7
+    },
+    {
+     "text": "ЖИВЁШЬ",
+     "size": 0.3,
+     "b": 8
+    },
+    {
+     "text": "ОШИБСЯ —",
+     "size": 0.26,
+     "b": 9
+    },
+    {
+     "text": "*ЗАКРЫТ*",
+     "size": 0.34,
+     "b": 10
+    },
+    {
+     "text": "ТЫ —",
+     "size": 0.3,
+     "b": 11
+    },
+    {
+     "text": "СУБЪЕКТ",
+     "size": 0.3,
+     "b": 12
+    },
+    {
+     "text": "*083*",
+     "size": 0.55,
+     "rate": 6,
+     "b": 13
+    },
+    {
+     "text": "НЕПРЕДСКАЗУЕМЫЙ",
+     "size": 0.2,
+     "rate": 6,
+     "sub": "ЕДИНСТВЕННЫЙ, КОГО МАШИНА НЕ УГАДЫВАЕТ",
+     "b": 14
+    }
+   ]
+  },
+  {
+   "type": "card",
+   "id": "gap_15",
+   "beat": 15,
+   "beats": 13,
+   "words": []
+  },
+  {
+   "type": "card",
+   "id": "i01",
+   "beat": 28,
+   "beats": 2,
+   "words": [
+    {
+     "text": "ОНИ ПРЕДСКАЖУТ\nТВОЙ *ХОД*",
+     "size": 0.2,
+     "b": 28
+    }
+   ]
+  },
+  {
+   "type": "card",
+   "id": "gap_30",
+   "beat": 30,
+   "beats": 16,
+   "words": []
+  },
+  {
+   "type": "card",
+   "id": "i02",
+   "beat": 46,
+   "beats": 2,
+   "words": [
+    {
+     "text": "ТЫ — *ОТКЛОНЕНИЕ*",
+     "size": 0.22,
+     "b": 46
+    }
+   ]
+  },
+  {
+   "type": "card",
+   "id": "gap_48",
+   "beat": 48,
+   "beats": 12,
+   "words": []
+  },
+  {
+   "type": "card",
+   "id": "i03",
+   "beat": 60,
+   "beats": 2,
+   "words": [
+    {
+     "text": "У КАЖДОГО ВРАГА\n*СВОЙ ХАРАКТЕР*",
+     "size": 0.19,
+     "b": 60
+    }
+   ]
+  },
+  {
+   "type": "card",
+   "id": "gap_62",
+   "beat": 62,
+   "beats": 18,
+   "words": []
+  },
+  {
+   "type": "card",
+   "id": "i04",
+   "beat": 80,
+   "beats": 2,
+   "words": [
+    {
+     "text": "ФИЗИКА —\nНЕ *АНИМАЦИЯ*",
+     "size": 0.2,
+     "b": 80
+    }
+   ]
+  },
+  {
+   "type": "card",
+   "id": "gap_82",
+   "beat": 82,
+   "beats": 24,
+   "words": []
+  },
+  {
+   "type": "card",
+   "id": "i05",
+   "beat": 106,
+   "beats": 2,
+   "words": [
+    {
+     "text": "БОТ ВИДИТ,\nКАК ТЫ *ЦЕЛИШЬСЯ*",
+     "size": 0.19,
+     "b": 106
+    }
+   ]
+  },
+  {
+   "type": "card",
+   "id": "gap_108",
+   "beat": 108,
+   "beats": 22,
+   "words": []
+  },
+  {
+   "type": "card",
+   "id": "i06",
+   "beat": 130,
+   "beats": 2,
+   "words": [
+    {
+     "text": "ВЗРЫВЫ,\nКОТОРЫЕ *ЧУВСТВУЕШЬ*",
+     "size": 0.19,
+     "b": 130
+    }
+   ]
+  },
+  {
+   "type": "card",
+   "id": "gap_132",
+   "beat": 132,
+   "beats": 30,
+   "words": []
+  },
+  {
+   "type": "card",
+   "id": "i07",
+   "beat": 162,
+   "beats": 2,
+   "words": [
+    {
+     "text": "КУЛАКИ. ПИНКИ.\n*ПОДКАТ*",
+     "size": 0.2,
+     "b": 162
+    }
+   ]
+  },
+  {
+   "type": "card",
+   "id": "gap_164",
+   "beat": 164,
+   "beats": 28,
+   "words": []
+  },
+  {
+   "type": "card",
+   "id": "i08",
+   "beat": 192,
+   "beats": 2,
+   "words": [
+    {
+     "text": "ТИХО — ИЛИ *ГРОМКО*",
+     "size": 0.2,
+     "b": 192
+    }
+   ]
+  },
+  {
+   "type": "card",
+   "id": "gap_194",
+   "beat": 194,
+   "beats": 24,
+   "words": []
+  },
+  {
+   "type": "card",
+   "id": "i09",
+   "beat": 218,
+   "beats": 2,
+   "words": [
+    {
+     "text": "ДВЕРЬ — *НОГОЙ*",
+     "size": 0.22,
+     "b": 218
+    }
+   ]
+  },
+  {
+   "type": "card",
+   "id": "gap_220",
+   "beat": 220,
+   "beats": 27,
+   "words": []
+  },
+  {
+   "type": "card",
+   "id": "i10",
+   "beat": 247,
+   "beats": 2,
+   "words": [
+    {
+     "text": "*ВЫШЕ*",
+     "size": 0.42,
+     "rate": 7,
+     "b": 247
+    }
+   ]
+  },
+  {
+   "type": "card",
+   "id": "i11",
+   "beat": 249,
+   "beats": 2,
+   "words": [
+    {
+     "text": "ИЛИ",
+     "size": 0.22,
+     "b": 249
+    }
+   ]
+  },
+  {
+   "type": "card",
+   "id": "i12",
+   "beat": 251,
+   "beats": 2,
+   "words": [
+    {
+     "text": "*НИЖЕ*",
+     "size": 0.42,
+     "rate": 6,
+     "b": 251
+    }
+   ]
+  },
+  {
+   "type": "card",
+   "id": "gap_253",
+   "beat": 253,
+   "beats": 14,
+   "words": []
+  },
+  {
+   "type": "card",
+   "id": "i13",
+   "beat": 267,
+   "beats": 1,
+   "words": [
+    {
+     "text": "БЕГИ",
+     "size": 0.36,
+     "rate": 10,
+     "b": 267
+    }
+   ]
+  },
+  {
+   "type": "card",
+   "id": "gap_268",
+   "beat": 268,
+   "beats": 15,
+   "words": []
+  },
+  {
+   "type": "card",
+   "id": "i14",
+   "beat": 283,
+   "beats": 1,
+   "words": [
+    {
+     "text": "СТРЕЛЯЙ",
+     "size": 0.36,
+     "rate": 10,
+     "b": 283
+    }
+   ]
+  },
+  {
+   "type": "card",
+   "id": "gap_284",
+   "beat": 284,
+   "beats": 15,
+   "words": []
+  },
+  {
+   "type": "card",
+   "id": "i15",
+   "beat": 299,
+   "beats": 1,
+   "words": [
+    {
+     "text": "ПРЯЧЬСЯ",
+     "size": 0.36,
+     "rate": 10,
+     "b": 299
+    }
+   ]
+  },
+  {
+   "type": "card",
+   "id": "gap_300",
+   "beat": 300,
+   "beats": 15,
+   "words": []
+  },
+  {
+   "type": "card",
+   "id": "i16",
+   "beat": 315,
+   "beats": 1,
+   "words": [
+    {
+     "text": "ВЗРЫВАЙ",
+     "size": 0.36,
+     "rate": 10,
+     "b": 315
+    }
+   ]
+  },
+  {
+   "type": "card",
+   "id": "gap_316",
+   "beat": 316,
+   "beats": 16,
+   "words": []
+  },
+  {
+   "type": "card",
+   "id": "gap_332",
+   "beat": 332,
+   "beats": 12,
+   "words": []
+  },
+  {
+   "type": "card",
+   "id": "i17",
+   "beat": 344,
+   "beats": 2,
+   "words": [
+    {
+     "text": "БЕЗ *UNITY*",
+     "size": 0.24,
+     "b": 344
+    }
+   ]
+  },
+  {
+   "type": "card",
+   "id": "i18",
+   "beat": 346,
+   "beats": 2,
+   "words": [
+    {
+     "text": "БЕЗ *UNREAL*",
+     "size": 0.24,
+     "b": 346
+    }
+   ]
+  },
+  {
+   "type": "card",
+   "id": "i19",
+   "beat": 348,
+   "beats": 2,
+   "words": [
+    {
+     "text": "ТОЛЬКО *JAVASCRIPT*",
+     "size": 0.2,
+     "b": 348
+    }
+   ]
+  },
+  {
+   "type": "card",
+   "id": "gap_350",
+   "beat": 350,
+   "beats": 14,
+   "words": []
+  },
+  {
+   "type": "card",
+   "id": "i20",
+   "beat": 364,
+   "beats": 2,
+   "words": [
+    {
+     "text": "ЧИСЛО ОТ *1* ДО *7*",
+     "size": 0.22,
+     "b": 364
+    }
+   ]
+  },
+  {
+   "type": "card",
+   "id": "gap_366",
+   "beat": 366,
+   "beats": 15,
+   "words": []
+  },
+  {
+   "type": "card",
+   "id": "i21",
+   "beat": 381,
+   "beats": 2,
+   "words": [
+    {
+     "text": "ВЫШЕ ИЛИ *НИЖЕ?*",
+     "size": 0.24,
+     "rate": 6,
+     "b": 381
+    }
+   ]
+  },
+  {
+   "type": "card",
+   "id": "gap_383",
+   "beat": 383,
+   "beats": 2,
+   "words": []
+  },
+  {
+   "type": "card",
+   "id": "gap_385",
+   "beat": 385,
+   "beats": 14,
+   "words": []
+  },
+  {
+   "type": "card",
+   "id": "i22",
+   "beat": 399,
+   "beats": 2,
+   "words": [
+    {
+     "text": "*КАЖДАЯ* МИССИЯ —\nНОВЫЙ ХОД",
+     "size": 0.18,
+     "b": 399
+    }
+   ]
+  },
+  {
+   "type": "card",
+   "id": "gap_401",
+   "beat": 401,
+   "beats": 18,
+   "words": []
+  },
+  {
+   "type": "card",
+   "id": "i23",
+   "beat": 419,
+   "beats": 1,
+   "words": [
+    {
+     "text": "ЖИВИ",
+     "size": 0.36,
+     "rate": 10,
+     "b": 419
+    }
+   ]
+  },
+  {
+   "type": "card",
+   "id": "gap_420",
+   "beat": 420,
+   "beats": 16,
+   "words": []
+  },
+  {
+   "type": "card",
+   "id": "i24",
+   "beat": 436,
+   "beats": 2,
+   "words": [
+    {
+     "text": "ОНИ *НЕ УГАДАЮТ*",
+     "size": 0.22,
+     "b": 436
+    }
+   ]
+  },
+  {
+   "type": "card",
+   "id": "gap_438",
+   "beat": 438,
+   "beats": 24,
+   "words": []
+  },
+  {
+   "type": "card",
+   "id": "i25",
+   "beat": 462,
+   "beats": 2,
+   "words": []
+  },
+  {
+   "type": "card",
+   "id": "end",
+   "beat": 464,
+   "beats": 20,
+   "vig": 0.35,
+   "grain": 0.05,
+   "words": [
+    {
+     "lines": [
+      {
+       "text": "HIGH / LOW",
+       "size": 0.3,
+       "y": 0.36,
+       "rate": 6,
+       "delay": 0
+      },
+      {
+       "text": "NEXA/OS",
+       "size": 0.075,
+       "y": 0.52,
+       "rate": 8,
+       "delay": 0.5,
+       "split": 0.4,
+       "track": 0.25,
+       "color": "#9a9aa2"
+      },
+      {
+       "text": "*БЕТА-ТЕСТ* — 15 ОКТЯБРЯ",
+       "size": 0.1,
+       "y": 0.68,
+       "rate": 8,
+       "delay": 1.7,
+       "maxW": 0.9
+      },
+      {
+       "text": "публично и бесплатно",
+       "size": 0.07,
+       "y": 0.79,
+       "rate": 8,
+       "delay": 2.5,
+       "weight": 500
+      },
+      {
+       "text": "тгк с релизом: *nexaindustries*",
+       "size": 0.06,
+       "y": 0.89,
+       "rate": 8,
+       "delay": 3.3,
+       "weight": 500
+      }
+     ],
+     "b": 464
+    }
+   ]
+  }
+ ]
+}

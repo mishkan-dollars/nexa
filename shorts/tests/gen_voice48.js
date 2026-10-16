@@ -51,7 +51,7 @@ lines.sort((a, b) => ORDER.indexOf(a.f) - ORDER.indexOf(b.f) || a.ln - b.ln);
 const total = lines.reduce((a, l) => a + (l.dur || 3), 0), words = lines.reduce((a, l) => a + l.text.split(/\s+/).length, 0);
 let md = '# VOICE_48 — что нужно озвучить в миссии 48 («ПОМНИТЕ: НИ ОДНОГО СЛОВА НА РУССКОМ»)\n\n';
 md += 'Собрано скриптом из `js/f48*.js` и `js/finale48.js` (все строки, которые игра показывает субтитрами).\n';
-md += 'Язык — **английский** (правило миссии: ни одного слова на русском). Сейчас реплики только субтитрами, звука нет.\n\n';
+md += 'Язык — **английский** (правило миссии: ни одного слова на русском). Реплики озвучены (130 файлов в `assets/voicelines/`) и подключены в игре; субтитры остаются.\n\n';
 md += '**Итого:** ' + lines.length + ' реплик, ≈' + words + ' слов, суммарно по длительности субтитров ≈' + Math.round(total) + ' с (' + (total / 60).toFixed(1) + ' мин).\n\n';
 md += '## Голоса\n\n| Кто | Реплик | Описание |\n|---|---|---|\n';
 const cnt = {}; lines.forEach((l) => { cnt[l.who] = (cnt[l.who] || 0) + 1; });
@@ -73,7 +73,7 @@ lines.forEach((l) => {
   n += 1;
   md += '| D48_' + String(n).padStart(3, '0') + ' | ' + l.who + ' | ' + (l.dur !== null ? l.dur : '~3') + ' | ' + l.text.replace(/\|/g, '/') + ' | ' + (l.note || '') + ' |\n';
 });
-md += '\n## Подключение (когда файлы будут готовы)\n\nПоложить в `assets/voicelines/` с кодами `D48_###`, затем занести в `tools/voice-codes.json` и перегенерировать `assets/voice/list.json` — реплики подхватятся по тексту, как остальные 120. Отдельно обычно нужны только `Sleep tight, 083.` (приглушённая обработка) и системное оповещение о газе.\n';
+md += '\n## Подключение\n\nГотово. Файлы лежат в `assets/voicelines/D48_###.mp3`; коды заморожены в `tools/voice-codes.json` (ключ `48|<английский текст>`, нумерацию менять нельзя). `node tools/extract-voice.js` (его же запускает `tools/build-itch.js`) пишет в `assets/voice/list.json` длительности клипов и карту `en` (английский текст → код). Игра ищет клип по точному английскому тексту (регистр важен: «Wake up!» и «WAKE UP!» — разные реплики), только в миссии 48. `Sleep tight, 083.` играет приглушённо (фильтр низких частот), системное оповещение о газе — через «громкоговоритель»; пока говорит Диктор, музыка и эмбиент миссии слегка тише. Реплики, которых нет в таблицах (в коде есть, файла нет — идут только субтитром): `Hold on, darling.`, `Wait.`, `WAKE UP!`, `B4.`, `Wing is clear. Shutter A/B is releasing.`.\n';
 fs.writeFileSync('VOICE_48.md', md);
 console.log('written', lines.length, 'lines', Math.round(total), 'sec', words, 'words');
 const by = {}; lines.forEach((l) => { by[l.f] = (by[l.f] || 0) + 1; }); console.log(JSON.stringify(by));

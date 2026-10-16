@@ -106,9 +106,9 @@
     if (!g || this.locked || this.paused || !this.entered || this.inCinema) return;
     const id = g.sel;
     if (id === 'c4') { if (g.n.c4 > 0) this.plantC4(); else this.detonate(); return; }
-    if (g.n[id] <= 0) return;
+    if (g.n[id] <= 0 || this.gadT) return;
     g.n[id] -= 1;
-    this.throwGadget(id);
+    if (this.startGadgetThrow && this.rg && this.body) this.startGadgetThrow(id); else this.throwGadget(id);
     if (!gadAvail(g, id)) { const o = Object.keys(GAD).find((k) => gadAvail(g, k)); if (o) g.sel = o; }
     this.refreshGad();
   };
@@ -544,7 +544,7 @@
     }
     el.volume = routed ? 1 : 0;
     const tr = { el, vol: o.vol === undefined ? 1 : o.vol, mix: 0, want: 0, fin: 0.8, fout: 1, an: null, pending: 0 };
-    const vol = () => clamp((snd ? snd.musVol() : 0.5) * tr.vol * tr.mix, 0, 1);
+    const vol = () => clamp((snd ? snd.musVol() : 0.5) * tr.vol * tr.mix * (self.vDuck === undefined ? 1 : self.vDuck), 0, 1);   // vDuck: приглушение под голосом (voice.js)
     tr.timer = setInterval(() => {
       const dt = 0.05;
       tr.mix = clamp(tr.mix + (tr.want ? dt / tr.fin : -dt / tr.fout), 0, 1);

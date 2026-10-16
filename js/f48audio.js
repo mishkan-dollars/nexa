@@ -38,7 +38,7 @@
     tick() {
       if (this.dead || !this.ctx) return;
       const r = this.r, held = r.paused || r.disposed;
-      const v = held ? 0 : clamp(this.k, 0, 3) * 0.9;
+      const v = held ? 0 : clamp(this.k, 0, 3) * 0.9 * (r.vDuck === undefined ? 1 : r.vDuck);   // vDuck: приглушение под голосом (voice.js)
       this.bus.gain.setTargetAtTime(v, this.ctx.currentTime, 0.12);
     }
     // ---- слои пресета (каждый возвращает функцию остановки)

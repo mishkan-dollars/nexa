@@ -15,6 +15,20 @@
     id: 'black_bear', model: 'plush_black', code: 'PL-01', name: 'BLACK BEAR', price: 250, ability: 'EMBRACE', duration: 120, cooldown: 300,
     lines: ['LMB: HUG THE TOY', 'RESTORES ALL INTEGRITY', 'WIDER FIELD OF VIEW', 'DARK BARS AT THE SCREEN EDGES', '+100 AMMO FOR EVERY WEAPON', 'EFFECT 2:00 / COOLDOWN 5:00']
   }];
+  const ABIL = [
+    { id: 'dash', name: 'DASH', price: [3000, 8000, 20000], cd: [12, 10, 8], v: [5, 6.5, 8], info: 'BURST FORWARD' },
+    { id: 'slow', name: 'TIME SLOW', price: [5000, 15000, 40000], cd: [40, 35, 30], v: [2, 3, 4], info: 'SLOWS TIME (OFFLINE ONLY)' },
+    { id: 'shield', name: 'ABSORBER', price: [6000, 18000, 50000], cd: [45, 40, 35], v: [40, 70, 110], info: 'ABSORBS DAMAGE FOR 8 S' },
+    { id: 'heal', name: 'SELF REPAIR', price: [4000, 12000, 30000], cd: [40, 35, 30], v: [40, 70, 100], info: 'RESTORES INTEGRITY OVER 4 S' },
+    { id: 'sight', name: 'WALL SCAN', price: [8000, 22000, 60000], cd: [50, 45, 40], v: [6, 9, 12], info: 'MARKS ENEMIES THROUGH WALLS' },
+    { id: 'magnet', name: 'MAGNET', price: [3000, 9000, 25000], cd: [30, 28, 25], v: [8, 14, 22], info: 'PULLS DROPS TO YOU' },
+    { id: 'fire', name: 'FIRE STRIKE', price: [15000, 40000, 110000], cd: [35, 30, 25], v: [30, 50, 75], info: 'BLAST WHERE YOU AIM' },
+    { id: 'shock', name: 'SHOCK WAVE', price: [12000, 35000, 90000], cd: [40, 36, 32], v: [2, 3, 4], info: 'STUNS ENEMIES AROUND YOU' },
+    { id: 'reload', name: 'INSTANT RELOAD', price: [5000, 14000, 35000], cd: [25, 20, 15], v: [1, 1, 1], info: 'FILLS EVERY MAGAZINE' },
+    { id: 'over', name: 'OVERDRIVE', price: [20000, 60000, 200000], cd: [60, 55, 50], v: [1.3, 1.5, 1.8], info: 'MORE DAMAGE FOR 6 S' }
+  ];
+  const ABD = {};
+  ABIL.forEach((d) => { ABD[d.id] = d; });
   const DEF = {};
   CATALOG.forEach((d) => { DEF[d.id] = d; });
   // эмоции (kind 'emote') — не игрушки: в CATALOG (плюш) не входят, покупаются здесь и играются из колеса эмоций (js/emote.js, зажать B). Слот игрушки не занимают
@@ -33,24 +47,128 @@
 
   // ---------------------------------------------------------------- хранилище
   let S = null;
-  function load() {
-    let d = null;
-    try { d = JSON.parse(localStorage.getItem(KEY)); } catch (e) { d = null; }
-    if (!d || typeof d !== 'object') d = {};
+  function sha256(str) {
+    const K = [], H = [0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19];
+    for (let n = 2, c = 0; c < 64; n += 1) { let pr = true; for (let d = 2; d * d <= n; d += 1) if (n % d === 0) { pr = false; break; } if (pr) { K[c] = (Math.pow(n, 1 / 3) * 4294967296) | 0; c += 1; } }
+    const u = unescape(encodeURIComponent(str)), l = u.length, w = [];
+    for (let i = 0; i < l; i += 1) w[i >> 2] |= u.charCodeAt(i) << (24 - (i % 4) * 8);
+    w[l >> 2] |= 0x80 << (24 - (l % 4) * 8); w[(((l + 8) >> 6) + 1) * 16 - 1] = l * 8;
+    const rr = (x, n) => (x >>> n) | (x << (32 - n));
+    for (let o = 0; o < w.length; o += 16) {
+      const m = w.slice(o, o + 16).map((x) => x | 0), v = H.slice();
+      for (let i = 16; i < 64; i += 1) { const a0 = m[i - 15], a1 = m[i - 2]; m[i] = (m[i - 16] + (rr(a0, 7) ^ rr(a0, 18) ^ (a0 >>> 3)) + m[i - 7] + (rr(a1, 17) ^ rr(a1, 19) ^ (a1 >>> 10))) | 0; }
+      let [A, B, C, D, E, F, G, Hh] = v;
+      for (let i = 0; i < 64; i += 1) {
+        const t1 = (Hh + (rr(E, 6) ^ rr(E, 11) ^ rr(E, 25)) + ((E & F) ^ (~E & G)) + K[i] + m[i]) | 0, t2 = ((rr(A, 2) ^ rr(A, 13) ^ rr(A, 22)) + ((A & B) ^ (A & C) ^ (B & C))) | 0;
+        Hh = G; G = F; F = E; E = (D + t1) | 0; D = C; C = B; B = A; A = (t1 + t2) | 0;
+      }
+      [A, B, C, D, E, F, G, Hh].forEach((x, i) => { H[i] = (H[i] + x) | 0; });
+    }
+    return H.map((x) => ('00000000' + (x >>> 0).toString(16)).slice(-8)).join('');
+  }
+  const CRMAX = 2147483647;
+  const ST = window.NexaStore || { get: (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch (e) { /* ignore */ } } };
+  const GD = window.NexaGuard, SG = window.NexaSingle, ADM = /^[0-9a-f]{64}$/.test(String(window.NEXA_ADMIN_PUB || '')) ? window.NEXA_ADMIN_PUB : '', ADM_MAX = 2147483647;
+  const onlineNow = () => { try { return !!(window.NexaNet && NexaNet.connected) || !!(window.NexaRoom && NexaRoom.servers.on && NexaRoom.consented()); } catch (e) { return false; } };
+  const locked = () => { sync(); try { return !SG || !SG.owner() || (GD ? !!GD.block() : onlineNow()); } catch (e) { return true; } };
+  const DK = 'nexaDev', BK = KEY + '.b';
+  const rnd32 = () => { try { const a = new Uint32Array(4); crypto.getRandomValues(a); return Array.from(a).map((x) => ('00000000' + x.toString(16)).slice(-8)).join(''); } catch (e) { return sha256(String(Math.random()) + Date.now()); } };
+  let DEVR = null;
+  try { DEVR = JSON.parse(ST.get(DK)); } catch (e) { DEVR = null; }
+  const devNew = !(DEVR && typeof DEVR.s === 'string' && DEVR.s.length === 32);
+  const DEV = devNew ? { s: rnd32(), q: 0, h: '' } : { s: DEVR.s, q: Math.max(0, DEVR.q | 0), h: String(DEVR.h || '') };
+  const saveDev = () => { ST.set(DK, JSON.stringify(DEV)); };
+  const MASK = parseInt(DEV.s.slice(0, 7), 16) | 0;
+  const recHash = (q, p, c, d) => sha256(DEV.s + '|' + q + '|' + p + '|' + c + '|' + d).slice(0, 32);
+  let tampered = 0, lastRec = null;
+  function readRec(raw) {
+    let r = null;
+    try { r = JSON.parse(raw); } catch (e) { return null; }
+    if (!r || r.v !== 2 || typeof r.c !== 'string' || typeof r.d !== 'string' || typeof r.h !== 'string') return null;
+    if (recHash(r.q | 0, String(r.p || ''), r.c, r.d) !== r.h) return null;
+    if ((r.q | 0) < DEV.q) return null;
+    let d; try { d = JSON.parse(r.d); } catch (e) { return null; }
+    const cr = (parseInt(r.c, 36) ^ MASK) >>> 0;
+    if (!d || typeof d !== 'object' || !isFinite(cr) || cr > CRMAX) return null;
+    d.credits = cr; return { d, r };
+  }
+  function build(d, fresh) {
     const owned = Array.isArray(d.owned) ? d.owned.filter((id) => DEF[id]) : [];
-    const wheel = [];   // колесо эмоций: 8 слотов, в слоте только купленная эмоция (и без повторов)
+    const wheel = [];
     for (let i = 0; i < WHEEL_N; i += 1) { const id = Array.isArray(d.wheel) ? d.wheel[i] : null; wheel.push(DEF[id] && DEF[id].kind === 'emote' && owned.indexOf(id) >= 0 && wheel.indexOf(id) < 0 ? id : null); }
-    return {
-      credits: Number.isFinite(d.credits) ? Math.max(0, Math.floor(d.credits)) : START_CREDITS,
+    const o = {
       owned,
       loadout: DEF[d.loadout] && !DEF[d.loadout].kind && owned.indexOf(d.loadout) >= 0 ? d.loadout : null,
       wheel: wheel,
       hud: { life: !!(d.hud && d.hud.life), gear: !!(d.hud && d.hud.gear) },
-      paid: Array.isArray(d.paid) ? d.paid : []
+      paid: Array.isArray(d.paid) ? d.paid.filter((x) => Number.isInteger(x) && x >= 1 && x <= 48).slice(0, 60) : [],
+      ab: (() => {
+        const lv = {}, a = d.ab && typeof d.ab === 'object' ? d.ab : {};
+        ABIL.forEach((x) => { const n = a.lv && Number.isInteger(a.lv[x.id]) ? a.lv[x.id] : 0; if (n > 0) lv[x.id] = Math.min(n, x.price.length); });
+        const eq = [0, 1, 2].map((i) => { const id = Array.isArray(a.eq) ? a.eq[i] : null; return id && lv[id] ? id : null; });
+        return { lv, eq: eq.map((id, i) => (id && eq.indexOf(id) === i ? id : null)) };
+      })(),
+      id: typeof d.id === 'string' && /^[0-9a-f]{64}$/.test(d.id) ? d.id : '',
+      rk: Number.isFinite(d.rk) ? d.rk : 0,
+      rl: Array.isArray(d.rl) ? d.rl.filter((x) => x && isFinite(x.t) && isFinite(x.n)).slice(-40) : [],
+      pv: Array.isArray(d.pv) ? d.pv.filter((x) => x && isFinite(x.t) && isFinite(x.n)).slice(-20) : [],
+      adm: Array.isArray(d.adm) ? d.adm.filter((x) => typeof x === 'string' && /^[0-9a-f]{32,64}$/.test(x)).slice(-300) : []
     };
+    let cv = 0; const ck = (Math.random() * 4294967296) >>> 0;
+    const set = (v) => { v = Math.floor(Number(v)); if (!isFinite(v)) return; cv = (Math.max(0, Math.min(CRMAX, v)) ^ ck) >>> 0; };
+    set(Number.isFinite(d.credits) ? d.credits : START_CREDITS);
+    Object.defineProperty(o, 'credits', { get: () => (cv ^ ck) >>> 0, set, enumerable: false });
+    return o;
   }
-  function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { /* ignore */ } }
+  function load() {
+    let got = null;
+    const raws = [ST.get(KEY), ST.get(BK)];
+    let from = -1;
+    for (let i = 0; i < raws.length && !got; i += 1) if (raws[i]) { got = readRec(raws[i]); from = i; }
+    if (got) { if (from > 0 && raws[0]) tampered += 1; lastRec = got.r; return build(got.d); }
+    if (raws[0] || raws[1]) {
+      let leg = null; try { leg = JSON.parse(raws[0]); } catch (e) { leg = null; }
+      if (devNew && leg && typeof leg === 'object' && leg.v === undefined) { leg.credits = Math.min(Number.isFinite(leg.credits) ? leg.credits : START_CREDITS, 20000); return build(leg); }
+      tampered += 1;
+    }
+    return build({});
+  }
+  function save() {
+    try {
+      const d = JSON.stringify({ owned: S.owned, loadout: S.loadout, wheel: S.wheel, hud: S.hud, paid: S.paid, rl: S.rl, pv: S.pv, ab: S.ab, id: S.id, rk: S.rk, adm: S.adm });
+      const q = DEV.q + 1, p = lastRec ? lastRec.h : '', c = ((S.credits ^ MASK) >>> 0).toString(36);
+      const r = { v: 2, q, p, c, d, h: recHash(q, p, c, d) };
+      const js = JSON.stringify(r);
+      ST.set(BK, js); ST.set(KEY, js);
+      DEV.q = q; DEV.h = r.h; lastRec = r; saveDev();
+    } catch (e) { /* ignore */ }
+    announce();
+  }
+  let lastAnn = -1;
+  function announce() {
+    const c = S.credits; if (c === lastAnn) return; lastAnn = c;
+    try { document.dispatchEvent(new CustomEvent('nexacredits', { detail: c })); } catch (e) { /* ok */ }
+  }
+  function paintBal() {
+    document.querySelectorAll('.session-tag strong').forEach((e) => { if (/CR$/.test(e.textContent)) e.textContent = S.credits + ' CR'; });
+  }
+  document.addEventListener('nexacredits', paintBal);
+  function verifyRec() {
+    const raw = ST.get(KEY); if (!raw) return 'STORE';
+    let r; try { r = JSON.parse(raw); } catch (e) { return 'STORE'; }
+    if (!r || r.h !== (lastRec && lastRec.h)) return 'STORE';
+    const g = readRec(raw); return g && g.d.credits === S.credits ? '' : 'VERIFY';
+  }
   S = load();
+  if (devNew || tampered) save();
+  lastAnn = S.credits;
+  function sync() {
+    let d; try { d = JSON.parse(ST.get(DK)); } catch (e) { return; }
+    if (!d || !(d.q > DEV.q)) return;
+    const t0 = tampered; DEV.q = d.q | 0; DEV.h = String(d.h || '');
+    const n = load(); if (tampered === t0) { S = n; announce(); }
+  }
+  window.addEventListener('storage', (e) => { if (e.key === DK || e.key === KEY) sync(); });
 
   const ctx = { audio: null, setView: null, render: null, startSandbox: null };
 
@@ -274,12 +392,25 @@
     return '<div class="shop-card locked"><div class="shop-av"><span class="shop-q">?</span></div><div class="shop-meta"><span class="shop-code">PL-??</span><h3>[ NO SIGNAL ]</h3><p class="shop-price"></p></div>' +
       '<ul class="shop-fx"><li>ITEM UNAVAILABLE</li></ul><div class="shop-btns"><button class="action secondary centered" disabled>BUY</button><button class="action secondary centered" disabled>PREVIEW</button></div></div>';
   }
+  let shopTab = 'items';
+  function abilShop() {
+    const eq = S.ab.eq, slots = eq.map((id, i) => '<span class="ab-slot' + (id ? ' on' : '') + '"><small>SLOT ' + (i + 1) + '</small> <b>' + (id ? ABD[id].name : 'EMPTY') + '</b>' + (id ? ' <button class="link-button" data-action="shop-ab-eq" data-value="' + i + ':">CLEAR</button>' : '') + '</span>').join(' ');
+    const cards = ABIL.map((d) => {
+      const lv = S.ab.lv[d.id] | 0, max = d.price.length, np = lv < max ? d.price[lv] : 0;
+      const btn = np ? '<button class="action' + (np > S.credits ? ' secondary' : '') + '" data-action="shop-ab-buy" data-value="' + d.id + '">' + (lv ? 'UPGRADE ' : 'BUY ') + np + ' KP</button>' : '<button class="action secondary" disabled>MAX</button>';
+      const eqb = lv ? [0, 1, 2].map((i) => '<button class="link-button' + (eq[i] === d.id ? ' on' : '') + '" data-action="shop-ab-eq" data-value="' + i + ':' + d.id + '">' + (i + 1) + '</button>').join(' ') : '';
+      return '<div class="shop-card"><h3>' + d.name + '</h3><p>' + d.info + '</p><p class="shop-sub">' + (lv ? 'LEVEL ' + lv + '/' + max + ' · RECHARGE ' + d.cd[lv - 1] + ' S' : 'NOT OWNED') + '</p>' + btn + (eqb ? '<div class="shop-eq">' + eqb + '</div>' : '') + '</div>';
+    }).join('');
+    return '<p class="shop-sub">' + slots + '</p><div class="shop-grid">' + cards + '</div>';
+  }
   function renderShop() {
+    const tabBtn = (id, t) => '<button class="link-button' + (shopTab === id ? ' on' : '') + '" data-action="shop-tab" data-value="' + id + '">' + t + '</button>';
+    const tabs = '<div class="back-row shop-tabs">' + tabBtn('items', 'ITEMS') + ' &nbsp; ' + tabBtn('abil', 'ABILITIES') + '</div>';
     const note = shopNote ? '<p class="shop-note ' + shopNote.kind + '">' + shopNote.text + '</p>' : '';
     return '<div class="screen-shell"><div class="panel" style="max-width:900px;margin:auto;"><div class="panel-head"><div><p class="eyebrow">NEXA/OS</p><h2>SHOP</h2></div><div class="session-tag">BALANCE<strong>' + S.credits + ' CR</strong></div></div>' +
       '<div class="back-row"><button class="link-button" data-action="menu">← BACK TO NEXA/OS</button></div>' +
       '<p style="color:var(--muted);margin-bottom:20px;">C:\\NEXA\\SHOP\\ &nbsp;//&nbsp; PLUSH ITEMS GRANT A MISSION ABILITY. ONE ITEM CAN BE CARRIED INTO A MISSION. EMOTES ARE PLAYED FROM THE WHEEL: HOLD B.</p>' + note +
-      '<div class="shop-grid">' + CATALOG.map(card).join('') + EMOTES.map(card).join('') + lockedCard() + '</div></div></div>';
+      tabs + (shopTab === 'abil' ? abilShop() : '<div class="shop-grid">' + CATALOG.map(card).join('') + EMOTES.map(card).join('') + lockedCard() + '</div>') + '</div></div>';
   }
   function fillAvatars() {
     if (window.Emote && window.Emote.bindShop) window.Emote.bindShop();
@@ -303,7 +434,8 @@
     if (a === 'shop-buy') {
       const d = DEF[v]; if (!d) return true;
       if (S.owned.indexOf(d.id) >= 0) return true;
-      if (S.credits < d.price) { shopNote = { kind: 'bad', text: 'NOT ENOUGH CREDITS' }; ctx.audio && ctx.audio.playSfx('denied'); }
+      if (locked()) { shopNote = { kind: 'bad', text: 'LOCKED' }; ctx.audio && ctx.audio.playSfx('denied'); }
+      else if (S.credits < d.price) { shopNote = { kind: 'bad', text: 'NOT ENOUGH CREDITS' }; ctx.audio && ctx.audio.playSfx('denied'); }
       else { S.credits -= d.price; S.owned.push(d.id); if (d.kind === 'emote') { const i = S.wheel.indexOf(null); if (i >= 0) S.wheel[i] = d.id; } else S.loadout = d.id; save(); shopNote = { kind: 'ok', text: 'PURCHASE COMPLETE' }; sfx('uibuy'); }
       ctx.render && ctx.render(); fillAvatars(); return true;
     }
@@ -313,6 +445,12 @@
       else S.loadout = S.loadout === d.id ? null : d.id;
       save(); shopNote = null; ctx.render && ctx.render(); fillAvatars(); return true;
     }
+    if (a === 'shop-tab') { shopTab = v === 'abil' ? 'abil' : 'items'; shopNote = null; ctx.render && ctx.render(); fillAvatars(); return true; }
+    if (a === 'shop-ab-buy') {
+      const r = window.Toys.ab.buy(v); shopNote = r.ok ? { kind: 'ok', text: 'UNLOCKED' } : { kind: 'bad', text: r.err }; if (!r.ok && ctx.audio) ctx.audio.playSfx('denied');
+      ctx.render && ctx.render(); fillAvatars(); return true;
+    }
+    if (a === 'shop-ab-eq') { const m = /^(\d):(\w*)$/.exec(String(v)); if (m) window.Toys.ab.equip(+m[1], m[2] || null); ctx.render && ctx.render(); fillAvatars(); return true; }
     if (a === 'shop-preview') {
       if (DEF[v] && DEF[v].kind === 'emote') { if (window.Emote && window.Emote.openPreview) window.Emote.openPreview(v); } else openPreview(v);
       return true;
@@ -439,30 +577,121 @@
 
   // ---------------------------------------------------------------- награды и части HUD
   let pendBonus = 0; // interiors.js: бонус за бесшумные/жестокие убийства и заложников — ждёт ближайшей награды за миссию
-  function bonus(n) { pendBonus = Math.max(0, Math.round(n) || 0); }
+  function bonus(n) { pendBonus = Math.max(0, Math.min(300, Math.round(n) || 0)); }
+  const REPLAY_HOUR = 1500, REWARD_GAP = 30000;
   function reward(taskId) {
-    const first = S.paid.indexOf(taskId) < 0;
-    const n = (first ? REWARD_FIRST : REWARD_REPLAY) + pendBonus; pendBonus = 0;
-    if (first) S.paid.push(taskId);
-    S.credits += n; save();
+    taskId = Number(taskId);
+    if (!Number.isInteger(taskId) || taskId < 1 || taskId > 48 || locked()) return 0;
+    const now = Date.now(), first = S.paid.indexOf(taskId) < 0;
+    S.rl = S.rl.filter((x) => now - x.t < 3600000);
+    const last = S.rl.length ? S.rl[S.rl.length - 1].t : 0, hourly = S.rl.reduce((a, x) => a + x.n, 0);
+    let n = (first ? 300 + taskId * 25 : 60 + taskId * 5) + pendBonus; pendBonus = 0;
+    if (now - last < REWARD_GAP) n = 0;
+    else if (!first) n = Math.max(0, Math.min(n, REPLAY_HOUR - hourly));
+    if (n > 0) { if (first) S.paid.push(taskId); S.rl.push({ t: now, n: first ? 0 : n }); S.credits += n; save(); }
     const el = document.getElementById('system-message');
     if (el) { const old = el.dataset.old || el.textContent; el.dataset.old = old; el.textContent = '+' + n + ' CR // BALANCE ' + S.credits + ' CR'; clearTimeout(reward.t); reward.t = setTimeout(() => { el.textContent = old; delete el.dataset.old; }, 6000); }
     return n;
   }
 
+  const PVP_MATCH = 150, PVP_HOUR = 400, PVP_GAP = 120000;
+  function pvpReward(n) {
+    n = Math.floor(Number(n));
+    if (!Number.isFinite(n) || n < 1 || locked()) return 0;
+    const now = Date.now();
+    S.pv = (S.pv || []).filter((x) => now - x.t < 3600000);
+    const last = S.pv.length ? S.pv[S.pv.length - 1].t : 0, hourly = S.pv.reduce((a, x) => a + x.n, 0);
+    if (now - last < PVP_GAP) return 0;
+    n = Math.max(0, Math.min(n, PVP_MATCH, PVP_HOUR - hourly));
+    if (n > 0) { S.pv.push({ t: now, n }); S.credits += n; save(); }
+    return n;
+  }
+
+  // подарок из миссии (js/twists-*.js): игрушка или эмоция без оплаты; false — уже есть / нет такой
+  function grant(id) {
+    const d = DEF[id];
+    sync();
+    if (!d || S.owned.indexOf(id) >= 0) return false;
+    S.owned.push(id);
+    if (d.kind === 'emote') { const i = S.wheel.indexOf(null); if (i >= 0) S.wheel[i] = id; } else if (!S.loadout) S.loadout = id;
+    save();
+    return true;
+  }
+
+  let vaultTaken = false;
   window.Toys = {
     CATALOG, EMOTES, def: (id) => DEF[id], REWARD_FIRST,
     emoteWheel: () => S.wheel.slice(), audio: () => ctx.audio,
     get credits() { return S.credits; },
+    vault() {
+      if (vaultTaken) return null;
+      vaultTaken = true;
+      return {
+        credit(n) { n = Math.floor(n); if (locked() || !isFinite(n) || n < 1 || n > 1000000 || S.credits + n > CRMAX) return false; S.credits += n; save(); return true; },
+        debit(n) { n = Math.floor(n); if (locked() || !isFinite(n) || n < 1 || n > 1000000 || S.credits < n) return false; S.credits -= n; save(); return true; }
+      };
+    },
+    get tampered() { return tampered; },
+    ident: {
+      get pk() { const K = window.NexaSchnorr; if (!K) return ''; if (!S.id) { S.id = K.hex(K.newKey().sk); save(); } return K.hex(K.pubkey(K.unhex(S.id))); },
+      event(kind, tags, content) { const K = window.NexaSchnorr; if (!K || !this.pk) return null; return K.makeEvent({ sk: K.unhex(S.id), pk: this.pk }, kind | 0, tags || [], String(content || '')); },
+      ecdh(peer) { const K = window.NexaSchnorr; return K && this.pk && /^[0-9a-f]{64}$/.test(peer) ? K.ecdh(K.unhex(S.id), peer) : ''; }
+    },
+    adminGrant(ev) {
+      const K = window.NexaSchnorr, t = Math.floor(Date.now() / 1000);
+      if (!ADM || !K || !ev || ev.pubkey !== ADM || (ev.kind !== 7790 && ev.kind !== 27790) || !Array.isArray(ev.tags) || !K.checkEvent(ev)) return { ok: false, err: 'SIG' };
+      let c; try { c = JSON.parse(ev.content); } catch (e) { return { ok: false, err: 'BAD' }; }
+      const to = (ev.tags.find((x) => x[0] === 'p') || [])[1], n = c && c.n, x = c && c.x, gid = c && c.i;
+      if (typeof gid !== 'string' || !/^[0-9a-f]{32}$/.test(gid)) return { ok: false, err: 'BAD' };
+      if (to !== window.Toys.ident.pk) return { ok: false, err: 'TARGET' };
+      if (!Number.isInteger(n) || n < 1 || n > ADM_MAX) return { ok: false, err: 'AMOUNT' };
+      if (!Number.isInteger(x) || t > x) return { ok: false, err: 'EXPIRED' };
+      if (x - ev.created_at > 900 || ev.created_at > t + 120) return { ok: false, err: 'BAD' };
+      if (S.adm.indexOf(gid) >= 0) return { ok: false, err: 'DUP' };
+      sync();
+      const why = !SG || !SG.owner() ? 'SINGLE' : (GD && !GD.state().integ ? 'INTEG' : '');
+      if (why) return { ok: false, err: 'LOCKED', why };
+      if (S.credits + n > CRMAX) return { ok: false, err: 'CAP' };
+      const adm0 = S.adm, cr0 = S.credits;
+      S.adm = S.adm.concat(gid).slice(-300); S.credits = cr0 + n; save();
+      const bad = verifyRec();
+      if (bad) { S.adm = adm0; S.credits = cr0; save(); return { ok: false, err: bad }; }
+      return { ok: true, n, id: gid, bal: S.credits };
+    },
+    rankReward(place) {
+      const now = Date.now(); if (locked() || now - S.rk < 86400000 || !(place >= 1 && place <= 10)) return 0;
+      S.rk = now; const n = 500 - (place - 1) * 40; S.credits += n; save(); return n;
+    },
+    ab: {
+      defs: ABIL.map((d) => Object.freeze(Object.assign({}, d, { price: d.price.slice(), cd: d.cd.slice(), v: d.v.slice() }))),
+      level: (id) => (S.ab.lv[id] | 0),
+      equipped: () => S.ab.eq.slice(),
+      nextPrice(id) { const d = ABD[id], n = S.ab.lv[id] | 0; return d && n < d.price.length ? d.price[n] : 0; },
+      buy(id) {
+        const d = ABD[id], n = d ? S.ab.lv[id] | 0 : -1;
+        if (!d || n >= d.price.length) return { ok: false, err: 'MAX LEVEL' };
+        if (locked()) return { ok: false, err: 'LOCKED' };
+        if (S.credits < d.price[n]) return { ok: false, err: 'NOT ENOUGH KP' };
+        S.credits -= d.price[n]; S.ab.lv[id] = n + 1;
+        if (n === 0) { const i = S.ab.eq.indexOf(null); if (i >= 0) S.ab.eq[i] = id; }
+        save(); return { ok: true, lv: n + 1 };
+      },
+      equip(slot, id) {
+        sync(); slot |= 0; if (slot < 0 || slot > 2) return false;
+        if (id && !S.ab.lv[id]) return false;
+        const i = id ? S.ab.eq.indexOf(id) : -1; if (i >= 0) S.ab.eq[i] = null;
+        S.ab.eq[slot] = id || null; save(); return true;
+      }
+    }, sha: sha256,
     owned: (id) => S.owned.indexOf(id) >= 0,
     loadout() { return S.loadout && S.owned.indexOf(S.loadout) >= 0 ? S.loadout : null; },
     hud: {
       has: (k) => !!S.hud[k],
-      grant(k) { if (S.hud[k] !== undefined && !S.hud[k]) { S.hud[k] = true; save(); } }
+      grant(k) { sync(); if (S.hud[k] !== undefined && !S.hud[k]) { S.hud[k] = true; save(); } }
     },
     init(o) { Object.assign(ctx, o || {}); },
     load: loadTpl, tpl: (id) => TPLR[id], make: makeToy, press: pressToy, release: releaseDent, step: stepToy, avatar, avatarUrl: (id) => AV[id] || '',
-    sfx, plushSfx, glitchSfx, action, renderShop, fillAvatars, openPreview, closePreview, reward, bonus, BEAR_SVG,
+    sfx, plushSfx, glitchSfx, action, renderShop, fillAvatars, openPreview, closePreview, reward, pvpReward, bonus, grant, BEAR_SVG,
     reset() { S = load(); },
     _dbg: () => ({ pv, S })
   };

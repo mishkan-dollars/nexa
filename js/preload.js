@@ -42,7 +42,7 @@
       '<div class="pl-box">' +
       '<p class="pl-eyebrow">NEXA INDUSTRIES / TERMINAL 083</p>' +
       '<h2>DOWNLOADING GAME DATA</h2>' +
-      '<p class="pl-note">First launch only. Sounds, textures and models are stored on this device — the next launch starts instantly.</p>' +
+      '<p class="pl-note">Loads once. Data stays on this device.</p>' +
       '<div class="pl-bar"><i></i></div>' +
       '<p class="pl-pct">0%</p>' +
       '<p class="pl-file">PREPARING...</p>' +

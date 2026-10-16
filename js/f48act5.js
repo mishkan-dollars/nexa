@@ -303,7 +303,7 @@
       C.cin.pov(r, 1.4, { extra: { cut: 'dip', whip: false, frame: 0 } })
     ];
     await r.cinematic(shots2);
-    r.fade(0, 0.3);
+    r.fade(0, 0.3); if (!open2) { open2 = true; K.amb.pulse(r, 'alarm', 0.5); L.open(r, 0.8); }   // пропуск катсцены раньше 1.6 с: tick не открыл двери — игрок остался бы запертым в кабине
     F.rm(r, p5);
     r.p.x = -1.1; r.p.z = -0.75; r.p.yaw = PI; r.p.pitch = 0;
     put(d, 0.5, -1.9, 0); put(g, 1.3, -2.2, 0);

@@ -144,6 +144,7 @@
   // ------------------------------------------------------------------ оружие в руках врага
   Run.prototype.setGun = function (n, kind) {
     const T = THREE;
+    n.gkO = null; if (n.rm) Object.keys(n.rm).forEach((k) => { n.rm[k].visible = false; });
     n.gunKind = kind || null;
     n.gunG.visible = !!kind;
     Object.keys(n.gm).forEach((k) => { n.gm[k].visible = k === kind; });
@@ -161,6 +162,29 @@
     }
     const mz = GK[kind].muz; n.flashM.position.set(mz[0], mz[1], mz[2]);
   };
+  // настоящая модель оружия игрока (та же сборка C.buildWeapon, что и от первого лица) в руках куклы; хват и цевьё берутся из якорей модели
+  const REALK = { glock: 'pistol', ak: 'rifle', shotgun: 'shotgun' };
+  Run.prototype.setRealGun = function (n, id) {
+    const W = C.WEAPONS && C.WEAPONS[id], T = THREE;
+    if (!W || !W.anch || !C.buildWeapon || !n.gunG) return false;
+    const kind = REALK[id] || 'rifle', gk = GK[kind], A = W.anch;
+    this.setGun(n, kind);
+    n.rm = n.rm || {};
+    let h = n.rm[id];
+    if (!h) {
+      const prg = this.apg || (this.apg = { mats: {}, M(c) { return this.mats[c] || (this.mats[c] = new T.MeshLambertMaterial({ color: c })); }, mk(geo, mt) { const m = new T.Mesh(geo, mt); m.frustumCulled = false; return m; }, skinMat: new T.MeshLambertMaterial({ color: 0x1a1a1a }) });
+      const mdl = C.buildWeapon(id, prg, A), g = mdl.g;
+      g.position.set(-A.grip[0], -A.grip[1], -A.grip[2]); if (mdl.rh) mdl.rh.visible = false;
+      h = new T.Group(); h.rotation.y = Math.PI; h.add(g); h.position.set(gk.rH[0], gk.rH[1], gk.rH[2]); n.gunG.add(h); n.rm[id] = h;
+      if (this.q.shadows) g.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+      const rel = (p) => [gk.rH[0] - (p[0] - A.grip[0]), gk.rH[1] + (p[1] - A.grip[1]), gk.rH[2] - (p[2] - A.grip[2])];
+      h.userData.gk = { rH: gk.rH, lH: rel(A.sup), muz: rel(A.muzzle) };
+    }
+    Object.keys(n.gm).forEach((k) => { n.gm[k].visible = false; });
+    Object.keys(n.rm).forEach((k) => { n.rm[k].visible = k === id; });
+    n.gkO = h.userData.gk; const mz = n.gkO.muz; if (n.flashM) n.flashM.position.set(mz[0], mz[1], mz[2]);
+    return true;
+  };
   Run.prototype.actorStyle = function (n, type, gun) {
     const heavy = type === 'heavy' || type === 'boss';
     n.gear.visible = heavy; n.helmet.visible = heavy;
@@ -171,7 +195,7 @@
     n.speedAnim = 1;
   };
   Run.prototype.actorReset = function (n) {
-    n.death = null; n.flinch = 0; n.kick = 0; n.aimK = 0; n.vel = 0; n.swing = 0; n.lx = n.g.position.x; n.lz = n.g.position.z;
+    n.death = null; n.flinch = 0; n.kick = 0; n.aimK = 0; n.vel = 0; n.swing = 0; n.yr = n.ai = n.ex = n.br = n.mvx = n.mvz = 0; n.flinchD = 1; n.flinchL = 0.6; n.pv = undefined; n.lx = n.g.position.x; n.lz = n.g.position.z;
     n.act = null; n.ps = null; n.cv = n.cvT = 0; n.bash = n.rel = n.work = n.gest = n.taunt = n.daze = 0; n.bashKind = null; n.holster = false; n.stk = undefined; if (n.laser) n.laser.visible = false; if (n.helmet) n.helmet.visible = false;
     const g = n.g; g.rotation.x = 0; g.rotation.z = 0; g.position.y = 0;
     n.hips.position.y = 0.95; n.hips.rotation.set(0, 0, 0); n.spine.rotation.set(0, 0, 0); n.head.rotation.set(0, 0, 0);
@@ -181,7 +205,12 @@
   // попадание: рывок корпуса, голова назад
   Run.prototype.actorHit = function (n, head, amt) {
     if (n.death) return;
-    n.flinch = Math.min(1.4, (head ? 1.3 : 0.7) + (amt || 0) / 120); n.flinchS = sgn();
+    n.flinch = Math.min(1.4, (head ? 1.3 : 0.7) + (amt || 0) / 120); n.flinchS = sgn(); n.flinchD = 1; n.flinchL = 0.6;
+    const o = n.lastHit && n.lastHit.o, g = n.g; // реакция по направлению: спереди — откидывает назад, сзади — бросает вперёд, сбоку — разворачивает
+    if (o) {
+      const dx = o.x - g.position.x, dz = o.z - g.position.z, l = Math.hypot(dx, dz) || 1, fx = Math.sin(g.rotation.y), fz = Math.cos(g.rotation.y), fr = (dx * fx + dz * fz) / l, lat = (dx * fz - dz * fx) / l;
+      n.flinchD = fr >= 0 ? Math.max(0.4, fr) : Math.min(-0.4, fr); n.flinchS = lat > 0 ? 1 : -1; n.flinchL = 0.4 + 0.6 * Math.abs(lat);
+    }
   };
   // смерть: падение назад / вперёд / набок / с колен. from — точка, откуда пришёл выстрел
   Run.prototype.actorKill = function (n, head, from) {
@@ -210,11 +239,13 @@
     const kb = smooth(clamp(t / 0.32, 0, 1));
     const kf = smooth(clamp((t - (ph === 'knees' ? 0.5 : 0.1)) / (ph === 'knees' ? 0.7 : 0.8), 0, 1)), fall = Math.pow(kf, 1.5);
     const settle = smooth(clamp((t - 0.7) / 0.5, 0, 1));
-    n.hips.position.y = 0.95 - (ph === 'knees' ? 0.4 : 0.34) * kb * (1 - kf);
+    const ti = ph === 'knees' ? 1.1 : 0.78, ia = t > ti ? Math.exp(-(t - ti) * 7) : 0, fl2 = ia * Math.cos((t - ti) * 16); // удар о пол: тело подпрыгивает, конечности болтаются и гасятся
+    n.hips.position.y = 0.95 - (ph === 'knees' ? 0.4 : 0.34) * kb * (1 - kf) + 0.035 * ia * Math.abs(Math.sin((t - ti) * 12));
+    n.hips.rotation.y = D.tilt * 0.5 * kf; n.spine.rotation.y = -D.tilt * 0.6 * kf; n.head.rotation.y = D.tilt * 1.4 * kf;
     n.spine.rotation.x = (ph === 'back' ? -0.5 : 0.35) * kb * (1 - kf * 0.8);
     n.spine.rotation.z = D.side * 0.2 * kb;
     n.head.rotation.x = (ph === 'back' ? -(D.head ? 0.75 : 0.45) * kb : 0.25 * kb) * (1 - 0.4 * kf);
-    n.head.rotation.z = D.tilt * kf;
+    n.head.rotation.z = D.tilt * kf + 0.12 * fl2;
     g.rotation.x = ph === 'back' ? -Math.PI / 2 * fall : ph === 'fwd' || ph === 'knees' ? Math.PI / 2 * fall : 0;
     g.rotation.z = ph === 'side' ? D.side * Math.PI / 2 * fall : 0;
     g.position.y = 0.11 * kf;
@@ -224,15 +255,28 @@
     n.kneeL.rotation.x = kn * kb * (1 - 0.75 * settle) + D.k1 * 0.4 * kf;
     n.kneeR.rotation.x = kn * kb * (1 - 0.75 * settle) * 0.9 + D.k2 * 0.4 * kf;
     n.legL.rotation.z = -0.1 - 0.18 * D.k1 * kf; n.legR.rotation.z = 0.1 + 0.18 * D.k2 * kf;
-    n.footL.rotation.x = n.footR.rotation.x = 0.3 * kf;
+    n.footL.rotation.x = n.footR.rotation.x = 0.3 * kf + 0.15 * fl2;
     // руки взлетают при попадании, потом раскидываются
     const up = (ph === 'back' ? -1.2 : -0.5) * kb * (1 - kf);
     n.armL.rotation.x = up - 0.2 * kf; n.armR.rotation.x = up * 0.8 - 0.1 * kf;
-    n.armL.rotation.z = -(0.25 + 0.95 * D.a1 * kf); n.armR.rotation.z = 0.25 + 0.95 * D.a2 * kf;
+    n.armL.rotation.z = -(0.25 + 0.95 * D.a1 * kf) - 0.3 * fl2; n.armR.rotation.z = 0.25 + 0.95 * D.a2 * kf + 0.3 * fl2;
     n.elbL.rotation.x = -0.6 * kb * (1 - kf) - 0.3 * D.a1 * kf; n.elbR.rotation.x = -0.6 * kb * (1 - kf) - 0.3 * D.a2 * kf;
     if (t > 0.7 && t < 1.7) { const j = (1.7 - t) * 0.06; n.armL.rotation.x += Math.sin(t * 38) * j; n.armR.rotation.x += Math.sin(t * 33 + 1) * j; n.legL.rotation.x += Math.sin(t * 29) * j * 0.6; }
   }
 
+  function kneeOf(phi, K, s) { // сгибание колена: пик в начале маха + приём веса сразу после касания пяткой
+    const c = Math.cos(phi + 0.2);
+    return K * (c > 0 ? Math.pow(c, 1.2) : 0) + (Math.sin(phi) > 0 ? 0.22 * s * Math.max(0, -Math.sin(2 * phi)) : 0);
+  }
+  // торс и таз врага для вида от первого лица: тот же материал, рисуется поверх мира (depthTest выключен)
+  Run.prototype.fpTorso = function () {
+    const T = THREE, A = actorGeo(this), g = new T.Group(), M = this.agm.body.clone();
+    M.fog = false; M.depthTest = false;
+    const add = (geo, y) => { const m = new T.Mesh(geo, M); m.position.y = y; m.renderOrder = 990; m.frustumCulled = false; g.add(m); };
+    add(A.pelvis, -0.06); add(A.chest, 0);
+    g.rotation.y = Math.PI; g.scale.set(1.2, 1, 1.1); g.position.set(0, -0.68, 0.1);
+    return g;
+  };
   // ------------------------------------------------------------------ анимация
   Run.prototype.updateNpc = function (n, dt) {
     const g = n.g, v = tv();
@@ -259,7 +303,13 @@
     const ddx = g.position.x - n.lx, ddz = g.position.z - n.lz; n.lx = g.position.x; n.lz = g.position.z;
     const spd = dt > 0 ? Math.min(8, Math.hypot(ddx, ddz) / dt) : 0;
     n.vel = lerp(n.vel, spd, 1 - Math.exp(-dt * 10));
+    const yaw0 = g.rotation.y;
     g.rotation.y += wrap(n.yaw - g.rotation.y) * (1 - Math.exp(-dt * 7));
+    if (dt > 0) {
+      n.yr = lerp(n.yr || 0, clamp(wrap(g.rotation.y - yaw0) / dt, -4, 4), 1 - Math.exp(-dt * 6));
+      n.ai = lerp(n.ai || 0, n.pv === undefined ? 0 : clamp((n.vel - n.pv) / dt, -6, 6), 1 - Math.exp(-dt * 5)); n.pv = n.vel;
+      const km = 1 - Math.exp(-dt * 12); n.mvx = lerp(n.mvx || 0, ddx / dt, km); n.mvz = lerp(n.mvz || 0, ddz / dt, km);
+    }
     const ry = g.rotation.y, vf = (ddx * Math.sin(ry) + ddz * Math.cos(ry)) / Math.max(dt, 1e-4);
     const dir = n.vel > 0.5 && vf < -0.35 * n.vel ? -1 : 1;
     n.swing = lerp(n.swing, n.vel > 0.12 ? 1 : 0, 1 - Math.exp(-dt * 9));
@@ -269,8 +319,8 @@
     const cv = n.cv = lerp(n.cv || 0, n.cvT || 0, 1 - Math.exp(-dt * 9)); // присед в укрытии / на колено
     const lk = clamp((n.vel - 1.8) / 2.6, 0, 1), A = lerp(0.42, 0.85, lk) * clamp(n.vel / 1.3, 0.55, 1) * s * ps.gait * (1 - 0.45 * cv);
     const sl = Math.sin(ph), sr = Math.sin(ph + Math.PI), K = lerp(0.95, 1.7, lk) * s * (1 - 0.5 * cv);
-    n.legL.rotation.x = -sl * A * (1 - ps.limp) - 1.05 * cv; n.legR.rotation.x = -sr * A - 0.75 * cv;
-    n.kneeL.rotation.x = 0.06 + K * Math.max(0, Math.cos(ph)) * (1 - ps.limp * 0.4) + 1.95 * cv; n.kneeR.rotation.x = 0.06 + K * Math.max(0, -Math.cos(ph)) + 1.5 * cv;
+    n.legL.rotation.x = -(sl + 0.1 * Math.sin(2 * ph)) * A * (1 - ps.limp) - 1.05 * cv; n.legR.rotation.x = -(sr + 0.1 * Math.sin(2 * ph)) * A - 0.75 * cv;
+    n.kneeL.rotation.x = 0.06 + kneeOf(ph, K, s * (0.4 + 0.6 * lk)) * (1 - ps.limp * 0.4) + 1.95 * cv; n.kneeR.rotation.x = 0.06 + kneeOf(ph + Math.PI, K, s * (0.4 + 0.6 * lk)) + 1.5 * cv;
     n.footL.rotation.x = clamp(-(n.legL.rotation.x + n.kneeL.rotation.x) * 0.6, -0.5 - 0.1 * cv, 0.5); n.footR.rotation.x = clamp(-(n.legR.rotation.x + n.kneeR.rotation.x) * 0.6, -0.5 - 0.1 * cv, 0.5);
     n.legL.rotation.z = n.legR.rotation.z = 0;
     if (ps.stomp && n.vel > 0.6) { // тяжёлая поступь: при каждом шаге камера вздрагивает
@@ -279,20 +329,27 @@
     }
     // корпус: качка бёдер, наклон вперёд, дыхание в стойке, микро-позы личности в покое
     const id = idlePose(ps, t, (1 - s) * (1 - n.aimK));
-    const breathe = Math.sin(t * 1.7) * 0.012 * (1 - s), sway = Math.sin(t * 0.6) * 0.03 * (1 - s);
+    const ex = n.ex = lerp(n.ex || 0, lk * s, 1 - Math.exp(-dt * (lk * s > (n.ex || 0) ? 1.2 : 0.3)));
+    n.br = (n.br || 0) + dt * (1.6 + 2.6 * ex);
+    const bsn = Math.sin(n.br), breathe = bsn * (0.02 * (1 - s) + 0.03 * ex), sway = Math.sin(t * 0.6) * 0.03 * (1 - s);
+    const yr = n.yr || 0, turn = clamp(yr, -3, 3) * clamp(n.vel / 2, 0, 1);
     n.hips.position.y = 0.95 - 0.03 * s * ps.bob + 0.026 * s * ps.bob * Math.cos(2 * ph) - 0.02 * lk * s - (n.crouch || 0) * 0.14 - 0.32 * cv;
-    n.hips.rotation.y = Math.sin(ph) * 0.1 * s; n.hips.rotation.z = Math.sin(ph) * 0.04 * s * ps.sway + sway * 0.4 + ps.wobble * Math.sin(t * 1.9) * 0.08 + ps.limp * Math.sin(ph) * 0.06 * s;
-    const fl0 = n.flinch; n.flinch = Math.max(0, fl0 - dt * 4.5); const fl = fl0 * ps.flinch;
+    n.hips.position.x = Math.cos(ph) * 0.02 * s * ps.sway + Math.sin(t * 0.45) * 0.008 * (1 - s);
+    n.hips.rotation.y = Math.sin(ph) * 0.1 * s; n.hips.rotation.z = Math.cos(ph) * 0.04 * s * ps.sway + sway * 0.4 + ps.wobble * Math.sin(t * 1.9) * 0.08 + ps.limp * Math.sin(ph) * 0.06 * s - turn * 0.04;
+    const fl0 = n.flinch; n.flinch = Math.max(0, fl0 - dt * (1.2 + 3.3 * fl0)); const fl = fl0 * ps.flinch;
+    const fd0 = n.flinchD === undefined ? 1 : n.flinchD; n.hips.position.x += n.flinchS * fl * 0.035 * (n.flinchL === undefined ? 0.6 : n.flinchL); n.hips.position.z = -fl * fd0 * 0.05;
     n.aimK = lerp(n.aimK, n.armT, 1 - Math.exp(-dt * 7));
     n.arm = n.aimK;
-    n.kick = Math.max(0, n.kick - dt * 9);
+    n.kick = n.kick > 0.003 ? n.kick * Math.exp(-dt * 10) : 0;
     const bs = n.bash > 0 ? Math.sin(Math.PI * n.bash) : 0, kd = n.bashKind, ram = kd === 'ram' ? bs : kd === 'jab' ? bs * 0.3 : 0;
-    n.spine.rotation.set(n.lean + ps.lean + 0.04 * s + 0.28 * lk * s + breathe + (n.crouch || 0) * 0.3 + cv * 0.25 - fl * 0.34 - n.kick * 0.1 + id.sx + ram * 0.55 + bs * 0.1, -Math.sin(ph) * 0.16 * s + (n.gunKind ? -0.18 * n.aimK : 0) + id.sy, n.flinchS * fl * 0.12 + ps.wobble * Math.sin(t * 1.3) * 0.1 + id.sz);
+    const fd = n.flinchD === undefined ? 1 : n.flinchD, fL = n.flinchL === undefined ? 0.6 : n.flinchL;
+    const sx = n.lean + ps.lean + 0.04 * s + 0.28 * lk * s + clamp((n.ai || 0) * 0.025, -0.1, 0.14) * s + breathe + (n.crouch || 0) * 0.3 + cv * 0.25 - fl * 0.34 * fd - n.kick * 0.1 + id.sx + ram * 0.55 + bs * 0.1;
+    n.spine.rotation.set(sx, -Math.sin(ph) * 0.16 * s + (n.gunKind ? -0.18 * n.aimK : 0) + id.sy + turn * 0.05, n.flinchS * fl * 0.2 * fL + ps.wobble * Math.sin(t * 1.3) * 0.1 + id.sz - Math.cos(ph) * 0.02 * s - turn * 0.02);
     if (bs > 0 && kd === 'kick') { n.legR.rotation.x = -1.35 * bs; n.kneeR.rotation.x = 0.06 + 0.25 * bs; n.footR.rotation.x = 0.3 * bs; n.spine.rotation.x -= 0.15 * bs; }
     // голова: микро-повороты в стойке, рывок назад при попадании, тик/тремор личности
     n.tilt = lerp(n.tilt, n.tiltT, 1 - Math.exp(-dt * 4));
     const tw = ps.twitch * Math.sin(t * 27) * Math.sin(t * 5.1);
-    n.head.rotation.set(-fl * 0.5 + Math.sin(t * 1.3) * 0.02 - cv * 0.2 + id.hx + tw, Math.sin(t * 0.5) * 0.18 * (1 - n.aimK) * (1 - s) + (n.gunKind ? 0.18 * n.aimK : 0) + id.hy + tw * 0.8, n.tilt + ps.head * (1 - 0.5 * n.aimK) + id.hz);
+    n.head.rotation.set(-fl * 0.5 * fd + Math.sin(t * 1.3) * 0.02 - cv * 0.2 + id.hx + tw - sx * 0.35 + bsn * 0.01 * (1 + 2 * ex) + 0.012 * s * Math.cos(2 * ph), Math.sin(t * 0.5) * 0.18 * (1 - n.aimK) * (1 - s) + (n.gunKind ? 0.18 * n.aimK : 0) + id.hy + tw * 0.8 - Math.sin(ph) * 0.05 * s + turn * 0.08, n.tilt + ps.head * (1 - 0.5 * n.aimK) + id.hz - turn * 0.03);
     if (n.gunKind && !n.holster) this.actorArmsGun(n, s, ph, lk, dt, ps, id, t);
     else this.actorArmsFree(n, s, sl, sr, lk, t, fl, ps, id);
     if (n.act) this.actPose(n, dt, t); // interiors.js: поза жильца комнаты (сидит / спит / сдаётся) поверх базовой
@@ -316,8 +373,8 @@
     const idle = 1 - s;
     n.armL.rotation.set(-A * sr * 0.9 + Math.sin(t * 1.1) * 0.03 * idle - (n.charge ? 0.9 * s : 0) + fl * 0.3, 0, -0.07 - 0.03 * idle + Math.sin(t * 0.9) * 0.02 * idle);
     n.armR.rotation.set(-A * sl * 0.9 * (1 - a) - ang * a + Math.sin(t * 1.3 + 2) * 0.03 * idle - (n.charge ? 0.9 * s * (1 - a) : 0) + fl * 0.3, 0, 0.07 + 0.03 * idle - Math.sin(t * 0.7) * 0.02 * idle);
-    n.elbL.rotation.set(-(0.18 + 0.2 * s + (0.95 + (n.charge ? 0.4 : 0)) * lk * s) - (n.charge ? 0.5 * s : 0), 0, 0);
-    n.elbR.rotation.set(-(0.18 + 0.2 * s + (0.95 + (n.charge ? 0.4 : 0)) * lk * s) * (1 - a) - 0.3 * a - (n.charge ? 0.5 * s * (1 - a) : 0), 0, 0);
+    n.elbL.rotation.set(-(0.18 + 0.2 * s + (0.95 + (n.charge ? 0.4 : 0)) * lk * s) - (n.charge ? 0.5 * s : 0) - 0.22 * Math.max(0, sr) * (0.3 + lk) * s, 0, 0);
+    n.elbR.rotation.set(-(0.18 + 0.2 * s + (0.95 + (n.charge ? 0.4 : 0)) * lk * s) * (1 - a) - 0.3 * a - (n.charge ? 0.5 * s * (1 - a) : 0) - 0.22 * Math.max(0, sl) * (0.3 + lk) * s * (1 - a), 0, 0);
     if (n.work > 0) { // техник чинит: обе руки у груди, быстрые мелкие движения
       const w = n.work, k = Math.sin(t * 13);
       n.armR.rotation.set(lerp(n.armR.rotation.x, -1.1, w), 0, 0.1); n.elbR.rotation.set(-1.3 * w + k * 0.25 * w, 0, 0);
@@ -328,7 +385,7 @@
 
   // руки с оружием: оружие крепится к корпусу, обе кисти тянутся к хвату и цевью (IK)
   Run.prototype.actorArmsGun = function (n, s, ph, lk, dt, ps, id, t) {
-    const v = tv(), gk = GK[n.gunKind], G = n.gunG, pistol = n.gunKind === 'pistol';
+    const v = tv(), gk = n.gkO || GK[n.gunKind], G = n.gunG, pistol = n.gunKind === 'pistol';
     const bs = n.bash > 0 ? Math.sin(Math.PI * n.bash) : 0, kd = n.bashKind;
     let a = smooth(n.aimK) * (1 - (n.daze || 0));
     if (bs > 0 && kd !== 'shove' && kd !== 'kick' && kd !== 'ram') a = Math.max(a, bs * 0.9);
@@ -336,7 +393,7 @@
     // позиция в корпусе: у бедра («готов») -> у плеча (прицеливание) или у бедра (стрельба от бедра, hip)
     const ty = lerp(pistol ? 0.45 : 0.42, 0.27, hp), tz = lerp(pistol ? 0.42 : 0.34, 0.38, hp), tx = pistol ? 0.06 : 0.1, trx = lerp(-0.04, 0.1, hp);
     G.position.set(lerp(0.15, tx, a) + id.gx, lerp(0.14, ty, a) + bob + id.gy, lerp(0.3, tz, a) - kick * 0.07 + id.gz);
-    G.rotation.set(lerp(0.95, trx, a) - kick * 0.16 + id.grx, lerp(0.0, -0.1, a) + id.gry, id.grz);
+    G.rotation.set(lerp(0.95, trx, a) - kick * 0.16 + id.grx + clamp(n.ai || 0, -4, 4) * 0.012, lerp(0.0, -0.1, a) + id.gry - clamp(n.yr || 0, -3, 3) * 0.035 * (0.5 + a), id.grz);
     if (bs > 0) { // удар оружием: приклад по дуге / тычок стволом
       if (kd === 'bash' || kd === 'wild') { G.rotation.y -= bs * 1.2 * (kd === 'wild' ? Math.sin(t * 40) : 1); G.rotation.x += bs * 0.5; G.position.x -= bs * 0.15; G.position.z += bs * 0.2; }
       else if (kd === 'jab') { G.position.z += bs * 0.45; G.position.y -= bs * 0.04; G.rotation.x -= bs * 0.12; }
@@ -411,6 +468,83 @@
     const dm = new T.MeshBasicMaterial({ color: col.pool, transparent: true, opacity: 0.88, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
     for (let i = 0; i < P * 6; i += 1) { const m = new T.Mesh(dg, dm); m.visible = false; m.renderOrder = 1; this.scene.add(m); B.decals.push({ m, grow: 0, tgt: 0, t: 0 }); }
     B.gore = this.qs('.m-gore');
+  };
+  // брызги на торсе игрока (вид от первого лица): пул пятен на теле, бурые к концу и исчезают через 16–30 с; dir — куда летела кровь, amount 0..1.5
+  const TB = 18, TB_COL = { red: [0xa01212, 0x2e0d06], dark: [0x161616, 0x050505] };
+  Run.prototype.bloodSplatTorso = function (dir, amount) {
+    this.ensureBlood && this.ensureBlood();
+    const body = this.body; if (!this.bl || !body || !this.p) return;
+    const T = THREE;
+    let F = this.fpb;
+    if (!F || F.body !== body) {
+      const col = TB_COL[this.bloodMode] || TB_COL.red, geo = new T.CircleGeometry(0.5, 9).rotateX(-Math.PI / 2);
+      F = this.fpb = { body, s: [], i: 0, act: 0, c0: new T.Color(col[0]), c1: new T.Color(col[1]) };
+      for (let k = 0; k < TB; k += 1) {
+        const mt = new T.MeshBasicMaterial({ color: col[0], transparent: true, opacity: 0, depthTest: false, depthWrite: false, fog: false }), m = new T.Mesh(geo, mt);
+        m.renderOrder = 996; m.frustumCulled = false; m.visible = false; body.add(m); F.s.push({ m, mt, t: 0, L: 1, sx: 1, sz: 1 });
+      }
+    }
+    const yaw = this.p.yaw, lx = dir ? -(dir.x * Math.cos(yaw) - dir.z * Math.sin(yaw)) : 0, lz = dir ? -(dir.x * Math.sin(yaw) + dir.z * Math.cos(yaw)) : 0;
+    const a = clamp(amount === undefined ? 1 : amount, 0.1, 1.5), cnt = Math.round(3 + 8 * a);
+    for (let k = 0; k < cnt; k += 1) {
+      const q = F.s[F.i]; F.i = (F.i + 1) % TB;
+      const x = clamp(lx * 0.12 + rnd(-0.17, 0.17), -0.24, 0.24), z = clamp(0.08 + lz * 0.1 + rnd(-0.1, 0.1), -0.02, 0.22), sz = rnd(0.01, 0.034) * (0.7 + a * 0.5), st = Math.random() < 0.3 ? rnd(2, 3.2) : 1;
+      q.m.position.set(x, -0.19 - 1.2 * x * x - rnd(0, 0.004), z); q.m.rotation.y = Math.random() * 6.28;
+      q.sx = sz * st; q.sz = sz; q.t = 0; q.L = rnd(16, 30); q.m.visible = true; q.mt.opacity = 0.92; q.mt.color.copy(F.c0);
+    }
+    F.act = TB;
+  };
+  // то же для куклы другого игрока: пул пятен на груди (n.spine), мировой dir -> в систему куклы
+  Run.prototype.bloodSplatNpc = function (n, dir, amount) {
+    this.ensureBlood && this.ensureBlood();
+    if (!this.bl || !n || !n.spine) return;
+    const T = THREE;
+    let F = n.npb;
+    if (!F) {
+      const col = TB_COL[this.bloodMode] || TB_COL.red, geo = new T.CircleGeometry(0.5, 9);
+      F = n.npb = { s: [], i: 0, act: 0, c0: new T.Color(col[0]), c1: new T.Color(col[1]) };
+      for (let k = 0; k < 12; k += 1) {
+        const mt = new T.MeshBasicMaterial({ color: col[0], transparent: true, opacity: 0, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }), m = new T.Mesh(geo, mt);
+        m.visible = false; n.spine.add(m); F.s.push({ m, mt, t: 0, L: 1, sx: 1 });
+      }
+      (this.npcBlood || (this.npcBlood = [])).push(F);
+    }
+    const r = n.g.rotation.y, lx = dir ? -(dir.x * Math.cos(r) - dir.z * Math.sin(r)) : 0;
+    const a = clamp(amount === undefined ? 1 : amount, 0.1, 1.5), cnt = Math.round(2 + 5 * a);
+    for (let k = 0; k < cnt; k += 1) {
+      const q = F.s[F.i]; F.i = (F.i + 1) % 12;
+      q.m.position.set(clamp(lx * 0.06 + rnd(-0.1, 0.1), -0.13, 0.13), rnd(0.08, 0.42), 0.1);
+      q.m.rotation.z = Math.random() * 6.28; q.sx = rnd(0.02, 0.06) * (0.7 + a * 0.5); q.t = 0; q.L = rnd(16, 30); q.m.visible = true; q.mt.opacity = 0.92; q.mt.color.copy(F.c0);
+    }
+    F.act = 12;
+  };
+  Run.prototype.updateNpcBlood = function (dt) {
+    (this.npcBlood || []).forEach((F) => {
+      if (!F.act) return;
+      let act = 0;
+      F.s.forEach((q) => {
+        if (!q.m.visible) return;
+        q.t += dt; const u = q.t / q.L;
+        if (u >= 1) { q.m.visible = false; return; }
+        act += 1; q.mt.color.copy(F.c0).lerp(F.c1, clamp(u / 0.6, 0, 1)); q.mt.opacity = 0.92 * (u < 0.7 ? 1 : 1 - (u - 0.7) / 0.3);
+        const g = 0.4 + 0.6 * Math.min(1, q.t / 0.18); q.m.scale.set(q.sx * g, q.sx * g, 1);
+      });
+      F.act = act;
+    });
+  };
+  Run.prototype.updateTorsoBlood = function (dt) {
+    const F = this.fpb; if (!F || !F.act) return;
+    let act = 0;
+    for (let i = 0; i < F.s.length; i += 1) {
+      const q = F.s[i]; if (!q.m.visible) continue;
+      q.t += dt; const u = q.t / q.L;
+      if (u >= 1) { q.m.visible = false; continue; }
+      act += 1;
+      q.mt.color.copy(F.c0).lerp(F.c1, clamp(u / 0.6, 0, 1));
+      q.mt.opacity = 0.92 * (u < 0.7 ? 1 : 1 - (u - 0.7) / 0.3);
+      const g = 0.4 + 0.6 * Math.min(1, q.t / 0.18); q.m.scale.set(q.sx * g, 1, q.sz * g);
+    }
+    F.act = act;
   };
   Run.prototype.decal = function (x, z, r, grow) {
     const B = this.bl; if (!B) return null;

@@ -304,7 +304,7 @@
       K.suitMode(r, true);
       K.suitFov(r, 102, 0.6);
       K.stress(r, 1, 5);
-      mus.play(2.0, true);
+      if (mus.want && mus.mix > 0.05) mus.play(2.0); else mus.play(2.0, true);   // уже играет (с зала или с прошлой попытки) — не перезапускаем, трек и так зациклен
       K.ally.follow(r, [d], { side: -1, back: 3.0 });
       K.ally.follow(r, [g], { side: 1, back: 3.6 });
       V.dir = true; V.fire = true;
@@ -529,7 +529,7 @@
       }));
       await r.until(() => !ok() || n >= total);
       clock.stop();
-      mus.stop(3.0);
+      // музыка не гаснет после ограбления: продолжает играть через выброс газа, затихает на выходе к лестнице (PH.gas)
       if (!ok()) return;
       r.banner(null);
       V.trick = false;
@@ -607,7 +607,7 @@
     K.css();
     r.xfTint = true; r.noFight = true; st.suit = true;
     setFog(r, 0);
-    K.amb.set(r, 'vault', { fade: 0.5 });
+    K.amb.set(r, 'vault', { fade: 0.5 }); r.musicTrack('osttdictor', { vol: 0.95 }).play(1.5);   // тот же зацикленный трек: газ — продолжение ограбления
     R.alarm = true;
     r.p.x = 0; r.p.z = -34.4; r.p.yaw = 0; r.p.pitch = 0; r.spawnPt = [0, -34.4, 0];
     put(d, -1.9, -35.6, 0); put(g, 1.9, -35.2, 0);
@@ -622,8 +622,8 @@
         run: () => {
           r.fade(0, 0.5);
           K.amb.pulse(r, 'alarm', 1); K.amb.pulse(r, 'rumble', 0.8);
-          r.say('FACILITY SYSTEM', 'Warning. Lethal gas release on level two. All personnel evacuate.', 4.2);
-        },
+        }, says: [['FACILITY SYSTEM', 'Warning. Lethal gas release on level two. All personnel evacuate.', 4.2]],
+        // реплика идёт через says: с озвучкой шот сам тянется до конца голоса (cinema.js sayTime)
         tick: () => { G.front = Math.min(GAS0 + 1.8, G.front + 0.012); } }),
       sh({ at: [-1.2, 1.66, -33.7], to: [-1.45, 1.66, -34.2], look: () => [d.g.position.x, 1.62, d.g.position.z], fov: 28, dur: 5.2, hand: 0.5, tense: 0.5,
         says: [[DIC, 'Gas! They are venting the whole floor!', 2.6], [DIC, 'South. The stairs. Run!', 2.4]] }),

@@ -10,6 +10,17 @@
   const rnd = (a, b) => a + Math.random() * (b - a);
   const sgn = () => (Math.random() < 0.5 ? -1 : 1);
   const easeOut = (k) => 1 - Math.pow(1 - k, 3); // резкий старт, мягкий финиш — «профессиональные» дёрганые движения
+  const easeOut4 = (k) => 1 - Math.pow(1 - k, 4);
+  const easeBack = (k, c) => { const m = k - 1; return 1 + (c + 1) * m * m * m + c * m * m; }; // рывок с лёгким перелётом
+  // профили перезарядки: amp — размах позы, yank — первый рывок оружия вниз-вбок, jolt — отдача в руках от событий, back — перелёт, cam — тряска камеры
+  const RLP = {
+    glock: { amp: 1.3, yank: 1.0, jolt: 0.8, back: 1.1, cam: 1 },
+    ak: { amp: 1.2, yank: 1.0, jolt: 1.1, back: 0.9, cam: 1.15 },
+    shotgun: { amp: 1.1, yank: 0.6, jolt: 1.2, back: 0.8, cam: 1.2 },
+    sniper: { amp: 1.1, yank: 0.8, jolt: 1.5, back: 0.7, cam: 1.3, bolt: 1.7 },
+    minigun: { amp: 0.8, yank: 0.5, jolt: 2, back: 0.5, cam: 1.5 }
+  };
+  const rlp = (id) => RLP[id] || RLP.ak;
 
   // ------------------------------------------------------------------ оружие
   // low — поза у бедра (x,y,z в системе тела, rx,ry); sprint — поза бега; relief — расстояние от глаза до целика в прицеливании
@@ -184,13 +195,55 @@
 
   // поза перезарядки: между ключевыми кадрами — резкий старт и мягкий финиш (рваные движения).
   // o[0..5] — смещение/поворот оружия, o[6] — руки видны, o[7] — в левой руке магазин/патрон, o[8] — ход затвора; o.a/o.b/o.k — цели левой руки (из кадров) и прогресс между ними
+  // бросок гранаты: оружие уходит вниз, левая рука выдёргивает чеку, правая замахивается и отпускает (ключевые кадры кистей в системе тела)
+  const GT = 0.64, GT_REL = 0.4;
+  const GKR = [[0, 0.2, -0.5, -0.26], [0.1, 0.12, -0.3, -0.36], [0.22, 0.12, -0.3, -0.36], [0.32, 0.3, -0.12, 0.1], [0.4, 0.08, -0.28, -0.55], [0.5, 0.0, -0.4, -0.5], [0.64, 0.2, -0.5, -0.26]];
+  const GKL = [[0, -0.22, -0.5, -0.26], [0.1, -0.06, -0.3, -0.38], [0.14, -0.06, -0.3, -0.38], [0.24, -0.34, -0.36, -0.28], [0.34, -0.22, -0.32, -0.3], [0.4, -0.28, -0.3, -0.4], [0.64, -0.22, -0.5, -0.26]];
+  const gtSample = (K, t, o) => {
+    let i = 0; while (i < K.length - 2 && t >= K[i + 1][0]) i += 1;
+    const a = K[i], b = K[i + 1], u = clamp((t - a[0]) / (b[0] - a[0]), 0, 1), k = u * u * (3 - 2 * u);
+    o[0] = a[1] + (b[1] - a[1]) * k; o[1] = a[2] + (b[2] - a[2]) * k; o[2] = a[3] + (b[3] - a[3]) * k;
+  };
+  const gtTmp = [0, 0, 0];
+  Run.prototype.startGadgetThrow = function (id) {
+    const T = THREE, rg = this.rg;
+    if (!rg.gm) {
+      const mat = (c) => new T.MeshBasicMaterial({ color: c, depthTest: false, depthWrite: false, fog: false }), g = new T.Group();
+      const mk = (geo, c, x, y, z) => { const m = new T.Mesh(geo, mat(c)); m.position.set(x, y, z); m.renderOrder = 1001; m.frustumCulled = false; g.add(m); return m; };
+      rg.gmBody = mk(new T.SphereGeometry(0.042, 8, 6).scale(1, 1.2, 1), 0x2a2a2a, 0, 0, 0);
+      mk(new T.CylinderGeometry(0.014, 0.014, 0.03, 6), 0x777777, 0, 0.056, 0);
+      mk(new T.BoxGeometry(0.012, 0.06, 0.02), 0x8a8a8a, 0.032, 0.02, 0);
+      rg.gm = g; g.visible = false; this.scene.add(g);
+      const pin = new T.Mesh(new T.TorusGeometry(0.014, 0.003, 4, 8), mat(0xc8c8c8)); pin.renderOrder = 1002; pin.frustumCulled = false; pin.visible = false; this.scene.add(pin); rg.gpin = pin;
+    }
+    rg.gmBody.material.color.setHex(id === 'frag' ? 0x2a2a2a : 0xdcdcdc);
+    this.gadT = { id, t: 0, rel: false };
+  };
+  Run.prototype.gadK = function () { const g = this.gadT; return g ? smooth(clamp(Math.min(g.t / 0.1, (GT - g.t) / 0.12), 0, 1)) : 0; };
+  Run.prototype.gadHands = function (hp, wr) {
+    const g = this.gadT, body = this.body, rg = this.rg;
+    for (let i = 0; i < 2; i += 1) { gtSample(i ? GKR : GKL, g.t, gtTmp); hp[i].set(gtTmp[0], gtTmp[1], gtTmp[2]); body.localToWorld(hp[i]); }
+  };
+  Run.prototype.gadModel = function (wr) {
+    const g = this.gadT, rg = this.rg, body = this.body, gm = rg.gm; if (!gm) return;
+    const held = g && !g.rel;
+    gm.visible = !!held; rg.gpin.visible = !!(g && g.t > 0.16 && g.t < GT_REL + 0.2);
+    if (held) { rg.v1.set(0, 0.015, -0.06).applyQuaternion(body.quaternion).add(wr[1]); gm.position.copy(rg.v1); gm.quaternion.copy(body.quaternion); }
+    if (rg.gpin.visible) { rg.v1.set(0, 0, -0.05).applyQuaternion(body.quaternion).add(wr[0]); rg.gpin.position.copy(rg.v1); rg.gpin.quaternion.copy(body.quaternion); }
+  };
+  Run.prototype.rigJolt = function (z, rx, ry) { const j = this.rg && this.rg.j; if (j) { j.vz += z; j.vrx += rx; j.vry += ry; } };
   Run.prototype.rlPose = function (rl) {
-    const K = rl.def.rl, u = clamp(rl.shell ? rl.cyc : rl.t / rl.dur, 0, 1);
+    const K = rl.def.rl, u = clamp(rl.shell ? rl.cyc : rl.t / rl.dur, 0, 1), a0 = (K, i) => K[i][0];
     let i = 0;
     while (i < K.length - 2 && u >= K[i + 1][0]) i += 1;
-    const a = K[i], b = K[i + 1], k = easeOut(clamp((u - a[0]) / Math.max(0.001, b[0] - a[0]), 0, 1));
+    const P = rlp(rl.id), tt = clamp((u - a0(K, i)) / Math.max(0.001, K[i + 1][0] - K[i][0]), 0, 1);
+    const a = K[i], b = K[i + 1], k = easeOut4(tt), kp = easeBack(tt, P.back);
     const o = rl.out || (rl.out = []);
-    for (let j = 0; j < 6; j += 1) o[j] = lerp(a[j + 1], b[j + 1], k);
+    for (let j = 0; j < 6; j += 1) o[j] = lerp(a[j + 1], b[j + 1], kp) * P.amp;
+    if (!rl.shell) { // первый рывок: оружие резко вниз-вбок и кантом, затем гасится
+      const ye = Math.exp(-rl.t * 10) * Math.sin(Math.min(1, rl.t / 0.045) * 1.5708) * P.yank;
+      o[0] -= 0.05 * ye; o[1] -= 0.07 * ye; o[3] += 0.28 * ye; o[5] += 0.3 * ye;
+    }
     o[6] = lerp(a[8], b[8], k);
     o[7] = a[9] > 0.5 || b[9] > 0.5 ? 1 : 0;
     o[8] = lerp(a[10], b[10], k);
@@ -226,30 +279,42 @@
 
   Run.prototype.updateRig = function (dt, vel) {
     const rg = this.rg; if (!rg) return;
-    const cam = this.camera, body = this.body, p = this.p, mv = p.moving, ph = p.phase, t = this.time;
+    const cam = this.camera, body = this.body, p = this.p, mv = this.bobK === undefined ? p.moving : this.bobK, ph = p.phase, t = this.time;
+    const sp = rg.sp || (rg.sp = { x: 0, y: 0, r: 0, vx: 0, vy: 0, vr: 0, by: 0 }), sdt = Math.min(dt, 0.033);
+    if (sdt > 0) {
+      const tx = clamp(-vel * 0.0035, -0.045, 0.045), ty = clamp(-(this.pitchVel || 0) * 0.003, -0.04, 0.04), tr = clamp(vel * 0.0035, -0.07, 0.07);
+      sp.vx += (150 * (tx - sp.x) - 15 * sp.vx) * sdt; sp.x += sp.vx * sdt;
+      sp.vy += (150 * (ty - sp.y) - 15 * sp.vy) * sdt; sp.y += sp.vy * sdt;
+      sp.vr += (120 * (tr - sp.r) - 13 * sp.vr) * sdt; sp.r += sp.vr * sdt;
+    }
+    const J = rg.j || (rg.j = { z: 0, rx: 0, ry: 0, vz: 0, vrx: 0, vry: 0 });
+    if (sdt > 0) { J.vz += (320 * -J.z - 20 * J.vz) * sdt; J.z += J.vz * sdt; J.vrx += (320 * -J.rx - 20 * J.vrx) * sdt; J.rx += J.vrx * sdt; J.vry += (320 * -J.ry - 20 * J.vry) * sdt; J.ry += J.vry * sdt; }
     cam.updateMatrixWorld(true); body.updateMatrixWorld(true);
     const { v1, v2, v3, v4, q1, q2, e, sh, hp } = rg;
     sh[0].set(-0.24, -0.22, 0.02); body.localToWorld(sh[0]);
     sh[1].set(0.24, -0.22, 0.02); body.localToWorld(sh[1]);
-    const w = this.wp, rl = this.rl;
+    const gb = this.grab; if (gb) { gb.t += dt; if (gb.t >= 0.34) this.grab = null; }
+    const gT = this.gadT; if (gT) { gT.t += dt; if (!gT.rel && gT.t >= GT_REL) { gT.rel = true; this.throwGadget(gT.id); this.rigJolt(-0.8, -4, 0); } if (gT.t >= GT) { this.gadT = null; if (rg.gm) { rg.gm.visible = false; rg.gpin.visible = false; } } }
+    const gk = this.gadT ? this.gadK() : 0, w = this.wp && gk >= 0.98 ? null : this.wp, rl = this.rl;
     let hvT = clamp((-p.pitch - 0.12) / 0.45, 0, 1); // руки видны, только когда игрок смотрит вниз
     if (this.pmHv) hvT = this.pmHv(hvT); // pmove.js: с кулаками руки видны всегда
     if (w) {
       const d = w.def, mdl = this.rigModel(w.id);
       Object.keys(rg.models).forEach((k) => { rg.models[k].holder.visible = k === w.id; rg.models[k].lh.visible = k === w.id; });
       let px = d.low[0], py = d.low[1], pz = d.low[2], rx = d.low[3], ry = d.low[4], rz = 0;
-      px += Math.sin(ph) * 0.01 * mv; py += Math.abs(Math.sin(ph)) * 0.014 * mv;
+      px += Math.sin(ph) * 0.01 * mv; py += Math.abs(Math.sin(ph)) * 0.014 * mv - Math.cos(ph * 2) * 0.004 * mv + Math.sin(t * 1.4) * 0.0025 * (1 - mv); rz += Math.sin(ph) * 0.012 * mv;
       const sk = this.sprintK || 0;
       if (sk > 0.001) { px = lerp(px, d.sprint[0], sk); py = lerp(py, d.sprint[1], sk); pz = lerp(pz, d.sprint[2], sk); rx = lerp(rx, d.sprint[3], sk); ry = lerp(ry, d.sprint[4], sk); rz = d.sprint[5] * sk; }
       const so = this.swapOff || 0;
-      if (so > 0) { py -= 0.32 * so; rx -= 0.5 * so; }
+      if (gk > 0) { py -= 0.42 * gk; rx -= 0.8 * gk; ry += 0.3 * gk; }
+      if (so > 0) { const se = so * so * (3 - 2 * so); py -= 0.4 * se; rx -= 0.75 * se; ry += 0.3 * se; }
       if (rl) {
         const o = this.rlPose(rl);
         px += o[0]; py += o[1]; pz += o[2]; rx += o[3]; ry += o[4]; rz += o[5];
         hvT = Math.max(hvT, o[6] * 0.85);
       }
       if (this.pmWo) { const o = this.pmWo(dt, px, py, pz, rx, ry, rz); if (o) { px = o[0]; py = o[1]; pz = o[2]; rx = o[3]; ry = o[4]; rz = o[5]; } }
-      px += clamp(-vel * 0.0035, -0.045, 0.045); py += clamp(-(this.pitchVel || 0) * 0.003, -0.04, 0.04);
+      px += sp.x; py += sp.y; rz += sp.r; pz += J.z; rx += J.rx; ry += J.ry;
       v1.set(px, py, pz); body.localToWorld(v1);
       e.set(rx, ry, rz, 'YXZ'); q1.setFromEuler(e); q1.premultiply(body.quaternion);
       const ak = this.aimK || 0;
@@ -300,10 +365,15 @@
       rg.root.visible = false; rg.handMag.visible = false; rg.handShell.visible = false;
       Object.keys(rg.models).forEach((k) => { rg.models[k].lh.visible = false; });
       const sw = Math.sin(ph) * 0.12 * mv;
-      hp[0].set(-0.27, -0.74, -0.1 - sw); body.localToWorld(hp[0]);
-      hp[1].set(0.27, -0.74, -0.1 + sw); body.localToWorld(hp[1]);
+      hp[0].set(-0.22, -0.5, -0.26 - sw * 0.7); body.localToWorld(hp[0]);
+      hp[1].set(0.22, -0.5, -0.26 + sw * 0.7); body.localToWorld(hp[1]);
     }
     if (this.pmHands) this.pmHands(dt, w);
+    if (this.gadT && !w) { this.pmQ = false; this.pmFist = 'fist'; this.pmFree = false; this.gadHands(hp, rg.wr); hvT = 1; }
+    if (this.grab && !w && !this.gadT) {
+      const g = this.grab, u = g.t, k = u < 0.12 ? easeOut(u / 0.12) : u < 0.18 ? 1 : 1 - smooth((u - 0.18) / 0.16);
+      rg.v3.set(g.x, g.y, g.z); body.localToWorld(rg.v3); hp[1].lerp(rg.v3, k); hvT = Math.max(hvT, 0.9 * Math.min(1, k * 3)); this.pmFist = u > 0.1 && u < 0.2 ? 'fist' : 'open';
+    }
     rg.hv = lerp(rg.hv, hvT, 1 - Math.exp(-dt * 12));
     // с оружием руки держат его всегда; без оружия видны, только когда игрок смотрит вниз
     const armA = w ? 1 : rg.hv, vis = armA > 0.02, arms = rg.arms, el = rg.el, wr = rg.wr;
@@ -331,6 +401,7 @@
       a.el.position.copy(el[i]);
       if (!w) { a.hand.position.copy(wr[i]); a.hand.quaternion.copy(a.fo.quaternion); }
     }
+    if (this.gadT || (rg.gm && rg.gm.visible)) this.gadModel(wr);
     if (fh) C.fpsHands.tick(fh, dt);
   };
 
@@ -371,7 +442,7 @@
     this.rigModel(id);
     if (o.equip) this.equip(w, true);
     this.layer.classList.add('armed');
-    if (!this.touch && !this.cb.hint) { this.cb.hint = true; this.qs('.m-hint').textContent = 'WASD MOVE  |  MOUSE LOOK  |  LMB FIRE  |  RMB AIM  |  R RELOAD  |  Q/1-9 SLOT  |  E USE  |  SHIFT RUN  |  C CROUCH  |  Z X LEAN  |  F FISTS  |  V KICK'; }
+    if (!this.touch && !this.cb.hint) { this.cb.hint = true; const KL = (id) => (window.NexaSettings ? NexaSettings.keyLabel(id) : '').replace(/^[LR]-/, ''); this.qs('.m-hint').textContent = ['forward', 'left', 'back', 'right'].map(KL).join('') + ' MOVE  |  MOUSE LOOK  |  LMB FIRE  |  RMB AIM  |  ' + KL('reload') + ' RELOAD  |  ' + KL('swap') + '/1-9 SLOT  |  ' + KL('use') + ' USE  |  ' + KL('run') + ' RUN  |  ' + KL('crouch') + ' CROUCH  |  ' + KL('leanL') + ' ' + KL('leanR') + ' LEAN  |  ' + KL('fists') + ' FISTS  |  ' + KL('kick') + ' KICK'; }
     this.refreshHud();
     return w;
   };
@@ -437,11 +508,11 @@
     const running = (K.ShiftLeft || K.ShiftRight || this.runHeld || this.padRun) && p.moving > 0.3 && !this.aimWant;
     this.sprintK = lerp(this.sprintK, running ? 1 : 0, 1 - Math.exp(-dt * 9));
     // смена оружия: опустить -> переключить -> поднять
-    if (this.swapTo) { this.swapOff = Math.min(1, this.swapOff + dt / 0.13); if (this.swapOff >= 1) { this.wp = this.swapTo; this.swapTo = null; this.rl = null; this.snd && this.snd.play('draw'); this.refreshHud(); } }
-    else if (this.swapOff > 0) this.swapOff = Math.max(0, this.swapOff - dt / 0.22);
+    if (this.swapTo) { this.swapOff = Math.min(1, this.swapOff + dt / 0.1); if (this.swapOff >= 1) { this.wp = this.swapTo; this.swapTo = null; this.rl = null; this.snd && this.snd.play('draw'); this.rigJolt(0.6, 3, sgn() * 1); this.refreshHud(); } }
+    else if (this.swapOff > 0) this.swapOff = Math.max(0, this.swapOff - dt / 0.17);
     const busy = this.swapOff > 0.3 || this.swapTo;
     const want = this.aimWant && this.sprintK < 0.3 && !this.rl && !busy;
-    this.aimK = clamp(this.aimK + (want ? 1 : -1.3) * dt / d.adsTime, 0, 1);
+    this.aimK = clamp(this.aimK + (want ? 1.25 : -1.8) * dt / d.adsTime, 0, 1);
     this.layer.classList.toggle('ads', this.aimK > 0.6);
     // перезарядка
     const rl = this.rl;
@@ -487,9 +558,9 @@
         rl.t -= rl.dur;
         w.mag += 1; w.reserve -= 1;
         this.snd && this.snd.play('shell');
-        this.kick(-0.008, sgn() * 0.006, sgn() * 0.014, 0.003);
+        this.kick(-0.008, sgn() * 0.006, sgn() * 0.014, 0.003); this.rigJolt(0.3, 2.2, sgn() * 0.8);
         this.refreshHud();
-        if (w.mag >= rl.def.mag || w.reserve <= 0) { rl.fin = 0.5; rl.cyc = 0; this.rg.pump = 1; this.snd && this.snd.play('pump'); this.kick(0.012, sgn() * 0.008, sgn() * 0.02, 0.004); }
+        if (w.mag >= rl.def.mag || w.reserve <= 0) { rl.fin = 0.5; rl.cyc = 0; this.rg.pump = 1; this.snd && this.snd.play('pump'); this.kick(0.016, sgn() * 0.01, sgn() * 0.026, 0.006); this.rigJolt(-1, 3.5, sgn() * 1.5); }
       }
       return;
     }
@@ -503,11 +574,12 @@
         rl.fumbled = true; rl.hold = rnd(0.3, 0.55); this.snd && this.snd.play('magout', { k: 0.8, w: rl.id }); this.kick(0.02, sgn() * 0.012, sgn() * 0.03, 0.006); return;
       }
       rl.done[name] = true;
-      if (name === 'magout') { this.snd && this.snd.play('magout', { w: rl.id }); this.kick(0.012, sgn() * 0.008, sgn() * 0.016, 0.004); this.dropMag(this.rg.models[rl.id], rl.def); }
+      const P = rlp(rl.id);
+      if (name === 'magout') { this.snd && this.snd.play('magout', { w: rl.id }); this.kick(0.012 * P.cam, sgn() * 0.008, sgn() * 0.016, 0.004); this.rigJolt(0.3 * P.jolt, -3 * P.jolt, sgn() * 1.2 * P.jolt); this.dropMag(this.rg.models[rl.id], rl.def); }
       else if (name === 'magin') {
-        this.snd && this.snd.play('magin', { w: rl.id }); this.kick(-0.022, sgn() * 0.012, sgn() * 0.03, 0.007);
+        this.snd && this.snd.play('magin', { w: rl.id }); this.kick(-0.03 * P.cam, sgn() * 0.014, sgn() * 0.04, 0.01 * P.cam); this.rigJolt(0.9 * P.jolt, 5 * P.jolt, sgn() * 1.5 * P.jolt);
         const take = Math.min(rl.cap - w.mag, w.reserve); w.mag += take; w.reserve -= take; this.refreshHud();
-      } else if (name === 'rack') { this.snd && this.snd.play('rack'); this.kick(0.018, sgn() * 0.01, sgn() * 0.024, 0.006); this.rg.slide = 1; }
+      } else if (name === 'rack') { this.snd && this.snd.play('rack'); this.kick(0.024 * P.cam, sgn() * 0.012, sgn() * 0.03, 0.008 * P.cam); this.rigJolt(-0.5 * P.jolt * (P.bolt || 1), 2 * P.jolt, sgn() * 2.2 * P.jolt * (P.bolt || 1)); this.rg.slide = 1; }
     }
     if (u >= 1) this.rl = null;
   };
@@ -961,6 +1033,7 @@
   // phase(): участок миссии с чекпоинтом. fn выполняется заново после каждой смерти; всё созданное внутри очищается.
   // skip — необязательное описание «пропуска сектора» как в GTA 5: после 2 провалов подряд игрок может пропустить участок.
   //   { pos: [x, z, yaw], weapons: ['ak'], set: (r) => ... } — куда телепортировать, что выдать и что выставить так, как оставил бы успешный проход.
+  const onlineNow = () => !!((window.NN && window.NN.connected) || (window.NexaCoop && window.NexaCoop.active));
   Run.prototype.phase = async function (name, fn, skip) {
     let fails = 0;
     const snap = {
@@ -978,7 +1051,7 @@
       this.deathRes = null;
       if (ok) return;
       fails += 1;
-      if (await this.recover(snap, skip && fails >= 2 ? { fails, skip } : null) === 'skip') return;
+      if (await this.recover(snap, skip && fails >= 2 && !onlineNow() ? { fails, skip } : null) === 'skip' && !onlineNow()) return;
     }
   };
 
@@ -986,6 +1059,7 @@
   Run.prototype.openNow = function (d) { if (!d) return; if (d.userData.col) d.userData.col.off = true; d.position.y = (d.userData.h || 2.5) + 2.5; };
   // состояние «участок пройден»: общие хвосты фазы + то, что описано в skip
   Run.prototype.applySkip = function (sk) {
+    if (onlineNow()) return;
     if (this.bulk) this.bulk.stop();
     Object.keys(this.beacons || {}).forEach((k) => { this.beacons[k].visible = false; });
     this.banner && this.banner(null); this.meter(null); this.waypoint(null);
@@ -999,6 +1073,7 @@
       const box = this.qs('.m-opts'), pad = !!this.padObj;
       this.qs('.m-retry').textContent = this.touch ? '[RETRY]' : pad ? '[A] RETRY' : '[ENTER] RETRY';
       this.qs('.m-skipsec').textContent = this.touch ? '[SKIP SECTOR]' : pad ? '[Y] SKIP SECTOR' : '[K] SKIP SECTOR';
+      this.qs('.m-skipsec').style.display = onlineNow() ? 'none' : '';
       box.hidden = false;
       this.choice = { res, t0: Date.now() };
       if (!this.touch && document.pointerLockElement) { try { document.exitPointerLock(); } catch (e) {} } // чтобы можно было кликнуть мышью
@@ -1006,6 +1081,7 @@
   };
   Run.prototype.choose = function (v) {
     const c = this.choice;
+    if (v === 'skip' && onlineNow()) v = 'retry';
     if (!c || Date.now() - c.t0 < 600) return; // защита от случайного нажатия сразу после смерти
     this.choice = null;
     this.qs('.m-opts').hidden = true;
@@ -1121,6 +1197,10 @@
       else if (k.kind === 'gadget') { if (this.addGadget) this.addGadget(k.o.id, k.o.n || 1); }
       else if (k.kind === 'weapon') { this.giveWeapon(k.o.id, { equip: k.o.equip !== false, reserve: k.o.reserve }); this.toast(WEAPONS[k.o.id].name + ' ACQUIRED', 2); k.o.onTake && k.o.onTake(); }
       if (!ok) continue;
+      if (this.body && this.rg) { // рука тянется к предмету и подтягивает к груди; с оружием в руках оно чуть подаётся вниз
+        const yw = this.p.yaw, dx = k.x - p.x, dz = k.z - p.z, lx = (dx * Math.cos(yw) - dz * Math.sin(yw)), lz = (dx * Math.sin(yw) + dz * Math.cos(yw));
+        this.grab = { t: 0, x: 0.1 + clamp(lx, -1, 1) * 0.25, y: -0.42, z: clamp(lz * 0.6, -0.5, 0.1) }; this.rigJolt(0.25, -2.2, 0);
+      }
       this.snd && this.snd.play(k.kind === 'health' ? 'medkit' : k.kind === 'ammo' ? 'ammopickup' : 'pickup');
       this.scene.remove(k.g); cb.pickups.splice(i, 1); this.refreshHud();
     }
@@ -1206,7 +1286,7 @@
     }
   };
   Run.prototype.rumble = function (strong, weak, ms) {
-    const buzz = !this.padObj && this.touch && navigator.vibrate; // Android: вибрация телефона вместо вибромоторов геймпада
+    const buzz = !this.padObj && this.touch && navigator.vibrate && (!window.NexaSettings || NexaSettings.get('touch.haptics')); // Android: вибрация телефона вместо вибромоторов геймпада
     if ((!this.padObj && !buzz) || this.rumbleOff) return;
     const now = performance.now(); if (now < (this.rumbleT || 0)) return;
     this.rumbleT = now + ms * 0.6;
@@ -1308,7 +1388,7 @@
       const b = this.qs(sel); if (!b) return;
       let id = null, lx = 0, ly = 0;
       this.on(b, 'pointerdown', (e) => { e.preventDefault(); resume(); id = e.pointerId; lx = e.clientX; ly = e.clientY; try { b.setPointerCapture(id); } catch (err) {} b.classList.add('held'); down(); });
-      this.on(b, 'pointermove', (e) => { if (e.pointerId !== id || !drag) return; this.turnBy((e.clientX - lx) * 0.0055, (e.clientY - ly) * 0.0055); lx = e.clientX; ly = e.clientY; });
+      this.on(b, 'pointermove', (e) => { if (e.pointerId !== id || !drag) return; const lk = window.NexaSettings ? NexaSettings.get('touch.look') / 100 : 1; this.turnBy((e.clientX - lx) * 0.0055 * lk, (e.clientY - ly) * 0.0055 * lk); lx = e.clientX; ly = e.clientY; });
       const end = (e) => { if (e.pointerId !== id) return; id = null; b.classList.remove('held'); up && up(); };
       this.on(b, 'pointerup', end); this.on(b, 'pointercancel', end);
     };

@@ -136,7 +136,7 @@
     };
         T.apply = () => {
       const mv = snd && snd.musVol ? snd.musVol() : 0.5;
-      const want = (T.on && !r.paused && !r.disposed) ? clamp(mv * T.vol * (T.k === undefined ? 1 : T.k), 0, 1.5) : 0;
+      const want = (T.on && !r.paused && !r.disposed) ? clamp(mv * T.vol * (T.k === undefined ? 1 : T.k) * (r.vDuck === undefined ? 1 : r.vDuck), 0, 1.5) : 0;
       if (T.gain) T.gain.gain.setTargetAtTime(want, ctx.currentTime, 0.05); else { try { el.volume = clamp(want, 0, 1); } catch (e) {} }
       if (T.on && (r.paused || r.disposed)) { if (!el.paused) el.pause(); }
       else if (T.on && el.paused && !el.ended && performance.now() > (T.pend || 0)) { T.pend = performance.now() + 900; if (ctx && ctx.state === 'suspended') ctx.resume().catch(() => {}); const p = el.play(); if (p && p.catch) p.catch(() => {}); }

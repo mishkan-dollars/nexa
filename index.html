@@ -4,14 +4,27 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#000000">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="HIGH / LOW">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="assets/icon-192.png">
   <title>HIGH / LOW — NEXA</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Teko:wght@300..700&family=Oswald:wght@300..700&subset=cyrillic,latin&display=swap">
-  <link rel="stylesheet" href="styles.css?v=102">
+  <link rel="stylesheet" href="styles.css?v=121">
+  <link rel="stylesheet" href="css/ui-polish.css?v=7">
+  <link rel="stylesheet" href="css/modes.css?v=5">
+  <link rel="stylesheet" href="css/gift.css?v=2">
   <script defer src="js/nosel.js?v=99"></script>
+  <script defer src="js/settings.js?v=103"></script>
   <script defer src="js/i18n.js?v=99"></script>
   <script defer src="js/i18n-ui.js?v=99"></script>
+  <script defer src="js/i18n-settings.js?v=102"></script>
   <script defer src="js/i18n-hud.js?v=99"></script>
   <script defer src="js/i18n-m1.js?v=99"></script>
   <script defer src="js/i18n-m4.js?v=99"></script>
@@ -21,27 +34,36 @@
   <script defer src="js/i18n-pers.js?v=99"></script>
   <script defer src="js/i18n-int.js?v=99"></script>
   <script defer src="js/i18n-pc.js?v=99"></script>
-  <script defer src="js/preload.js?v=132"></script>
+  <script defer src="js/i18n-twists.js?v=157"></script>
+  <script defer src="js/i18n-net.js?v=156"></script>
+  <script defer src="js/i18n-pvp.js?v=4"></script>
+  <script defer src="js/i18n-hl.js?v=1"></script>
+  <script defer src="js/preload.js?v=157"></script>
   <script defer src="js/game.js?v=99"></script>
   <script defer src="js/audio.js?v=99"></script>
   <script defer src="js/cursor.js?v=99"></script>
-  <script defer src="js/missions.js?v=132"></script>
-  <script defer src="js/toys.js?v=99"></script>
+  <script defer src="js/missions.js?v=139"></script>
+  <script defer src="js/adminkey.js?v=2"></script>
+  <script defer src="js/i18n-admin.js?v=4"></script>
+  <script defer src="js/store.js?v=1"></script>
+  <script defer src="js/single.js?v=1"></script>
+  <script defer src="js/guard.js?v=2"></script>
+  <script defer src="js/toys.js?v=164"></script>
   <script defer src="js/surfaces.js?v=99"></script>
   <script defer src="js/sound.js?v=100"></script>
   <script defer src="js/fppcfg.js?v=99"></script>
   <script defer src="js/spatial.js?v=99"></script>
-  <script defer src="js/voice.js?v=99"></script>
+  <script defer src="js/voice.js?v=146"></script>
   <script defer src="js/models.js?v=99"></script>
-  <script defer src="js/fpshands.js?v=99"></script>
+  <script defer src="js/fpshands.js?v=100"></script>
   <script defer src="js/props3d.js?v=99"></script>
-  <script defer src="js/combat.js?v=99"></script>
-  <script defer src="js/actors.js?v=99"></script>
+  <script defer src="js/combat.js?v=105"></script>
+  <script defer src="js/actors.js?v=103"></script>
   <script defer src="js/personas.js?v=99"></script>
   <script defer src="js/cinema.js?v=99"></script>
   <script defer src="js/missions2.js?v=99"></script>
   <script defer src="js/missions3.js?v=99"></script>
-  <script defer src="js/kit.js?v=99"></script>
+  <script defer src="js/kit.js?v=136"></script>
   <script defer src="js/heist.js?v=99"></script>
   <script defer src="js/f48models.js?v=103"></script>
   <script defer src="js/f48chars.js?v=101"></script>
@@ -52,38 +74,38 @@
   <script defer src="js/f48world3.js?v=100"></script>
   <script defer src="js/f48world4.js?v=107"></script>
   <script defer src="js/f48road.js?v=100"></script>
-  <script defer src="js/f48fx.js?v=122"></script>
-  <script defer src="js/f48audio.js?v=100"></script>
-  <script defer src="js/f48ally.js?v=128"></script>
-  <script defer src="js/finale48.js?v=120"></script>
+  <script defer src="js/f48fx.js?v=135"></script>
+  <script defer src="js/f48audio.js?v=135"></script>
+  <script defer src="js/f48ally.js?v=129"></script>
+  <script defer src="js/finale48.js?v=138"></script>
   <script defer src="js/f48act1.js?v=100"></script>
-  <script defer src="js/f48ride.js?v=100"></script>
+  <script defer src="js/f48ride.js?v=135"></script>
   <script defer src="js/f48act2.js?v=100"></script>
   <script defer src="js/f48sys.js?v=107"></script>
-  <script defer src="js/f48act3.js?v=100"></script>
-  <script defer src="js/f48act4.js?v=125"></script>
+  <script defer src="js/f48act3.js?v=103"></script>
+  <script defer src="js/f48act4.js?v=136"></script>
   <script defer src="js/f48post.js?v=104"></script>
   <script defer src="js/f48world5.js?v=127"></script>
   <script defer src="js/f48world6.js?v=101"></script>
-  <script defer src="js/f48act5.js?v=126"></script>
+  <script defer src="js/f48act5.js?v=127"></script>
   <script defer src="js/f48act6.js?v=100"></script>
-  <script defer src="js/f48act6b.js?v=129"></script>
-  <script defer src="js/f48act7.js?v=120"></script>
+  <script defer src="js/f48act6b.js?v=130"></script>
+  <script defer src="js/f48act7.js?v=136"></script>
   <script defer src="js/f48world7.js?v=100"></script>
-  <script defer src="js/f48blast.js?v=100"></script>
-  <script defer src="js/f48act8.js?v=121"></script>
+  <script defer src="js/f48blast.js?v=101"></script>
+  <script defer src="js/f48act8.js?v=135"></script>
   <script defer src="js/f48act9.js?v=130"></script>
   <script defer src="js/clips.js?v=120"></script>
   <script defer src="js/f48credits.js?v=132"></script>
   <script defer src="js/toyplay.js?v=101"></script>
-  <script defer src="js/pmove.js?v=99"></script>
+  <script defer src="js/pmove.js?v=101"></script>
   <script defer src="js/sandbox.js?v=99"></script>
   <script defer src="js/missions4.js?v=99"></script>
   <script defer src="js/missions4data.js?v=99"></script>
   <script defer src="js/cutscenes.js?v=99"></script>
   <script defer src="js/cinema2.js?v=99"></script>
-  <script defer src="js/explosions.js?v=108"></script>
-  <script defer src="js/ragdoll.js?v=99"></script>
+  <script defer src="js/explosions.js?v=110"></script>
+  <script defer src="js/ragdoll.js?v=101"></script>
   <script defer src="js/deathcam.js?v=99"></script>
   <script defer src="js/roomprops.js?v=99"></script>
   <script defer src="js/interiors.js?v=99"></script>
@@ -91,17 +113,44 @@
   <script defer src="js/webcam.js?v=99"></script>
   <script defer src="js/desktop.js?v=99"></script>
   <script defer src="js/emote-ik.js?v=99"></script>
-  <script defer src="js/emote.js?v=99"></script>
+  <script defer src="js/emote.js?v=100"></script>
   <script defer src="js/emote-room.js?v=99"></script>
   <script defer src="js/quotes.js?v=99"></script>
-  <script defer src="js/tablescreen.js?v=99"></script>
-  <script defer src="js/table.js?v=99"></script>
+  <script defer src="js/tablescreen.js?v=100"></script>
+  <script defer src="js/table.js?v=100"></script>
   <script defer src="js/ui3d.js?v=99"></script>
-  <script defer src="js/lobby3d.js?v=99"></script>
+  <script defer src="js/lobby3d.js?v=101"></script>
   <script defer src="js/padnav.js?v=99"></script>
+  <script defer src="js/settingsui.js?v=102"></script>
+  <script defer src="js/twists.js?v=157"></script>
+  <script defer src="js/twists-m8.js?v=158"></script>
+  <script defer src="js/twists-m17.js?v=158"></script>
+  <script defer src="js/twists-m33.js?v=157"></script>
+  <script defer src="js/net.js?v=155"></script>
+  <script defer src="js/profile.js?v=140"></script>
+  <script defer src="js/avatar.js?v=1"></script>
+  <script defer src="js/schnorr.js?v=138"></script>
+  <script defer src="js/servers.js?v=145"></script>
+  <script defer src="js/rendezvous.js?v=157"></script>
+  <script defer src="js/i18n-rules.js?v=2"></script>
+  <script defer src="js/rules.js?v=1"></script>
+  <script defer src="js/i18n-gift.js?v=2"></script>
+  <script defer src="js/gift.js?v=4"></script>
+  <script defer src="js/onlinelobby.js?v=174"></script>
+  <script defer src="js/social.js?v=108"></script>
+  <script defer src="js/admin.js?v=8"></script>
+  <script defer src="js/abilities.js?v=102"></script>
+  <script defer src="js/coop.js?v=171"></script>
+  <script defer src="js/mpworld.js?v=11"></script>
+  <script defer src="js/tableonline.js?v=1"></script>
+  <script defer src="js/revive.js?v=5"></script>
+  <script defer src="js/pvpmaps.js?v=2"></script>
+  <script defer src="js/pvp.js?v=6"></script>
+  <script defer src="js/modecovers.js?v=2"></script>
+  <script defer src="js/modepick.js?v=3"></script>
   <script defer src="js/splash3d.js?v=99"></script>
   <script defer src="js/splash.js?v=99"></script>
-  <script defer src="js/app.js?v=131"></script>
+  <script defer src="js/app.js?v=138"></script>
 </head>
 <body>
   <div class="terminal">
@@ -113,31 +162,50 @@
     <main id="screen" tabindex="-1"></main>
     <footer class="footer"><span><i class="status-dot"></i> SYSTEM ONLINE <span class="muted">/ LOCAL SESSION</span></span><span id="system-message">NO EXTERNAL CONNECTION</span><span>© NEXA INDUSTRIES 1992</span></footer>
   </div>
-  <dialog id="settings" aria-labelledby="settings-title">
+  <dialog id="settings" class="settings-dlg" data-i18n="set" aria-labelledby="settings-title">
     <form method="dialog"><button class="close quiet" aria-label="Close settings">[ ESC / CLOSE ]</button></form>
     <p class="eyebrow">TERMINAL PREFERENCES</p><h2 id="settings-title">SETTINGS</h2>
     <p class="muted small">Experiment time continues while this panel is open.</p>
-    <label class="setting-row" for="lang">LANGUAGE <select id="lang" translate="no"><option value="en">English</option><option value="ru">Русский</option><option value="de">Deutsch</option></select></label>
-    <label class="setting-row" for="music-toggle">MUSIC <input type="checkbox" id="music-toggle" checked></label>
-    <label class="setting-row" for="sfx-toggle">SFX <input type="checkbox" id="sfx-toggle" checked></label>
-    <label class="setting-row" for="volume">MASTER VOLUME <output id="volume-value">55%</output></label>
-    <input type="range" min="0" max="100" value="55" id="volume">
-    <label class="setting-row" for="music-volume">MUSIC VOLUME <output id="music-volume-value">100%</output></label>
-    <input type="range" min="0" max="100" value="100" id="music-volume">
-    <label class="setting-row" for="sfx-volume">SFX VOLUME <output id="sfx-volume-value">100%</output></label>
-    <input type="range" min="0" max="100" value="100" id="sfx-volume">
-    <label class="setting-row" for="hdd-volume">HARD DRIVE VOLUME <output id="hdd-volume-value">12%</output></label>
-    <input type="range" min="0" max="100" value="12" id="hdd-volume">
-    <label class="setting-row" for="quality">3D GRAPHICS QUALITY <select id="quality" data-i18n="quality"><option value="LOW">LOW</option><option value="MEDIUM">MEDIUM</option><option value="HIGH">HIGH</option></select></label>
-    <label class="setting-row" for="sens">LOOK SENSITIVITY <output id="sens-value">100%</output></label>
-    <input type="range" min="25" max="300" step="5" value="100" id="sens">
-    <label class="setting-row" for="blood">BLOOD <select id="blood"><option value="red">ON — RED</option><option value="dark">ON — DARK</option><option value="off">OFF</option></select></label>
-    <button id="show-disclaimer" class="secondary">VIEW DISCLAIMER</button>
-    <button id="redownload" class="secondary">RE-DOWNLOAD GAME DATA ↻</button>
-    <p id="data-status" class="small muted" role="status"></p>
-    <button id="fullscreen" class="secondary">ENTER FULLSCREEN ↗</button>
-    <p id="fullscreen-status" class="small muted" role="status"></p>
-    <p id="audio-status" class="small muted" role="status">Audio starts after your first interaction.</p>
+    <div class="set-tabs" id="set-tabs" role="tablist">
+      <button type="button" role="tab" data-tab="general" aria-selected="true">GENERAL</button>
+      <button type="button" role="tab" data-tab="audio" aria-selected="false">AUDIO</button>
+      <button type="button" role="tab" data-tab="graphics" aria-selected="false">GRAPHICS</button>
+      <button type="button" role="tab" data-tab="keyboard" aria-selected="false">KEYBOARD</button>
+      <button type="button" role="tab" data-tab="gamepad" aria-selected="false">GAMEPAD</button>
+      <button type="button" role="tab" data-tab="mobile" aria-selected="false">MOBILE</button>
+    </div>
+    <section class="set-pane" data-pane="general">
+      <label class="setting-row" for="lang">LANGUAGE <select id="lang" translate="no"><option value="en">English</option><option value="ru">Русский</option><option value="de">Deutsch</option></select></label>
+      <label class="setting-row" for="sens">LOOK SENSITIVITY <output id="sens-value">100%</output></label>
+      <input type="range" min="25" max="300" step="5" value="100" id="sens">
+      <label class="setting-row" for="blood">BLOOD <select id="blood"><option value="red">ON — RED</option><option value="dark">ON — DARK</option><option value="off">OFF</option></select></label>
+      <button id="show-disclaimer" class="secondary">VIEW DISCLAIMER</button>
+      <button id="redownload" class="secondary">RE-DOWNLOAD GAME DATA ↻</button>
+      <p id="data-status" class="small muted" role="status"></p>
+      <button id="fullscreen" class="secondary">ENTER FULLSCREEN ↗</button>
+      <p id="fullscreen-status" class="small muted" role="status"></p>
+    </section>
+    <section class="set-pane" data-pane="audio" hidden>
+      <label class="setting-row" for="music-toggle">MUSIC <input type="checkbox" id="music-toggle" checked></label>
+      <label class="setting-row" for="sfx-toggle">SFX <input type="checkbox" id="sfx-toggle" checked></label>
+      <label class="setting-row" for="volume">MASTER VOLUME <output id="volume-value">55%</output></label>
+      <input type="range" min="0" max="100" value="55" id="volume">
+      <label class="setting-row" for="music-volume">MUSIC VOLUME <output id="music-volume-value">100%</output></label>
+      <input type="range" min="0" max="100" value="100" id="music-volume">
+      <label class="setting-row" for="sfx-volume">SFX VOLUME <output id="sfx-volume-value">100%</output></label>
+      <input type="range" min="0" max="100" value="100" id="sfx-volume">
+      <label class="setting-row" for="hdd-volume">HARD DRIVE VOLUME <output id="hdd-volume-value">12%</output></label>
+      <input type="range" min="0" max="100" value="12" id="hdd-volume">
+      <p id="audio-status" class="small muted" role="status"></p>
+    </section>
+    <section class="set-pane" data-pane="graphics" hidden>
+      <label class="setting-row" for="quality">3D GRAPHICS QUALITY <select id="quality" data-i18n="quality"><option value="AUTO">AUTO</option><option value="LOW">LOW</option><option value="MEDIUM">MEDIUM</option><option value="HIGH">HIGH</option><option value="ULTRA">ULTRA</option></select></label>
+      <p id="gfx-device" class="small muted"></p>
+      <div id="set-gfx"></div>
+    </section>
+    <section class="set-pane" data-pane="keyboard" hidden><div id="set-kb"></div></section>
+    <section class="set-pane" data-pane="gamepad" hidden><div id="set-pad"></div></section>
+    <section class="set-pane" data-pane="mobile" hidden><div id="set-touch"></div></section>
   </dialog>
   <div id="disclaimer" class="disclaimer" role="alertdialog" aria-labelledby="disc-title" aria-describedby="disc-body" hidden>
     <div class="disc-box">

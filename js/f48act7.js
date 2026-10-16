@@ -527,6 +527,7 @@
     holdOff();
     S.mHead = 0;
     st.headChoice = pick;
+    K.ost(r, false, 0.4);
     // ---------------------------------------------------------- развязка
     S.bt = 0;
     const brOff = K.hook(r, (dt) => { S.bt += dt; });
@@ -638,9 +639,9 @@
       }
     });
     S.bt = 0;
-    await r.wait(1.0);
+    await r.wait(0.8);
     r.say(DIC, 'Pick it up, 083.', 1.4);
-    await r.wait(1.6);
+    await r.wait(1.8);
     r.say(DIC, 'Then I will.', 1.0);
     while (!stabbed && !r.disposed) await r.wait(0.02);
     await r.wait(0.14);

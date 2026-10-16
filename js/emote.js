@@ -159,10 +159,49 @@
   // смешивание двух поз (45 чисел) через Math.lerp: плавный вход в танец и выход из него
   function mixPose(a, b, k, out) { for (let i = 0; i < 45; i += 1) out[i] = Math.lerp(a[i], b[i], k); return out; }
   // поза покоя = стартовая поза танца + дыхание
+  const V3 = { sub: (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]], add: (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]], mul: (a, k) => [a[0] * k, a[1] * k, a[2] * k], len: (a) => Math.hypot(a[0], a[1], a[2]), dot: (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2] };
+  const stj = (j) => [STAND[j * 3], STAND[j * 3 + 1], STAND[j * 3 + 2]];
+  const BONE = { u: V3.len(V3.sub(stj(EL), stj(SL))), f: V3.len(V3.sub(stj(HL), stj(EL))), th: 0.44, sh: 0.44 };
+  // двухзвенный IK: сустав между root и целью (длины l1, l2), pole — в какую сторону согнут
+  function ik2(root, tgt, l1, l2, pole) {
+    let d = V3.sub(tgt, root), L = V3.len(d) || 1e-6; const mx = (l1 + l2) * 0.999;
+    if (L > mx) { d = V3.mul(d, mx / L); L = mx; tgt = V3.add(root, d); }
+    const u = V3.mul(d, 1 / L), a = (l1 * l1 - l2 * l2 + L * L) / (2 * L), h = Math.sqrt(Math.max(0, l1 * l1 - a * a));
+    let pp = V3.sub(pole, V3.mul(u, V3.dot(pole, u))); const pl = V3.len(pp) || 1; pp = V3.mul(pp, 1 / pl);
+    return { mid: V3.add(V3.add(root, V3.mul(u, a)), V3.mul(pp, h)), end: tgt };
+  }
+  const sm01 = (k) => { k = Math.max(0, Math.min(1, k)); return k * k * (3 - 2 * k); };
+  // моменты смены рук: случайные интервалы 8–20 с (детерминированно от номера), плавный переход 0.8 с
+  const SW = [0];
+  const swAt = (k) => { while (SW.length <= k) { const n = SW.length; const r = Math.abs(Math.sin(n * 12.9898 + 4.1414) * 43758.5453) % 1; SW.push(SW[n - 1] + 8 + r * 12); } return SW[k]; };
+  function rightOnHip(t) {
+    let k = 0; while (swAt(k + 1) <= t) k += 1;
+    const side = k % 2 === 0 ? 1 : 0, prev = 1 - side;
+    return k === 0 ? 1 : prev + (side - prev) * sm01((t - swAt(k)) / 0.8);
+  }
+  const mixv = (a, b, k) => [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k, a[2] + (b[2] - a[2]) * k];
+  const YAW = 0.5, CY = Math.cos(YAW), SY = Math.sin(YAW);
+  // поза покоя: стойка вполоборота, одна рука на поясе (локоть в сторону), другая опущена; ноги на ширине плеч; дыхание; редкая смена рук
   function idlePose(t, out, tr) {
-    sampleDance(0, out, tr);
-    const b = Math.sin(t * 1.9) * 0.007;
-    out[NECK * 3 + 1] += b; out[HEAD * 3 + 1] += b; out[SL * 3 + 1] += b; out[SR * 3 + 1] += b;
+    const br = Math.sin(t * 1.9), b = br * 0.007, sway = Math.sin(t * 0.37) * 0.004;
+    const P = [sway, 0.902 + br * 0.0015, 0], set = (j, v) => {
+      const x = v[0], z = v[2]; out[j * 3] = x * CY + z * SY; out[j * 3 + 1] = v[1]; out[j * 3 + 2] = -x * SY + z * CY;
+    };
+    const neck = [0.012 + sway, 1.361 + b, -0.01], head = [0.02 + sway * 1.5 + Math.sin(t * 0.5) * 0.004, 1.55 + b, 0.0];
+    const sl = [-0.165 + sway, 1.33 + b + 0.01, -0.01], sr = [0.165 + sway, 1.319 + b - 0.01, -0.01];
+    const pl = [-0.1, 0.905 + 0.01, 0], pr = [0.1, 0.898 - 0.012, 0];
+    // ноги: опорная левая прямая, правая чуть согнута и расслаблена
+    const al = [-0.17, 0.067, 0.02], ar = [0.2, 0.067, 0.03];
+    const kl = ik2(pl, al, BONE.th, BONE.sh, [0, 0, 1]).mid, kr = ik2(pr, ar, BONE.th, BONE.sh, [0.15, 0, 1]).mid;
+    // руки
+    const h = rightOnHip(t);
+    const hipR = [pr[0] + 0.115, pr[1] + 0.17, 0.045], freeR = [sr[0] + 0.12, sr[1] - (BONE.u + BONE.f) * 0.96, 0.03];
+    const hipL = [pl[0] - 0.115, pl[1] + 0.17, 0.045], freeL = [sl[0] - 0.12, sl[1] - (BONE.u + BONE.f) * 0.96, 0.03];
+    const tR = mixv(freeR, hipR, h), tL = mixv(hipL, freeL, h);
+    const poleR = mixv([0.4, -0.2, -0.7], [1, 0.1, -0.35], h), poleL = mixv([-1, 0.1, -0.35], [-0.4, -0.2, -0.7], h);
+    const aR = ik2(sr, tR, BONE.u, BONE.f, poleR), aL = ik2(sl, tL, BONE.u, BONE.f, poleL);
+    set(PEL, P); set(NECK, neck); set(HEAD, head); set(SL, sl); set(SR, sr); set(EL, aL.mid); set(ER, aR.mid); set(HL, aL.end); set(HR, aR.end);
+    set(PL, pl); set(PR, pr); set(KL, kl); set(KR, kr); set(AL, al); set(AR, ar);
     return out;
   }
   // Ведущие часы танца. <audio>.currentTime обновляется ступеньками (по 20–50 мс), и поза «дёргалась» бы вместе с ним, поэтому время идёт по кадрам экрана,
@@ -548,7 +587,7 @@
   }
 
   window.EmoteCore = { NF, RENDER_FPS, ID, EYE, DUR: DEF0.dur, FPS: DEF0.fps, tracks, track, addTrack, isReady, load: (id) => { const x = TR[id || ID]; return x ? x.load() : Promise.resolve(false); },
-    envAt, pvyAt, sampleDance, sampleJoint, impactsIn, mixPose, idlePose, danceClock, cubic, spr, sprStep, makeBeat, makeMusic, makeFx, makeFigure, makeBlob, makeTrails, thumbLines, clamp, lerp, smooth };
+    envAt, pvyAt, sampleDance, sampleJoint, impactsIn, mixPose, idlePose, rightOnHip, danceClock, cubic, spr, sprStep, makeBeat, makeMusic, makeFx, makeFigure, makeBlob, makeTrails, thumbLines, clamp, lerp, smooth };
 
   const toys = () => window.Toys;
   const owned = (id) => !!(toys() && toys().owned && toys().owned(id || ID));

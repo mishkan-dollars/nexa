@@ -85,7 +85,7 @@
   // ------------------------------------------------------------------ сцена
   function createStage(T, qn, mask) {
     const C = window.Missions._core, { merge, m4, sph, cylY } = C.geo;
-    const q = QL[qn] || QL.MEDIUM, seg = q.seg;
+    const q = QL[qn] || (qn === 'ULTRA' ? QL.HIGH : QL.MEDIUM), seg = q.seg;
     const canvas = document.createElement('canvas');
     const renderer = new T.WebGLRenderer({ canvas, antialias: q.aa, alpha: false });
     renderer.setClearColor(0x000000, 1);
@@ -538,6 +538,7 @@
   function tick(now) {
     raf = 0;
     if (!want) return;
+    if (document.hidden || now - lastT < 46) { raf = requestAnimationFrame(tick); return; }
     const dt = Math.min(0.1, (now - lastT) / 1000 || 0.016); lastT = now;
     step(dt, now);
     raf = requestAnimationFrame(tick);

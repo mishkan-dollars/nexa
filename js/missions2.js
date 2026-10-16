@@ -157,7 +157,7 @@
     if (text === null) { el.classList.remove('on', 'hot'); return; }
     el.textContent = text; el.classList.add('on'); el.classList.toggle('hot', !!hot);
   };
-  P.hint = function (text, sec) { this.toast(text, sec || 3.2); };
+  P.hint = function (text, sec) { const hs = this._hs || (this._hs = new Set()); if (hs.has(text)) return; hs.add(text); this.toast(text, sec || 3.2); };
   P.ctl = function () { return this.touch ? 'FIRE / AIM / R — buttons on screen' : 'LMB — FIRE  |  RMB — AIM  |  R — RELOAD'; };
   P.mood = function (amb, fog, fogColor) { this.setAmbient(amb); this.fog(fog, fogColor); };
   // стена-пресс: едет по -Z; настигла игрока — «смерть» (откат на чекпоинт фазы)

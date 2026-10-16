@@ -26,6 +26,7 @@
   const CORNERS = [[-4.4, -4.4], [4.4, -4.4], [-4.4, 4.4], [4.4, 4.4]];
 
   const LT = (s) => (window.I18N ? I18N.t(s) : s);
+  const subLabel = (id) => { const f = SCR.label, t = f && f(id); return t || 'SUBJECT ' + id; };
   let S = null;        // сессия стола (одна за раз)
   let T = null;        // временные объекты THREE (создаются лениво: three.js подгружается позже скрипта)
   const tt = () => T || (T = {
@@ -331,7 +332,7 @@
   function drawCard(card, id) {
     const tex = card.userData.tex, g = tex.image.getContext('2d'), w = tex.image.width, h = tex.image.height;
     g.fillStyle = '#0a0b0b'; g.fillRect(0, 0, w, h); g.strokeStyle = '#7c898c'; g.lineWidth = 2; g.strokeRect(2, 2, w - 4, h - 4);
-    g.fillStyle = '#e6e9e6'; g.font = '700 26px "Space Mono","Courier New",monospace'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(LT('SUBJECT ' + id), w / 2, h / 2 + 2);
+    g.fillStyle = '#e6e9e6'; g.font = '700 26px "Space Mono","Courier New",monospace'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(LT(subLabel(id)), w / 2, h / 2 + 2);
     tex.needsUpdate = true;
   }
   function makeSeat(r, i, N, p) {
@@ -535,7 +536,7 @@
     const st = S.game.state; let t = '';
     if (st.phase === PH.PARTICIPANTS) t = 'CLICK [BEGIN EXPERIMENT] ON YOUR LAPTOP';
     else if (st.phase === PH.PICKING) t = st.pickLocked ? 'NUMBER LOCKED — WAITING FOR OTHER SUBJECTS' : 'SELECT YOUR NUMBER (1 — ' + st.rangeMax + ') — ' + typeKey() + ' TO TYPE';
-    else if (st.phase === PH.GUESSING) t = st.matchEnding ? 'EXPERIMENT COMPLETE' : st.currentActorId === '083' ? 'YOUR TURN — ' + typeKey() + ' TO TYPE A GUESS' : 'SUBJECT ' + st.currentActorId + ' IS GUESSING';
+    else if (st.phase === PH.GUESSING) t = st.matchEnding ? 'EXPERIMENT COMPLETE' : st.currentActorId === '083' ? 'YOUR TURN — ' + typeKey() + ' TO TYPE A GUESS' : subLabel(st.currentActorId) + ' IS GUESSING';
     else if (st.phase === PH.RESULT) t = st.winnerId === '083' ? 'YOU ARE THE LAST ONE LEFT — USE YOUR LAPTOP' : '';
     else t = 'INITIALIZING...';
     if (S.cutHold) t = '';
@@ -1047,6 +1048,7 @@
       S.verdictT = r.time;
       if (data && data.result === 'CORRECT') {
         S.ui.typing = false;
+        if (S.hooks.kill) { S.hooks.kill(data.targetId); return; }
         game.hold(true); S.heldNow = true;
         if (data.targetId === '083') runPlayerDeath();
         else runExecution(data.targetId).catch((e) => { console.error('[table exec]', e); });
@@ -1154,6 +1156,7 @@
   window.HLTable = {
     get active() { return !!S; },
     get state() { return S; },
+    relabel() { if (S && S.ready && alive()) S.seats.forEach((s) => { drawCard(s.card, s.id); s.lap.key = ''; }); },
     get debug() { return { V, D, act, setTyping, submit, addDigit, runExecution, runPlayerDeath, seatById, tapHit }; },
     start(game, hooks) {
       if (S || !window.Missions || window.Missions.current) return false;

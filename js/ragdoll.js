@@ -41,6 +41,11 @@
   link(KL, KR, 0.13, 1, 1, 0); link(AL, AR, 0.11, 1, 1, 0); // ноги не проходят друг через друга
   link(WL, P0, 0.16, 1, 1, 0); link(WR, P0, 0.16, 1, 1, 0);  // кисти не лезут в таз
   const NC = CA.length, H = 1 / 60, GRAV = 11.5;
+  // массы точек (кг): тяжёлый таз/корпус тянет лёгкие кисти и лодыжки, а не наоборот
+  const MASS = [14, 6, 6, 3, 5, 8, 8, 8, 2, 2, 1.2, 1.2, 4, 4, 2, 2], IMS = MASS.map((m) => 1 / m);
+  const WA = new Float64Array(NC), WB = new Float64Array(NC);
+  for (let c = 0; c < NC; c += 1) { const ia = IMS[CA[c]], ib = IMS[CB[c]]; WA[c] = ia / (ia + ib); WB[c] = ib / (ia + ib); }
+  const DAMP = MASS.map((m, i) => (i === P0 || i === FR || i === NK ? 0.996 : i === HD ? 0.994 : 0.989));
 
   // ------------------------------------------------------------------ сборка точек из текущей позы актора
   function capture(n, R) {
@@ -69,9 +74,8 @@
       let dx = p[b] - p[a], dy = p[b + 1] - p[a + 1], dz = p[b + 2] - p[a + 2];
       const l2 = dx * dx + dy * dy + dz * dz, L = CL[c] * s;
       if (CM[c] && l2 >= L * L) continue;
-      const l = Math.sqrt(l2) || 1e-6, f = (l - L) / l * 0.5 * CK[c] * (CT[c] ? kt : 1);
-      dx *= f; dy *= f; dz *= f;
-      p[a] += dx; p[a + 1] += dy; p[a + 2] += dz; p[b] -= dx; p[b + 1] -= dy; p[b + 2] -= dz;
+      const l = Math.sqrt(l2) || 1e-6, f = (l - L) / l * CK[c] * (CT[c] ? kt : 1), fa = f * WA[c], fb = f * WB[c];
+      p[a] += dx * fa; p[a + 1] += dy * fa; p[a + 2] += dz * fa; p[b] -= dx * fb; p[b + 1] -= dy * fb; p[b + 2] -= dz * fb;
     }
   }
   function limits(R) {
@@ -87,6 +91,16 @@
     };
     bend(HL, KL, AL, 1, 0.85); bend(HR, KR, AR, 1, 0.85);   // колено гнётся только вперёд
     bend(SL, EL, WL, -1, 0.5); bend(SR, ER, WR, -1, 0.5);   // локоть — назад
+    const xl = Math.hypot(ax, ay, az) || 1; ax /= xl; ay /= xl; az /= xl;
+    const spread = (h, k, sg, lim) => { // отведение ноги не больше ~45°
+      const dx = p[k * 3] - p[h * 3], dy = p[k * 3 + 1] - p[h * 3 + 1], dz = p[k * 3 + 2] - p[h * 3 + 2];
+      const out = (dx * ax + dy * ay + dz * az) * sg, L = Math.hypot(dx, dy, dz) * lim;
+      if (out > L) { const m = (out - L) * 0.6 * sg; p[k * 3] -= ax * m; p[k * 3 + 1] -= ay * m; p[k * 3 + 2] -= az * m; }
+    };
+    spread(HL, KL, -1, 0.72); spread(HR, KR, 1, 0.72); spread(HL, AL, -1, 0.8); spread(HR, AR, 1, 0.8);
+    const yl = Math.hypot(bx, by, bz) || 1, hx = p[HD * 3] - p[NK * 3], hy = p[HD * 3 + 1] - p[NK * 3 + 1], hz = p[HD * 3 + 2] - p[NK * 3 + 2], hl = Math.hypot(hx, hy, hz) || 1;
+    const cn = (hx * bx + hy * by + hz * bz) / (hl * yl);
+    if (cn < 0.4) { const m = (0.4 - cn) * hl * 0.7 / yl; p[HD * 3] += bx * m; p[HD * 3 + 1] += by * m; p[HD * 3 + 2] += bz * m; } // шея не складывается больше ~65°
   }
   function collide(r, R) {
     const p = R.p, q = R.q, s = R.s, cl = R.cols, b = r.bounds;
@@ -105,7 +119,10 @@
         if (y1 < 1.6 && q[o + 1] >= y1 + rad * 0.5 - 0.03) { // сверху ящика
           p[o + 1] = y1 + rad; q[o + 1] = Math.min(q[o + 1], p[o + 1]); continue;
         }
-        const dl = p[o] - (c.x0 - rad), dr = (c.x1 + rad) - p[o], df = p[o + 2] - (c.z0 - rad), db = (c.z1 + rad) - p[o + 2], m = Math.min(dl, dr, df, db);
+        const dl = p[o] - (c.x0 - rad), dr = (c.x1 + rad) - p[o], df = p[o + 2] - (c.z0 - rad), db = (c.z1 + rad) - p[o + 2];
+        let m = Math.min(dl, dr, df, db);
+        const qo = q[o], qz = q[o + 2]; // точка пришла снаружи — выталкиваем с той стороны, откуда влетела (быстрое тело не проскакивает тонкую стену)
+        if (qo <= c.x0 - rad) m = dl; else if (qo >= c.x1 + rad) m = dr; else if (qz <= c.z0 - rad) m = df; else if (qz >= c.z1 + rad) m = db;
         if (m === dl) { p[o] = c.x0 - rad; } else if (m === dr) { p[o] = c.x1 + rad; } else if (m === df) { p[o + 2] = c.z0 - rad; } else { p[o + 2] = c.z1 + rad; }
       }
       if (p[o + 1] < rad) {
@@ -119,18 +136,21 @@
     const p = R.p, q = R.q, s = R.s;
     for (let i = 0; i < NP; i += 1) {
       const o = i * 3;
-      if (p[o + 1] <= RAD[i] * s + 0.004) { const mu = i === P0 || i === FR ? 0.22 : 0.17; q[o] += (p[o] - q[o]) * mu; q[o + 2] += (p[o + 2] - q[o + 2]) * mu; }
+      if (p[o + 1] <= RAD[i] * s + 0.004) { // кулоновское трение + вязкое; при малой скорости — трение покоя (тело не ползёт и не дрожит)
+        let vx = p[o] - q[o], vz = p[o + 2] - q[o + 2]; const v = Math.hypot(vx, vz), mu = i === P0 || i === FR || i === SL || i === SR ? 0.0023 : 0.0016;
+        if (v < 0.0016) { q[o] = p[o]; q[o + 2] = p[o + 2]; } else { const k = Math.max(0, v * 0.94 - mu) / v; q[o] = p[o] - vx * k; q[o + 2] = p[o + 2] - vz * k; }
+        if (Math.abs(p[o + 1] - q[o + 1]) < 0.0006) q[o + 1] = p[o + 1];
+      }
     }
   }
   function simStep(r, R) {
-    const p = R.p, q = R.q, damp = 0.994;
+    const p = R.p, q = R.q, lim = 0.24 * R.s;
     R.age += H;
     for (let i = 0; i < NP; i += 1) {
-      const o = i * 3;
-      for (let k = 0; k < 3; k += 1) {
-        const x = p[o + k]; let d = (x - q[o + k]) * damp; if (k === 1) d -= GRAV * H * H;
-        q[o + k] = x; p[o + k] = x + d;
-      }
+      const o = i * 3, damp = DAMP[i];
+      let dx = (p[o] - q[o]) * damp, dy = (p[o + 1] - q[o + 1]) * damp - GRAV * H * H, dz = (p[o + 2] - q[o + 2]) * damp;
+      const dl = Math.hypot(dx, dy, dz); if (dl > lim) { const k = lim / dl; dx *= k; dy *= k; dz *= k; } // не больше ~14 м/с: тело не пролетает сквозь пол и стены
+      q[o] = p[o]; q[o + 1] = p[o + 1]; q[o + 2] = p[o + 2]; p[o] += dx; p[o + 1] += dy; p[o + 2] += dz;
     }
     const kt = clamp(0.3 + R.age / 0.3, 0.3, 1);
     for (let it = 0; it < R.iters; it += 1) { relax(r, R, kt); limits(R); collide(r, R); }
@@ -220,6 +240,10 @@
     if (n.death) return n.death;
     const now = performance.now(), hit = n.lastHit && now - n.lastHit.t < 250 ? n.lastHit : null, blast = n.blast && now - n.blast.t < 250 ? n.blast : null;
     const D = kill0.call(this, n, head, from);
+    try { // враг рядом погиб — кровь брызгает на торс игрока (вид от первого лица)
+      const pp = this.p, g0 = n.g, dx = pp ? pp.x - g0.position.x : 0, dz = pp ? pp.z - g0.position.z : 0, ds = Math.hypot(dx, dz);
+      if (pp && ds < 3.8 && (hit || blast) && this.bloodSplatTorso && !this.camFree) this.bloodSplatTorso({ x: dx / (ds || 1), z: dz / (ds || 1) }, clamp((3.8 - ds) / 2.6, 0.2, 1) * (blast ? 1.2 : head ? 1 : 0.75));
+    } catch (err) { /* без крови */ }
     if (!(hit || blast || from) || !n.g.visible || (activeCount(this) >= 12 && !n.pForce) || !window.THREE) return D; // декоративные трупы (actorLay) и перегруз — старая поза
     try { ragStart(this, n, D, head, hit, blast, from); } catch (err) { D.rag = null; console.warn('[ragdoll]', err); }
     return D;
@@ -266,6 +290,7 @@
     else mode = imp > 4.6 ? 'throw' : (Math.random() < 0.25 ? 'throw' : (hz > 0.25 ? 'arch' : 'clutch'));
     if (n.pForce) { mode = 'collapse'; R.sq = true; R.imp = Math.max(imp, 3.4, n.pForce.imp || 0); }  // тело игрока (deathcam.js): ноги подкашиваются, тяжёлое падение
     R.mode = mode; R.dir = dir; R.imp = R.imp || imp; R.fw = fw; R.rt = rt;
+    let mvx = n.mvx || 0, mvz = n.mvz || 0; const mvl = Math.hypot(mvx, mvz); if (mvl > 6) { mvx *= 6 / mvl; mvz *= 6 / mvl; } // сохраняем инерцию бега: тело не врастает в землю на месте
     // точка раны → какая точка частицы кровит
     capture(n, R);
     if (!isFinite(R.p[0] + R.p[1] + R.p[2] + R.p[NK * 3 + 1])) throw new Error('bad capture'); // испорченный актёр → старая анимация
@@ -275,11 +300,11 @@
     // кровь: выходной фонтан вдоль траектории пули
     if (hit && hit.pt && r.bloodSpray) r.bloodSpray(hit.pt, dir, zone === 'head' ? 18 : zone === 'leg' ? 7 : 13, zone === 'head' ? 6.5 : 4.5, zone === 'head');
     // у предфазных вариантов тело ещё стоит и двигается
-    R.vx = dir.x * (mode === 'clutch' ? 1.5 : mode === 'stumble' ? 1.1 : 0); R.vz = dir.z * (mode === 'clutch' ? 1.5 : mode === 'stumble' ? 1.1 : 0);
+    R.vx = dir.x * (mode === 'clutch' ? 1.5 : mode === 'stumble' ? 1.1 : 0) + mvx * 0.9; R.vz = dir.z * (mode === 'clutch' ? 1.5 : mode === 'stumble' ? 1.1 : 0) + mvz * 0.9;
     if (mode === 'stumble') { R.vx += fw.x * 1.4 * (n.vel > 0.5 ? 1 : 0.4); R.vz += fw.z * 1.4 * (n.vel > 0.5 ? 1 : 0.4); R.fric = 2.2; }
     if (mode === 'clutch' || mode === 'stumble' || mode === 'arch') {
       R.pre = true; R.pose = mode; R.preT = mode === 'clutch' ? rnd(0.72, 0.95) : mode === 'stumble' ? rnd(0.46, 0.6) : rnd(0.4, 0.5);
-      if (mode === 'arch') { R.vx = dir.x * 1.3; R.vz = dir.z * 1.3; }
+      if (mode === 'arch') { R.vx = dir.x * 1.3 + mvx * 0.9; R.vz = dir.z * 1.3 + mvz * 0.9; }
     } else simInit(r, n, D, R);
     D.t = 0; D.done = false;
   }
@@ -319,8 +344,12 @@
     } else { // throw / blast: импульс по траектории, самая сильная доля — в точке попадания
       const up = mode === 'blast' ? 0.5 : 0.25;
       addVel(R, -1, dir.x * imp * 0.5, imp * up, dir.z * imp * 0.5);
-      addVelSet(R, UPPER, dir.x * imp * 0.45, imp * 0.1, dir.z * imp * 0.45);
-      addVel(R, wi, dir.x * imp * 0.55, imp * 0.1, dir.z * imp * 0.55);
+      addVelSet(R, UPPER, dir.x * imp * 0.25, imp * 0.06, dir.z * imp * 0.25);
+      const wo = wi * 3; // сильнее всего бьёт у раны, дальше от неё — слабее: тело закручивается вокруг центра масс
+      for (let i = 0; i < NP; i += 1) {
+        const o = i * 3, dx = R.p[o] - R.p[wo], dy = R.p[o + 1] - R.p[wo + 1], dz = R.p[o + 2] - R.p[wo + 2], w = Math.exp(-(dx * dx + dy * dy + dz * dz) / 0.2);
+        addVel(R, i, dir.x * imp * 0.5 * w, imp * 0.1 * w, dir.z * imp * 0.5 * w);
+      }
       addVelSet(R, LIMBS, rnd(-1, 1) * imp * 0.12, imp * 0.1 * Math.random(), rnd(-1, 1) * imp * 0.12);
       if (mode === 'blast') { addVelSet(R, LIMBS, rnd(-2, 2), rnd(0, 2.5), rnd(-2, 2)); }
     }
@@ -351,13 +380,15 @@
       return;
     }
     R.acc += dt; let st = 0;
-    while (R.acc >= H && st < 3) { twitch(R); simStep(r, R); R.acc -= H; st += 1; }
+    while (R.acc >= H && st < 3) { twitch(R); simStep(r, R); R.acc -= H; st += 1; if (R.asleep) { const p = R.p, q = R.q; for (let i = 0; i < NP * 3; i += 1) q[i] = p[i]; } }
+    if (!isFinite(R.p[0] + R.p[1] + R.p[2] + R.p[NK * 3 + 1]) || R.p[1] < -2) { ragEnd(r, n, D, R); return; }
     if (R.acc > H * 3) R.acc = 0;
     if (R.sq) squash(R, dt);
     drive(n, R);
     // скорость тела → покой
     let vm = 0; for (let i = 0; i < NP * 3; i += 3) vm = Math.max(vm, Math.hypot(R.p[i] - R.q[i], R.p[i + 1] - R.q[i + 1], R.p[i + 2] - R.q[i + 2]) / H);
     if (vm < 0.4) R.still += dt; else R.still = 0;
+    R.asleep = R.twDone && R.tw <= 0 && R.still > 0.25;
     // кровь: пульсирующая рана пока падает/лежит и лужа
     if (R.age < BLEED_T && r.bloodSpray) {
       R.bleedT -= dt;
@@ -368,7 +399,7 @@
     }
     if (!R.poolMade && (R.p[1] < 0.42 * R.s || R.age > 1.6)) makePool(r, n, R);
     if (R.pool && !R.settled) { const m = R.pool.m.position, o = (R.p[0] * 0.6 + R.p[NK * 3] * 0.4); m.x += (o - m.x) * Math.min(1, dt * 3.5); m.z += ((R.p[2] * 0.6 + R.p[NK * 3 + 2] * 0.4) - m.z) * Math.min(1, dt * 3.5); }
-    if (!R.twDone && R.still > 0.15 && R.age > 0.4) { R.twDone = true; R.tw = rnd(1.1, 2.0); R.tTw = R.tw; R.twNext = 0; R.settled = true; }
+    if (!R.twDone && R.still > 0.15 && R.age > 0.4) randTwitch(R);
     if (!R.hold && (R.age > 9 || (R.twDone && R.tw <= 0 && R.still > 0.45))) ragEnd(r, n, D, R);
   }
   // растяжение в падении и пружинное сплющивание при ударе об пол (только тело игрока): вес чувствуется в теле, а не только в камере
@@ -389,19 +420,57 @@
     const px = R.p[0], pz = R.p[2], s = R.s, d = r.decal && r.decal(px, pz, rnd(0.6, 0.85) * s * (R.head ? 1.12 : 1), 1);
     if (d) { d.dur = 3; d.delay = 0.05; R.pool = d; const d2 = r.decal(px + rnd(-0.3, 0.3), pz + rnd(-0.3, 0.3), rnd(0.22, 0.4) * s, 1); if (d2) { d2.dur = 3; d2.delay = 0.5; } }
   }
-  // судороги: 1–2 с случайные рывки конечностей, затухающие; иногда общий спазм
+  // судороги: тоническая фаза (скованность, выгибание) → клонические серии рывков с паузами; частота и размах падают к концу,
+  // доминирует одна сторона тела, в рывки вовлечены шея, плечи и таз; длительность и сила случайны. electro — быстрее и дольше (шок)
+  function startTwitch(R, dur, amp, electro) {
+    R.twDone = true; R.settled = true; R.tw = R.tTw = dur; R.tamp = amp; R.tside = sgn(); R.twNext = rnd(0, 0.12); R.twBurst = 0; R.twAlt = 1; R.twElec = !!electro; R.twLast = false;
+    R.twTonic = electro ? rnd(0.3, 0.7) : (Math.random() < 0.45 ? rnd(0.12, 0.4) : 0);
+    const tm = R.tm || (R.tm = new Float32Array(LIMBS.length));
+    for (let j = 0; j < LIMBS.length; j += 1) { const i = LIMBS[j]; tm[j] = i === HD ? rnd(0.5, 1) : rnd(0.25, 1.2) * ((i & 1 ? 1 : -1) === R.tside ? 1 : rnd(0.25, 0.6)); }
+  }
   function twitch(R) {
     if (R.tw <= 0) return;
-    R.tw -= H; R.twNext -= H;
-    if (R.twNext > 0) return;
-    const k = clamp(R.tw / R.tTw, 0, 1), a = 0.7 + 2.2 * k;
-    R.twNext = rnd(0.07, 0.2) / (0.4 + k);
-    if (Math.random() < 0.18 * k) { // спазм: все конечности разом
-      for (const i of LIMBS) addVel(R, i, rnd(-1, 1) * a, rnd(0.4, 1.4) * a, rnd(-1, 1) * a);
-      addVel(R, NK, 0, 0.6 * a, 0);
-    } else {
-      const i = LIMBS[(Math.random() * LIMBS.length) | 0]; addVel(R, i, rnd(-1, 1) * a, rnd(0.2, 1.6) * a, rnd(-1, 1) * a);
+    R.tw -= H;
+    const k = clamp(R.tw / R.tTw, 0, 1), env = Math.pow(k, 1.4), a0 = R.tamp * (0.45 + 2.3 * env), tm = R.tm, p = R.p;
+    if (R.twTonic > 0) { // скованность: голова запрокинута, руки сжаты к груди, ноги вытянуты, мелкая дрожь
+      R.twTonic -= H;
+      let ux = p[HD * 3] - p[P0 * 3], uy = p[HD * 3 + 1] - p[P0 * 3 + 1], uz = p[HD * 3 + 2] - p[P0 * 3 + 2]; const ul = Math.hypot(ux, uy, uz) || 1, a = R.tamp * (R.twElec ? 0.5 : 0.28) / ul;
+      ux *= a; uy *= a; uz *= a;
+      addVel(R, HD, ux, uy, uz); addVel(R, NK, ux * 0.5, uy * 0.5, uz * 0.5); addVel(R, AL, -ux, -uy, -uz); addVel(R, AR, -ux, -uy, -uz);
+      for (const w of [WL, WR]) { const o = w * 3, f = FR * 3, dx = p[f] - p[o], dy = p[f + 1] - p[o + 1], dz = p[f + 2] - p[o + 2], dl = (Math.hypot(dx, dy, dz) || 1) / (a * ul * 1.4); addVel(R, w, dx / dl, dy / dl, dz / dl); }
+      const i = LIMBS[(Math.random() * LIMBS.length) | 0]; addVel(R, i, rnd(-1, 1) * a * ul * 0.5, rnd(-1, 1) * a * ul * 0.5, rnd(-1, 1) * a * ul * 0.5);
+      return;
     }
+    R.twNext -= H;
+    if (R.twNext > 0) {
+      if (env > 0.05 && Math.random() < 0.5) { const i = LIMBS[(Math.random() * LIMBS.length) | 0], t = R.tamp * 0.16 * env; addVel(R, i, rnd(-1, 1) * t, rnd(-0.5, 1) * t, rnd(-1, 1) * t); } // мелкий тремор между рывками
+      return;
+    }
+    if (R.twBurst <= 0) R.twBurst = 2 + ((Math.random() * 5) | 0);
+    R.twBurst -= 1;
+    const f = (R.twElec ? 14 : 8) * (0.3 + 0.7 * env) * rnd(0.8, 1.25);
+    R.twNext = R.twBurst <= 0 ? rnd(0.15, 0.55) * (1.7 - k) : 1 / f;
+    R.twAlt = -R.twAlt;
+    const a = a0 * rnd(0.55, 1.35), up = R.twAlt > 0 ? 1 : -0.35;
+    if (k > 0.25 && Math.random() < 0.03 + 0.1 * env) { // общий спазм
+      for (let j = 0; j < LIMBS.length; j += 1) addVel(R, LIMBS[j], rnd(-1, 1) * a * tm[j], rnd(0.3, 1.3) * a * tm[j], rnd(-1, 1) * a * tm[j]);
+      addVel(R, NK, 0, 0.5 * a, 0);
+    } else {
+      let tot = 0; for (let j = 0; j < tm.length; j += 1) tot += tm[j];
+      const cnt = 1 + (Math.random() < 0.5 ? 1 : 0) + (Math.random() < 0.25 ? 1 : 0);
+      for (let c = 0; c < cnt; c += 1) {
+        let x = Math.random() * tot, j = 0; while (j < tm.length - 1 && x > tm[j]) { x -= tm[j]; j += 1; }
+        addVel(R, LIMBS[j], rnd(-1, 1) * a * 0.8, up * rnd(0.2, 1.5) * a, rnd(-1, 1) * a * 0.8);
+      }
+    }
+    if (Math.random() < 0.55) { const t = a * 0.7; addVel(R, HD, rnd(-1, 1) * t, rnd(0, 0.8) * t * up, rnd(-1, 1) * t); addVel(R, NK, rnd(-1, 1) * t * 0.4, 0, rnd(-1, 1) * t * 0.4); }
+    if (Math.random() < 0.5) { addVel(R, R.tside > 0 ? SR : SL, 0, a * 0.45 * rnd(0.3, 1), rnd(-1, 1) * a * 0.3); addVel(R, R.tside > 0 ? SL : SR, 0, -a * 0.15, 0); }
+    if (Math.random() < 0.05 + 0.25 * env) addVel(R, P0, 0, a * 0.5, 0);
+    if (k < 0.15 && !R.twLast && Math.random() < 0.12) { R.twLast = true; addVel(R, NK, 0, 0.8 * R.tamp, 0); addVel(R, LIMBS[(Math.random() * LIMBS.length) | 0], rnd(-1, 1), 1.2 * R.tamp, rnd(-1, 1)); } // последний вздох
+  }
+  function randTwitch(R) {
+    const u = Math.random(), amp = (R.mode === 'head' ? 0.75 : R.mode === 'takedown' ? 0.5 : R.mode === 'blast' ? 0.7 : 1) * rnd(0.6, 1.3);
+    startTwitch(R, (u < 0.25 ? rnd(0.8, 1.4) : u < 0.75 ? rnd(1.8, 3.0) : rnd(3.2, 4.6)) * (R.mode === 'head' ? 0.8 : 1), amp, false);
   }
 
   // ------------------------------------------------------------------ кровь
@@ -427,5 +496,9 @@
     for (let i = 0; i < 3; i += 1) this.decal(n.g.position.x + rnd(-0.8, 0.8), n.g.position.z + rnd(-0.8, 0.8), rnd(0.05, 0.12));
   };
 
-  C.ragdoll = { IDX: { P0, NK, HD, HL, HR, SL, SR, FR, EL, ER, WL, WR, KL, KR, AL, AR }, GROUPS: { UPPER, ARMS, LEGS, LIMBS }, addVel, start: ragStart, drive, capture };
+  function convulse(n, dur, amp, electro) { // внешний вызов (шок, судороги): запускает серию на лежащем теле
+    const D = n && n.death, R = D && D.rag; if (!R || R.pre || D.done) return false;
+    startTwitch(R, dur || rnd(2, 4), amp || 1, electro); R.asleep = false; R.still = 0; return true;
+  }
+  C.ragdoll = { convulse, IDX: { P0, NK, HD, HL, HR, SL, SR, FR, EL, ER, WL, WR, KL, KR, AL, AR }, GROUPS: { UPPER, ARMS, LEGS, LIMBS }, addVel, start: ragStart, drive, capture };
 }());

@@ -95,6 +95,10 @@
     // позы пальцев: name — одно из POSES; вес плавно перетекает за кадр
     fingers(fh, i, name) { fh.want[i] = POSES.indexOf(name) < 0 ? 'idle' : name; },
     tick(fh, dt) {
+      if (fh.blood > 0 && fh.mat) {   // кровь на руках после ударов: тёмно-красный оттенок, медленно сходит
+        fh.blood = Math.max(0, fh.blood - dt * 0.012); const b = fh.blood;
+        fh.mat.color.setRGB(0.027 + 0.3 * b, 0.027 + 0.01 * b, 0.027 + 0.01 * b); fh.mat.emissive.setRGB(0.05 + 0.2 * b, 0.05, 0.05);
+      }
       const k = 1 - Math.exp(-dt * 14);
       for (let i = 0; i < 2; i += 1) {
         const w = fh.w[i], A = fh.act[i];

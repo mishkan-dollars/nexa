@@ -7,9 +7,11 @@
   const QUALITY = {
     LOW:    { pr: 1,    shadows: false, fog: 0.04, fx: 'none',  aa: false, lamps: 2, npcs: 2, maxEnemies: 6,  parts: 6 },
     MEDIUM: { pr: 1.25, shadows: false, fog: 0.035, fx: 'lite', aa: false, lamps: 3, npcs: 4, maxEnemies: 9,  parts: 12 },
-    HIGH:   { pr: 1.5,  shadows: true,  fog: 0.03, fx: 'full',  aa: true,  lamps: 4, npcs: 4, maxEnemies: 12, parts: 20 }
+    HIGH:   { pr: 1.5,  shadows: true,  fog: 0.03, fx: 'full',  aa: true,  lamps: 4, npcs: 4, maxEnemies: 12, parts: 20, bloom: 0.35, tone: 0.5 },
+    ULTRA:  { pr: 2,    shadows: true,  shadowHigh: true, fog: 0.028, fx: 'full', aa: true, lamps: 5, npcs: 4, maxEnemies: 12, parts: 28, bloom: 0.55, tone: 0.7 }   // maxEnemies как у HIGH: баланс боя не меняется
   };
   const PLAYER_R = 0.3;
+  const KL = (id) => (window.NexaSettings ? NexaSettings.keyLabel(id) : '').replace(/^[LR]-/, '');   // подпись клавиши действия с учётом переназначения
   const EYE = 1.35; // body cam: камера на уровне груди
 
   const isTouch = () => matchMedia('(pointer: coarse)').matches || /[?&]touch=1/.test(location.search); // ?touch=1 — проверка мобильного режима на ПК
@@ -20,10 +22,12 @@
   function getQuality() {
     let saved = null;
     try { saved = localStorage.getItem('quality'); } catch (e) {}
+    if ((saved === 'AUTO' || !QUALITY[saved]) && window.NexaSettings) return NexaSettings.autoPreset();   // AUTO: по устройству (телефон, слабая видеокарта → ниже)
     return QUALITY[saved] ? saved : (isTouch() ? 'LOW' : 'MEDIUM');
   }
+  function getQualitySaved() { let v = null; try { v = localStorage.getItem('quality'); } catch (e) { /* без хранилища */ } return (v === 'AUTO' || QUALITY[v]) ? v : 'AUTO'; }   // то, что выбрано в настройках (AUTO — по устройству)
   function setQuality(q) {
-    if (!QUALITY[q]) return;
+    if (!QUALITY[q] && q !== 'AUTO') return;
     try { localStorage.setItem('quality', q); } catch (e) {}
   }
 
@@ -79,7 +83,7 @@
       window.Missions._core.voice && window.Missions._core.voice.prefetch(taskId);
       this.mission = MISSIONS[taskId];
       this.qName = getQuality();
-      this.q = QUALITY[this.qName];
+      this.q = window.NexaSettings ? NexaSettings.gfx(QUALITY[this.qName]) : QUALITY[this.qName];   // пресет + расширенные настройки графики (js/settings.js)
       this.touch = isTouch();
       this.disposed = false;
       this.listeners = [];
@@ -127,6 +131,7 @@
       const layer = document.createElement('div');
       layer.id = 'mission';
       layer.className = 'mission fx-' + this.q.fx + (this.touch ? ' touch' : '');
+      if (window.NexaSettings) { NexaSettings.applyTouch(layer); this.setOff = NexaSettings.onChange(() => { if (!this.disposed) NexaSettings.applyTouch(layer); }); }   // слой — левша, масштаб и прозрачность кнопок
       if (String(this.taskId) === '48') layer.setAttribute('translate', 'no');   // финал: весь текст миссии — английский (и «МИССИЯ ВЫПОЛНЕНА»/титры — как написаны), рантайм-i18n не трогает
       layer.innerHTML =
         '<canvas class="m-canvas"></canvas><div class="m-fx"></div>' +
@@ -144,7 +149,7 @@
         '<button type="button" class="m-btn m-fire">FIRE</button><button type="button" class="m-btn m-aim">AIM</button>' +
         '<button type="button" class="m-btn m-rel">R</button><button type="button" class="m-btn m-swap">SWAP</button></div>' +
         '<div class="m-fade" style="opacity:1"></div><div class="m-flash"></div>' +
-        '<div class="m-pause"><div><p class="eyebrow">MISSION PAUSED</p><p class="m-ctl"></p><button type="button" class="action centered m-resume">[RESUME]</button>' +
+        '<div class="m-pause"><div><p class="eyebrow">MISSION PAUSED</p><p class="m-ctl"></p><button type="button" class="action centered m-resume">[RESUME]</button><button type="button" class="action centered secondary m-sets">[SETTINGS]</button>' +
         '<button type="button" class="action centered secondary m-abort">[ABORT MISSION]</button></div></div>' +
         '<div class="m-rotate"><div><p class="eyebrow">NEXA INDUSTRIES</p><h2>PLEASE ROTATE DEVICE</h2><p class="muted">MISSION REQUIRES LANDSCAPE ORIENTATION</p></div></div>' +
         '<div class="m-load"><div class="m-load-in"><p class="eyebrow">NEXA INDUSTRIES</p><h2>MISSION INITIALIZATION</h2>' +
@@ -160,10 +165,11 @@
       this.sub = this.qs('.m-sub');
       this.prompt = this.qs('.m-cross span');
       const hintEl = this.qs('.m-hint');
-      hintEl.textContent = this.touch ? '' : 'WASD MOVE  |  MOUSE LOOK  |  E INTERACT  |  SHIFT RUN  |  ESC PAUSE';
+      hintEl.textContent = this.touch ? '' : ['forward', 'left', 'back', 'right'].map(KL).join('') + ' MOVE  |  MOUSE LOOK  |  ' + KL('use') + ' INTERACT  |  ' + KL('run') + ' RUN  |  ESC PAUSE';
       // подсказка клавиш видна ~12 с после каждой смены текста и потом гаснет; полный список — в меню паузы
-      const hintHide = () => { if (/(cine|bars|cinema)/.test(this.layer.className)) this.hintTm = setTimeout(hintHide, 1500); else hintEl.classList.remove('show'); };   // во время катсцены отсчёт стоит
-      const hintShow = this.hintPoke = () => { if (!hintEl.textContent) return; hintEl.classList.add('show'); clearTimeout(this.hintTm); this.hintTm = setTimeout(hintHide, 12000); };
+      let ctlSeen = false; try { ctlSeen = !!localStorage.getItem('nexaCtl1'); } catch (e) { /* ok */ }
+      const hintHide = () => { if (/(cine|bars|cinema)/.test(this.layer.className)) this.hintTm = setTimeout(hintHide, 1500); else { hintEl.classList.remove('show'); ctlSeen = true; try { localStorage.setItem('nexaCtl1', '1'); } catch (e) { /* ok */ } } };   // во время катсцены отсчёт стоит
+      const hintShow = this.hintPoke = () => { if (ctlSeen || !hintEl.textContent) return; hintEl.classList.add('show'); clearTimeout(this.hintTm); this.hintTm = setTimeout(hintHide, 12000); };
       new MutationObserver(hintShow).observe(hintEl, { childList: true, characterData: true, subtree: true });
       hintShow();
       // viewport без zoom только на время миссии
@@ -277,12 +283,12 @@
     // ------------------------------------------------------------ WebGL
     initGL() {
       const T = THREE;
-      this.renderer = new T.WebGLRenderer({ canvas: this.canvas, antialias: this.q.aa, powerPreference: 'high-performance', alpha: false });
+      this.renderer = new T.WebGLRenderer({ canvas: this.canvas, antialias: false, powerPreference: 'high-performance', alpha: false });
       this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, this.pr));
       this.renderer.shadowMap.enabled = this.q.shadows;
-      if (this.q.shadows) this.renderer.shadowMap.type = T.PCFShadowMap;
+      if (this.q.shadows) this.renderer.shadowMap.type = this.q.shadowHigh ? T.PCFSoftShadowMap : T.PCFShadowMap;
       this.scene = new T.Scene();
-      this.baseFov = 90; // широкий обзор: оружие и руки остаются снизу, на горизонте их не видно
+      this.baseFov = this.q.fovUser || 90; // широкий обзор: оружие и руки остаются снизу, на горизонте их не видно
       this.camera = new T.PerspectiveCamera(this.baseFov, 1, 0.05, 80);
       this.camera.rotation.order = 'YXZ';
       this.scene.add(this.camera);
@@ -312,15 +318,18 @@
         const m = new T.Mesh(new T.BoxGeometry(w, h, d), new T.MeshLambertMaterial({ color, fog: false, depthTest: false }));
         m.renderOrder = order; m.position.set(x, y, z); m.frustumCulled = false; (parent || body).add(m); return m;
       };
-      part(0.52, 0.62, 0.28, 0x0a0a0a, 990, 0, -0.64, -0.12);               // торс (верхний край ниже поля зрения на горизонте): чёрный стикмен
-      part(0.56, 0.05, 0.3, 0x1b1b1b, 991, 0, -0.9, -0.12);                 // ремень
+      const tor = this.fpTorso && this.fpTorso();                            // торс и таз из модели врага (actors.js), чуть позади камеры; без модели — плита
+      if (tor) body.add(tor); else {
+        part(0.52, 0.62, 0.28, 0x0a0a0a, 990, 0, -0.64, -0.12);             // торс (верхний край ниже поля зрения на горизонте): чёрный стикмен
+        part(0.56, 0.05, 0.3, 0x1b1b1b, 991, 0, -0.9, -0.12);               // ремень
+      }
       this.legs = [-1, 1].map((s) => {
         const g = new T.Group(); g.position.set(s * 0.13, -0.95, -0.1); body.add(g);
         part(0.17, 0.85, 0.2, 0x0c0c0c, 991, 0, -0.42, 0, g);
         part(0.19, 0.1, 0.34, 0x050505, 992, 0, -0.88, -0.08, g);         // ботинок
         return g;
       });
-      this.body = body;
+      this.body = body; this.fpb = null;
       body.rotation.order = 'YXZ';
       this.scene.add(body); // тело следует за поворотом, но не за наклоном головы — вниз видны торс, руки и ноги
       this.buildRig && this.buildRig(); // руки и оружие (combat.js)
@@ -333,37 +342,54 @@
       this.body.rotation.x = p.pitch * 0.2;
       this.legs.forEach((g, i) => { g.rotation.x = Math.sin(ph + (i ? 0 : Math.PI)) * 0.5 * mv; });
       this.body.visible = !this.camFree;
+      this.updateTorsoBlood && this.updateTorsoBlood(dt);
       this.updateRig && this.updateRig(dt, vel);
     }
 
     // ------------------------------------------------------------ постобработка: fisheye, CA, зерно, виньетка, motion blur
     initPost() {
       const T = THREE, full = this.q.fx !== 'none';
-      this.rt = new T.WebGLRenderTarget(4, 4, { minFilter: T.LinearFilter, magFilter: T.LinearFilter, format: T.RGBAFormat, depthBuffer: true });
+      const rtOpt = { minFilter: T.LinearFilter, magFilter: T.LinearFilter, format: T.RGBAFormat, depthBuffer: true };
+      this.rt = null;
+      if (this.q.aaMode === 'msaa' && this.renderer.capabilities.isWebGL2 && T.WebGLMultisampleRenderTarget) {   // настоящее сглаживание сцены (WebGL2)
+        try { this.rt = new T.WebGLMultisampleRenderTarget(4, 4, rtOpt); this.rt.samples = 4; } catch (e) { this.rt = null; }
+      }
+      if (!this.rt) this.rt = new T.WebGLRenderTarget(4, 4, rtOpt);
       this.fxU = {
         tDiffuse: { value: this.rt.texture }, uK: { value: 0.2 }, uBlur: { value: new T.Vector2() },
         uCA: { value: full ? 0.0025 : 0 }, uTime: { value: 0 }, uGrain: { value: full ? 0.06 : 0.04 }, uVig: { value: 0.7 }, uGain: { value: 1.22 },
-        uShk: { value: new T.Vector4(0.5, 0.5, 0, 0) }, uCon: { value: 0 }, uAsp: { value: 1.78 }
+        uShk: { value: new T.Vector4(0.5, 0.5, 0, 0) }, uCon: { value: 0 }, uAsp: { value: 1.78 },
+        uExp: { value: 0 }, uHaz: { value: new T.Vector4(0.5, 0.5, 0, 0) },   // взрывы (explosions.js): засвет экспозиции и марево над огнём
+        uTexel: { value: new T.Vector2(1 / 640, 1 / 360) }, uFxaa: { value: this.q.aaMode === 'fxaa' ? 1 : 0 }, uBloom: { value: this.q.bloom || 0 }, uTone: { value: this.q.tone || 0 },
+        uSat: { value: this.q.sat === undefined ? 1 : this.q.sat }, uCon2: { value: this.q.contrast === undefined ? 1 : this.q.contrast },
+        uUser: { value: new T.Vector4(1, 1, 1, 1) }   // множители пользователя: линза, хроматика, зерно, виньетка (настройки графики)
       };
       this.fxMat = new T.ShaderMaterial({
         uniforms: this.fxU, depthTest: false, depthWrite: false,
         vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
         fragmentShader: [
-          'precision mediump float; varying vec2 vUv; uniform sampler2D tDiffuse; uniform float uK, uCA, uTime, uGrain, uVig, uGain, uCon, uAsp; uniform vec2 uBlur; uniform vec4 uShk;',
+          'precision mediump float; varying vec2 vUv; uniform sampler2D tDiffuse; uniform float uK, uCA, uTime, uGrain, uVig, uGain, uCon, uAsp, uExp, uFxaa, uBloom, uTone, uSat, uCon2; uniform vec2 uBlur, uTexel; uniform vec4 uShk, uHaz, uUser;',
+          'vec3 aces(vec3 x){ return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0); }',
           'float rnd(vec2 c){ return fract(sin(dot(c, vec2(12.9898, 78.233))) * 43758.5453); }',
-          'vec3 tap(vec2 uv, vec2 off){ vec3 c; c.r = texture2D(tDiffuse, uv + off * (1.0 + uCA * 40.0)).r; c.g = texture2D(tDiffuse, uv).g; c.b = texture2D(tDiffuse, uv - off * (1.0 + uCA * 40.0)).b; return c; }',
+          'vec3 tap(vec2 uv, vec2 off){ vec3 c; c.r = texture2D(tDiffuse, uv + off * (1.0 + uCA * uUser.y * 40.0)).r; c.g = texture2D(tDiffuse, uv).g; c.b = texture2D(tDiffuse, uv - off * (1.0 + uCA * uUser.y * 40.0)).b; return c; }',
           'void main(){',
           '  vec2 p = vUv * 2.0 - 1.0; float r2 = dot(p, p);',
-          '  vec2 q = p * (1.0 + uK * r2) / (1.0 + uK * 2.0); vec2 uv = q * 0.5 + 0.5;',
+          '  float kk = uK * uUser.x; vec2 q = p * (1.0 + kk * r2) / (1.0 + kk * 2.0); vec2 uv = q * 0.5 + 0.5;',
           '  float rg = 0.0; if (uShk.w > 0.001) { vec2 dd = (vUv - uShk.xy) * vec2(uAsp, 1.0); float dl = length(dd); float wd = 0.03 + uShk.z * 0.07; rg = exp(-pow((dl - uShk.z) / wd, 2.0)) * uShk.w; uv += normalize(dd + vec2(1e-5)) / vec2(uAsp, 1.0) * rg * 0.045; }',
-          '  vec2 ca = q * uCA * (0.4 + r2);',
+          '  if (uHaz.w > 0.001) { vec2 hd = (vUv - uHaz.xy) * vec2(uAsp, 1.0); float hm = (1.0 - smoothstep(0.0, uHaz.z, length(hd))) * uHaz.w; float p1 = mod(uTime * 7.0, 6.2831853), p2 = mod(uTime * 16.1, 6.2831853), p3 = mod(uTime * 11.9, 6.2831853); uv += vec2(sin(vUv.y * 46.0 + vUv.x * 21.0 - p1) + 0.6 * sin(vUv.y * 105.8 - p2 + 1.7), 0.35 * cos(vUv.y * 78.2 - vUv.x * 17.0 - p3)) * hm * 0.0042; }',
+          '  vec2 ca = q * uCA * uUser.y * (0.4 + r2);',
           '  vec3 col = tap(uv, ca);',
+          '  if (uFxaa > 0.5) { vec3 cN = texture2D(tDiffuse, uv + vec2(0.0, uTexel.y)).rgb, cS = texture2D(tDiffuse, uv - vec2(0.0, uTexel.y)).rgb, cE = texture2D(tDiffuse, uv + vec2(uTexel.x, 0.0)).rgb, cW = texture2D(tDiffuse, uv - vec2(uTexel.x, 0.0)).rgb; vec3 lw = vec3(0.299, 0.587, 0.114); float lM = dot(col, lw), lN = dot(cN, lw), lS = dot(cS, lw), lE = dot(cE, lw), lW = dot(cW, lw); float lMx = max(lM, max(max(lN, lS), max(lE, lW))), lMn = min(lM, min(min(lN, lS), min(lE, lW))); float ed = lMx - lMn; col = mix(col, (cN + cS + cE + cW + col) * 0.2, clamp((ed - max(0.035, lMx * 0.1)) * 7.0, 0.0, 0.85)); }',
           '  float bl = length(uBlur);',
           '  if (bl > 0.0015) { float stp = bl > 0.1 ? 12.0 : (bl > 0.05 ? 8.0 : 4.0); float jt = rnd(vUv * 731.0 + fract(uTime) * 13.0) - 0.5; vec3 acc = col; for (int i = 1; i < 13; i++) { if (float(i) > stp) break; float f = (float(i) + jt) / stp - 0.5; acc += tap(uv + uBlur * f, ca); } col = acc / (stp + 1.0); }',
           '  if (uCon > 0.002) { vec3 za = col; for (int i = 1; i < 6; i++) { za += tap(uv - (uv - 0.5) * 0.014 * uCon * float(i), ca); } col = za / 6.0; col = mix(col, vec3(dot(col, vec3(0.299, 0.587, 0.114))), uCon * 0.75); }',
-          '  float vig = 1.0 - (uVig + uCon * 0.5) * smoothstep(0.3, 1.5, r2);',
+          '  float vig = 1.0 - (uVig * uUser.w + uCon * 0.5) * smoothstep(0.3, 1.5, r2);',
           '  float g = rnd(vUv * 900.0 + fract(uTime) * 37.0) - 0.5;',
-          '  col = (col * uGain + 0.03 + rg * 0.1) * vig + g * uGrain;',
+          '  col = col * uGain * (1.0 + uExp * 0.9) + 0.03 + rg * 0.1 + uExp * 0.1;',
+          '  if (uBloom > 0.001) { vec3 bl = vec3(0.0); vec2 b1 = uTexel * 9.0, b2 = uTexel * 24.0; for (int i = 0; i < 6; i++) { float a = float(i) * 1.0471976 + 0.4; vec2 d = vec2(cos(a), sin(a)); bl += max(texture2D(tDiffuse, uv + d * b1).rgb - 0.58, 0.0) * 0.12 + max(texture2D(tDiffuse, uv + d * b2).rgb - 0.58, 0.0) * 0.07; } col += bl * uBloom * 3.2; }',
+          '  if (uTone > 0.001) col = mix(col, aces(col * 1.12), uTone);',
+          '  float lum = dot(col, vec3(0.299, 0.587, 0.114)); col = mix(vec3(lum), col, uSat); col = (col - 0.5) * uCon2 + 0.5;',
+          '  col = col * vig + g * uGrain * uUser.z;',
           '  gl_FragColor = vec4(col, 1.0);',
           '}'
         ].join('\n')
@@ -376,16 +402,18 @@
     resize() {
       const w = this.layer.clientWidth || innerWidth, h = this.layer.clientHeight || innerHeight;
       this.w = w; this.h = h;
-      const pr = Math.min(window.devicePixelRatio || 1, this.pr);
+      const pr = this.q.ss ? this.pr : Math.min(window.devicePixelRatio || 1, this.pr);   // ss: масштаб рендера выше 100% — суперсэмплинг и на обычных экранах
       this.renderer.setPixelRatio(pr);
       this.renderer.setSize(w, h, false);
       this.rt.setSize(Math.max(2, Math.round(w * pr)), Math.max(2, Math.round(h * pr)));
+      if (this.fxU && this.fxU.uTexel) this.fxU.uTexel.value.set(1 / Math.max(2, Math.round(w * pr)), 1 / Math.max(2, Math.round(h * pr)));
       this.camera.aspect = w / h;
       this.camera.updateProjectionMatrix();
     }
     render() {
       this.fxU.uTime.value = this.time;
-      this.fxU.uBlur.value.set(this.blurX || 0, this.blurY || 0);
+      { const mb = this.q.mblur === false ? 0 : 1; this.fxU.uBlur.value.set((this.blurX || 0) * mb, (this.blurY || 0) * mb); }
+      if (this.fxU.uUser) { const qq = this.q, tb = this.layer.classList.contains('table'); this.fxU.uUser.value.set(tb ? 1 : qq.lens, qq.chroma, qq.grain, qq.vig); }   // в «столе» линза не меняется: курсор считается по uK
       this.xfPost && this.xfPost(); // взрывы (explosions.js): линза-рябь и контузия
       this.renderer.setRenderTarget(this.rt);
       this.renderer.render(this.scene, this.camera);
@@ -441,7 +469,7 @@
         const L = new THREE.PointLight(0xffffff, intensity || 0.7, 13, 2);
         L.position.set(x, y - 0.3, z);
         L.base = L.intensity;
-        if (this.q.shadows && this.lamps.length === 0) { L.castShadow = true; L.shadow.mapSize.set(512, 512); }
+        if (this.q.shadows && this.lamps.length === 0) { L.castShadow = true; L.shadow.mapSize.set(this.q.shadowHigh ? 2048 : 1024, this.q.shadowHigh ? 2048 : 1024); }
         this.scene.add(L);
         this.lamps.push(L);
       }
@@ -592,7 +620,7 @@
     }
     async flash(s) {
       const f = this.qs('.m-flash');
-      f.style.transition = 'none'; f.style.opacity = '1'; void f.offsetWidth;
+      f.style.transition = 'none'; f.style.opacity = this.q.flashes === false ? '0.22' : '1'; void f.offsetWidth;
       f.style.transition = 'opacity ' + (s || 0.4) + 's ease-out'; f.style.opacity = '0';
       await this.wait(s || 0.4);
     }
@@ -615,6 +643,7 @@
       await this.tween(dur || 0.5, (k) => this.lightsLevel(lerp(l0, level, k)), smooth);
     }
     async shake(amp, dur) {
+      amp *= this.q.shake === undefined ? 1 : this.q.shake;
       this.shakeAmp = amp;
       await this.tween(dur || 1, (k) => { this.shakeAmp = amp * (1 - k); });
       this.shakeAmp = 0;
@@ -765,6 +794,7 @@
       this.bindCombat && this.bindCombat();
       this.on(this.qs('.m-pausebtn'), 'click', () => this.setPause(true));
       this.on(this.qs('.m-resume'), 'click', () => { this.setPause(false); if (!this.touch) this.requestLock(); });
+      this.on(this.qs('.m-sets'), 'click', () => { const d = document.getElementById('settings'); if (d && d.showModal && !d.open) d.showModal(); });   // настройки прямо из паузы (клавиши, геймпад и сенсорный оверлей действуют сразу)
       this.on(this.qs('.m-abort'), 'click', () => this.finish(false));
       this.on(this.qs('.m-retry'), 'click', () => this.choose('retry'));
       this.on(this.qs('.m-skipsec'), 'click', () => this.choose('skip'));
@@ -777,25 +807,33 @@
       const L = this.qs('.m-zone.l'), R = this.qs('.m-zone.r'), stick = this.qs('.m-stick'), knob = stick.firstChild;
       const RADIUS = 52;
       let ox = 0, oy = 0, lookId = null, lx = 0, ly = 0;
+      const tcfg = () => (window.NexaSettings ? NexaSettings.get('touch') : {}), lefty = () => !!tcfg().lefty, fixedStick = () => tcfg().stick === 'fixed';
+      const stickHome = () => { const W = this.w || innerWidth, H = this.h || innerHeight, x = Math.max(120, W * 0.14); return [lefty() ? W - x : x, H - 140]; };   // физические координаты
+      const ls = () => (tcfg().look || 100) / 100;
+      const showStick = (x, y) => { stick.style.left = (lefty() ? (this.w || innerWidth) - x : x) + 'px'; stick.style.top = y + 'px'; stick.classList.add('on'); };
+      if (fixedStick()) { const hc = stickHome(); showStick(hc[0], hc[1]); }   // фиксированный стик виден всегда
       this.on(L, 'pointerdown', (e) => {
         if (this.locked || this.stick.id !== null) return;
         this.stick.id = e.pointerId; ox = e.clientX; oy = e.clientY;
+        if (fixedStick()) { const hc = stickHome(); ox = hc[0]; oy = hc[1]; }
         try { L.setPointerCapture(e.pointerId); } catch (err) {}
-        stick.style.left = ox + 'px'; stick.style.top = oy + 'px'; stick.classList.add('on'); knob.style.transform = '';
+        showStick(ox, oy); knob.style.transform = '';
       });
       this.on(L, 'pointermove', (e) => {
         if (e.pointerId !== this.stick.id) return;
         let dx = e.clientX - ox, dy = e.clientY - oy; const d = Math.hypot(dx, dy);
         if (d > RADIUS) { dx *= RADIUS / d; dy *= RADIUS / d; }
-        this.stick.x = dx / RADIUS; this.stick.y = dy / RADIUS;
-        knob.style.transform = 'translate(' + dx + 'px,' + dy + 'px)';
+        let mx = dx / RADIUS, my = dy / RADIUS; const dzv = (tcfg().dead || 0) / 100, mg = Math.hypot(mx, my);
+        if (mg < dzv) { mx = 0; my = 0; } else if (dzv > 0) { const kz = (mg - dzv) / (1 - dzv) / mg; mx *= kz; my *= kz; }
+        this.stick.x = mx; this.stick.y = my;
+        knob.style.transform = 'translate(' + (lefty() ? -dx : dx) + 'px,' + dy + 'px)';
       });
-      const endStick = (e) => { if (e.pointerId !== this.stick.id) return; this.stick.id = null; this.stick.x = this.stick.y = 0; stick.classList.remove('on'); };
+      const endStick = (e) => { if (e.pointerId !== this.stick.id) return; this.stick.id = null; this.stick.x = this.stick.y = 0; if (fixedStick()) knob.style.transform = ''; else stick.classList.remove('on'); };
       this.on(L, 'pointerup', endStick); this.on(L, 'pointercancel', endStick);
       this.on(R, 'pointerdown', (e) => { if (this.locked || lookId !== null) return; lookId = e.pointerId; lx = e.clientX; ly = e.clientY; try { R.setPointerCapture(e.pointerId); } catch (err) {} });
       this.on(R, 'pointermove', (e) => {
         if (e.pointerId !== lookId || this.locked) return;
-        this.turnBy((e.clientX - lx) * 0.0055, (e.clientY - ly) * 0.0055); lx = e.clientX; ly = e.clientY;
+        this.turnBy((e.clientX - lx) * 0.0055 * ls(), (e.clientY - ly) * 0.0055 * ls()); lx = e.clientX; ly = e.clientY;
       });
       const endLook = (e) => { if (e.pointerId === lookId) lookId = null; };
       this.on(R, 'pointerup', endLook); this.on(R, 'pointercancel', endLook);
@@ -823,7 +861,8 @@
     frame(t) {
       if (this.disposed) return;
       this.raf = requestAnimationFrame((n) => this.frame(n));
-      if (this.touch && t - this.last < 15) return; // телефоны с экраном 90–144 Гц: держим ~60 FPS, иначе GPU и батарея работают вдвое сильнее
+      const capMs = this.q.fpsCap ? 1000 / this.q.fpsCap - 2 : (this.touch ? 15 : 0);
+      if (capMs && t - this.last < capMs) return; // телефоны с экраном 90–144 Гц: держим ~60 FPS, иначе GPU и батарея работают вдвое сильнее
       const dt = Math.min(0.05, (t - this.last) / 1000);
       this.last = t;
       if (this.layer.clientWidth !== this.w || this.layer.clientHeight !== this.h) this.resize();
@@ -836,16 +875,22 @@
       this.render();
       // адаптивное разрешение: если средний кадр > 32 мс, снижаем render pixel ratio
       this.frameAcc += dt; this.frames += 1;
+      if (this.q.showFps) this.fpsTick(dt);
       if (this.frames >= 90) {
         // на телефоне пол ниже (0.5), и разрешение возвращается, если кадры снова быстрые (не более двух откатов подряд — без «качелей»)
         const avg = this.frameAcc / this.frames, floor = this.touch ? 0.5 : 0.75;
-        if (avg > 0.032 && this.pr > floor) { this.pr = Math.max(floor, this.pr - 0.25); this.downs = (this.downs || 0) + 1; this.fast = 0; this.resize(); }
-        else if (avg < 0.019 && this.pr < this.q.pr && (this.downs || 0) < 2) {
+        if (this.q.adaptive !== false && avg > 0.032 && this.pr > floor) { this.pr = Math.max(floor, this.pr - 0.25); this.downs = (this.downs || 0) + 1; this.fast = 0; this.resize(); }
+        else if (this.q.adaptive !== false && avg < 0.019 && this.pr < this.q.pr && (this.downs || 0) < 2) {
           this.fast = (this.fast || 0) + 1;
           if (this.fast >= 3) { this.pr = Math.min(this.q.pr, this.pr + 0.25); this.fast = 0; this.resize(); }
         } else this.fast = 0;
         this.frames = 0; this.frameAcc = 0;
       }
+    }
+    fpsTick(dt) {   // счётчик FPS в углу (настройка графики)
+      if (!this.fpsEl) { this.fpsEl = document.createElement('div'); this.fpsEl.className = 'm-fps'; this.layer.appendChild(this.fpsEl); this.fpsN = 0; this.fpsT = 0; }
+      this.fpsN += 1; this.fpsT += dt;
+      if (this.fpsT >= 0.5) { this.fpsEl.textContent = Math.round(this.fpsN / this.fpsT) + ' FPS  ·  x' + this.pr.toFixed(2); this.fpsN = 0; this.fpsT = 0; }
     }
     update(dt) {
       for (let i = this.tw.length - 1; i >= 0; i -= 1) {
@@ -897,15 +942,16 @@
     placeCamera(dt) {
       const p = this.p, cam = this.camera, t = this.time;
       // body cam: заметное покачивание в такт шагам (вертикаль, боковой наклон, крен)
-      const bob = Math.sin(p.phase * 2) * 0.05 * p.moving, sway = Math.sin(p.phase) * 0.035 * p.moving, breath = Math.sin(t * 1.4) * 0.012;
+      const mvK = this.bobK = lerp(this.bobK === undefined ? p.moving : this.bobK, p.moving, 1 - Math.exp(-dt * 9));
+      const bob = Math.sin(p.phase * 2) * 0.05 * mvK, sway = Math.sin(p.phase) * 0.035 * mvK, breath = Math.sin(t * 1.4) * 0.012;
       if (this.camFree) { this.applyFreeCam(dt); return; } // катсцена: камера принадлежит режиссёру (cinema.js)
-      const sh = this.shakeAmp, c = Math.cos(p.yaw), s = Math.sin(p.yaw);
-      const kp = this.kickP || 0, ky = this.kickY || 0, kr = this.kickR || 0, ki = this.kickShake || 0; // отдача, дёрганья перезарядки, стресс
+      const shk = this.q.shake === undefined ? 1 : this.q.shake, sh = this.shakeAmp * shk, c = Math.cos(p.yaw), s = Math.sin(p.yaw);
+      const kp = this.kickP || 0, ky = this.kickY || 0, kr = this.kickR || 0, ki = (this.kickShake || 0) * shk; // отдача, дёрганья перезарядки, стресс
       cam.position.set(p.x + c * sway + (sh ? (Math.random() - 0.5) * sh : 0), EYE + bob + breath + (sh ? (Math.random() - 0.5) * sh : 0), p.z - s * sway);
       cam.rotation.set(
-        p.pitch + kp + Math.sin(t * 1.1) * 0.004 + Math.sin(p.phase * 2) * 0.012 * p.moving + (ki ? (Math.random() - 0.5) * ki : 0),
+        p.pitch + kp + Math.sin(t * 1.1) * 0.004 + Math.sin(p.phase * 2) * 0.012 * mvK + (ki ? (Math.random() - 0.5) * ki : 0),
         p.yaw + ky + (ki ? (Math.random() - 0.5) * ki : 0),
-        Math.sin(p.phase) * 0.018 * p.moving + kr
+        Math.sin(p.phase) * 0.018 * mvK + kr
       );
       if (this.pmCam) this.pmCam(cam, dt); // pmove.js: присед, наклон из-за угла, подкат
       if (this.baseFov && !this.fovLocked) { const f = this.fovNow ? this.fovNow() : this.baseFov; if (Math.abs(cam.fov - f) > 0.05) { cam.fov = f; cam.updateProjectionMatrix(); } }
@@ -936,7 +982,7 @@
         this.target = best;
         const cross = this.qs('.m-cross');
         cross.classList.toggle('on', !!best);
-        this.prompt.textContent = best ? (this.touch ? best.label : '[E] ' + best.label) : '';
+        this.prompt.textContent = best ? (this.touch ? best.label : '[' + KL('use') + '] ' + best.label) : '';
         const eb = this.qs('.m-e'); eb && eb.classList.toggle('ready', !!best);
       }
     }
@@ -975,6 +1021,7 @@
     }
     dispose() {
       this.disposed = true;
+      if (this.setOff) { this.setOff(); this.setOff = null; }   // отписка от настроек: иначе слушатель держит всю миссию в памяти
       try { const V = window.Missions._core.voice; V && V.stop(this); } catch (e) {}
       try { this.disposeCombat && this.disposeCombat(); } catch (e) { console.error(e); }
       cancelAnimationFrame(this.raf);
@@ -1308,7 +1355,7 @@
         r.room(0, 0, 14, 14, 3.6, 0x888888);
         r.setAmbient(0.7);
         r.lamp(-3, 3.5, 0, 0.7); r.lamp(3, 3.5, -5, 0.7);
-        r.secret = 1 + Math.floor(Math.random() * 7);
+        r.secret = 1 + Math.floor((r.rand ? r.rand('secret') : Math.random()) * 7);
         r.lo = 1; r.hi = 7; r.busy = false;
         r.pads = [];
         for (let i = 1; i <= 7; i += 1) {
@@ -1362,7 +1409,7 @@
 
   window.Missions = {
     get TASKS() { return Object.keys(MISSIONS).filter((k) => /^\d+$/.test(k)).length; }, // только сюжетные миссии (стол HIGH/LOW и др. служебные — не в счёт)
-    getQuality, setQuality, getSens, setSens, getBlood, setBlood,
+    getQuality, getQualitySaved, setQuality, getSens, setSens, getBlood, setBlood,
     get current() { return current; },
     // расширения (combat.js, cinema.js, missions2.js) подключаются через _core
     _core: { Run, MISSIONS, CINEMA, QUALITY, PLAYER_R, EYE, isTouch, wrap, smooth, lerp, getSens, getBlood, loadThree },

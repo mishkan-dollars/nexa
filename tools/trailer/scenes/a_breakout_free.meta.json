@@ -1,0 +1,30 @@
+{
+ "scene": "a_breakout_free",
+ "mission": 7,
+ "cuts": {
+  "crane_hall": {
+   "beats": 8,
+   "type": "free",
+   "hitAt": 1.65,
+   "energy": 4,
+   "tags": [
+    "firefight",
+    "slowmo",
+    "reveal"
+   ],
+   "desc": "Free: кран над залом без потолка, силуэт с пистолетом за колонной снимает вбегающих охранников (убийства на 0.45 и 1.0 с, третье в слоу-мо на hitAt)"
+  },
+  "barrel_blast": {
+   "beats": 6,
+   "type": "free",
+   "hitAt": 0.55,
+   "energy": 5,
+   "tags": [
+    "explosion",
+    "slowmo",
+    "firefight"
+   ],
+   "desc": "Free: далёкая проводка на группу из трёх охранников у красной бочки, силуэт стреляет в бочку, взрыв (hitAt), слоу-мо, тела взлетают, остаётся дым"
+  }
+ }
+}
