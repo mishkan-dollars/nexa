@@ -114,6 +114,8 @@
     on('dr:*', (k) => { const d = r.mpDoors && r.mpDoors.get(k); if (d && !(d.userData.col && d.userData.col.off)) r.openDoor(d, 0.6); });
     on('pk:*', (k) => { const cb = r.cb; if (!cb) return; const i = cb.pickups.findIndex((x) => x.mpk === k && !x.dead); if (i >= 0) { const x = cb.pickups[i]; x.dead = true; x.mpRem = true; x.g.visible = false; cb.pickups.splice(i, 1); } });
     on('lf:*', (k, q) => { const L = r.mpLifts && r.mpLifts[k]; if (L && q.v && typeof q.v.k === 'number' && Math.abs((L.k || 0) - q.v.k) > 0.05) L.set(q.v.k); });
+    on('env:l', (k, q) => { if (!NN.isHost && typeof q.v === 'number' && Math.abs((r.lightLevel || 0) - q.v) > 0.02) r.lightsLevel(q.v); });
+    on('env:f', (k, q) => { if (!NN.isHost && Array.isArray(q.v)) r.setFog(q.v[0], q.v[1]); });
     on('bl:*', (k) => { const b = r.cb && r.cb.shoot.find((x) => x.mpk === k && x.alive); if (b) b.damage(99); });
     on('al:*', (k, q) => { const o = r.mpStealth && r.mpStealth[k]; if (o && !o.S.alarm) o.a0.call(o.S, q.v); });
     on('cd:*', (k, q) => { const o = r.mpCd && r.mpCd[k]; if (o && o.on && !NN.isHost && q.v && Math.abs(o.left - q.v.l) > 0.5) o.left = q.v.l; });
@@ -190,6 +192,11 @@
       for (let i = 0; i < before.length; i += 1) { const k = before[i]; if (k.mpk && !k.dead && !k.mpRem && cb.pickups.indexOf(k) < 0) { k.mpRem = true; W.set(k.mpk, (W.get(k.mpk) | 0) + 1); } }
       return res;
     };
+    // свет и туман: меняет хост — остальные подтягиваются событием (поздний вход получает текущее состояние из снапшота)
+    const ll0 = RunP.lightsLevel;
+    if (ll0) RunP.lightsLevel = function (l) { const r = this; if (NN.isHost && live(r) && !r.__mpRem && typeof l === 'number') W.set('env:l', Math.round(l * 1000) / 1000); return ll0.apply(this, arguments); };
+    const sf0 = RunP.setFog;
+    if (sf0) RunP.setFog = function (d, c) { const r = this; if (NN.isHost && live(r) && !r.__mpRem) { try { W.set('env:f', [d, c && c.getHex ? c.getHex() : c]); } catch (e) { /* ok */ } } return sf0.apply(this, arguments); };
     const bar0 = RunP.barrel;
     if (bar0) RunP.barrel = function (x, z) {
       const r = this, b = bar0.apply(this, arguments);
